@@ -1,0 +1,87 @@
+name: Frontend Actions
+
+on: [push]
+
+permissions:
+  contents: write
+
+jobs:
+  lint:
+    name: lint
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: yarn install --production=false --frozen-lockfile
+        working-directory: frontend
+
+      - name: Run eslint
+        run: yarn lint
+        working-directory: frontend
+
+      - name: Run prettier
+        run: yarn check-format
+        working-directory: frontend
+
+  test:
+    name: test
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: yarn install --production=false --frozen-lockfile
+        working-directory: frontend
+
+      - name: test
+        run: yarn test
+        working-directory: frontend
+
+  build:
+    name: build
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: production
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: yarn install --production=false --frozen-lockfile
+        working-directory: frontend
+
+      - name: Build
+        id: build
+        run: yarn build
+        working-directory: frontend
+
+  build-and-deploy:
+    name: build and deploy
+    if: github.ref == 'refs/heads/main'
+    concurrency: ci-${{ github.ref }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install and Build
+        run: |
+          yarn install
+          yarn build
+        working-directory: frontend
+
+      - name: Deploy
+        uses: JamesIves/github-pages-deploy-action@v4.2.5
+        with:
+          branch: gh-pages # The branch the action should deploy to.
+          folder: frontend/dist # The folder the action should deploy.
