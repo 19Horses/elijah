@@ -1,0 +1,24 @@
+name: Backend Actions
+
+on: [push]
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    name: deploy
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      SANITY_AUTH_TOKEN: ${{ secrets.SANITY_AUTH_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install & Deploy
+        run: |
+          yarn install
+          yarn deploy
+        working-directory: backend

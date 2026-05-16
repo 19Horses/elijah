@@ -1,0 +1,17 @@
+{
+  "name": "frontend-template-with-cms",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "start:frontend": "yarn workspace frontend start",
+    "start:backend": "yarn workspace backend dev",
+    "create:backend": "yarn create sanity --dataset production --template clean --typescript --output-path backend  ",
+    "dev": "concurrently \"yarn start:frontend\" \"yarn start:backend\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
