@@ -1,0 +1,15 @@
+.gitignore
+.nvmrc
+.prettierignore
+*.ico
+*.png
+*.svg
+*.tf
+*.lock.hcl
+*.txt
+build
+node_modules
+public/fonts
+yarn.lock
+.github/
+*.config.ts

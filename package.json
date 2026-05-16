@@ -1,0 +1,16 @@
+{
+  "name": "frontend-template-with-cms",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "start:frontend": "yarn workspace frontend start",
+    "start:backend": "yarn workspace backend dev",
+    "dev": "concurrently \"yarn start:frontend\" \"yarn start:backend\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.0.1"
+  }
+}
