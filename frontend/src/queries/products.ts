@@ -1,11 +1,18 @@
 import { getApiUrl } from '../sanityIntegration';
 
+export type ImageDimensions = {
+  width: number;
+  height: number;
+  aspectRatio: number;
+};
+
 export type Product = {
   _id: string;
   title: string;
   description: string | null;
   price: number | null;
   imageUrl: string | null;
+  imageDimensions: ImageDimensions | null;
   stripeBuyButtonId: string | null;
 };
 
@@ -15,6 +22,7 @@ const PRODUCTS_QUERY = `*[_type == "product"] | order(title asc) {
   description,
   price,
   "imageUrl": image.asset->url,
+  "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio},
   stripeBuyButtonId
 }`;
 
