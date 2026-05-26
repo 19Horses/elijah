@@ -13,7 +13,7 @@ type ImageOptions = {
 
 export function optimizeSanityImage(
   url: string,
-  {width, height, quality = 80, fit}: ImageOptions,
+  { width, height, quality = 80, fit }: ImageOptions
 ): string {
   const params = new URLSearchParams({
     w: String(width),
@@ -32,7 +32,7 @@ export function optimizeSanityImage(
 export function buildSanityImageSrcSet(
   url: string,
   options: ImageOptions,
-  densities: number[] = [1, 2],
+  densities: number[] = [1, 2]
 ): string {
   return densities
     .map((dpr) => {
