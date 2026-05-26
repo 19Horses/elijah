@@ -1,3 +1,33 @@
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
 }
+
+body {
+  margin: 0;
+}
+
+main {
+  padding: 2rem;
+}
+
+.site-header {
+  align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  padding: 1rem 2rem;
+}
+
+.site-header a {
+  color: #111827;
+  text-decoration: none;
+}
+
+.site-title {
+  font-weight: 700;
+}
+
+.site-nav {
+  display: flex;
+  gap: 1rem;
+}
