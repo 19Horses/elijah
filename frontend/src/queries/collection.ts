@@ -1,0 +1,50 @@
+import { useQuery } from '@tanstack/react-query';
+import { getApiUrl } from '../sanityIntegration';
+import type { MediaAsset } from './mediaAsset';
+
+type SanityResponse<T> = {
+  result: T;
+};
+
+export type Collection = {
+  _id: string;
+  name: string;
+  description: string | null;
+  expiresAt: string | null;
+  created_at: string;
+  content: MediaAsset[] | null;
+};
+
+const COLLECTIONS_QUERY = `*[_type == "collection"] | order(_createdAt desc) {
+  _id,
+  name,
+  description,
+  expiresAt,
+  "created_at": _createdAt,
+  content[]->{
+    _id,
+    _type,
+    title,
+    description,
+    "created_at": _createdAt,
+    "imageUrl": image.asset->url,
+    "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio},
+    "audioUrl": audio.asset->url
+  }
+}`;
+
+export async function fetchCollections(): Promise<Collection[]> {
+  const response = await fetch(getApiUrl(COLLECTIONS_QUERY));
+  if (!response.ok) {
+    throw new Error(`Failed to fetch collections: ${response.status}`);
+  }
+  const data: SanityResponse<Collection[]> = await response.json();
+  return data.result ?? [];
+}
+
+export function useCollections() {
+  return useQuery({
+    queryKey: ['collections'],
+    queryFn: fetchCollections,
+  });
+}
