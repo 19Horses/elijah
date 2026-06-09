@@ -18,6 +18,27 @@ export const audioAsset = defineType({
       rows: 4,
     }),
     defineField({
+      name: 'date',
+      title: 'Date',
+      type: 'date',
+    }),
+    defineField({
+      name: 'expiryDate',
+      title: 'Expiry Date',
+      type: 'datetime',
+    }),
+    defineField({
+      name: 'unlockDate',
+      title: 'Unlock Date',
+      type: 'datetime',
+    }),
+    defineField({
+      name: 'isOnMainTimeline',
+      title: 'On Main Timeline',
+      type: 'boolean',
+      initialValue: false,
+    }),
+    defineField({
       name: 'audio',
       title: 'Audio',
       type: 'file',
