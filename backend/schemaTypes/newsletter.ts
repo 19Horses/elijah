@@ -33,6 +33,12 @@ export const newsletter = defineType({
       initialValue: false,
     }),
     defineField({
+      name: 'image',
+      title: 'Image',
+      type: 'image',
+      options: {hotspot: true},
+    }),
+    defineField({
       name: 'content',
       title: 'Content',
       description: 'Long-form newsletter or blog content.',
@@ -44,6 +50,7 @@ export const newsletter = defineType({
   preview: {
     select: {
       title: 'title',
+      media: 'image',
     },
   },
 })
