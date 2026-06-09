@@ -25,6 +25,12 @@ export const collection = defineType({
       validation: (Rule) => Rule.required(),
     }),
     defineField({
+      name: 'unlockTime',
+      title: 'Unlock Time',
+      description: 'Date and time when this collection becomes available.',
+      type: 'datetime',
+    }),
+    defineField({
       name: 'content',
       title: 'Content',
       type: 'array',

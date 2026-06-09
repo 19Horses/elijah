@@ -1,9 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { HashRouter, Route, Routes, useLocation } from 'react-router-dom';
 import Header from './components/Header';
 import Home from './pages/Home';
 import Landing from './pages/Landing';
 import Shop from './pages/Shop';
+import { initSelectionColour } from './services/userColor';
 
 const queryClient = new QueryClient();
 
@@ -26,6 +28,10 @@ const AppRoutes = () => {
 };
 
 const App = () => {
+  useEffect(() => {
+    initSelectionColour();
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <HashRouter>
