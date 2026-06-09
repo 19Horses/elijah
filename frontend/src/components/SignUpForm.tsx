@@ -1,52 +1,16 @@
 import { useState } from 'react';
 import { CompactPicker, type ColorResult } from 'react-color';
+import { PICKER_COLORS } from '../constants/pickerColors';
 import { createUser } from '../services/createUser';
+import { storeColour } from '../services/userColor';
 import { storeUser } from '../services/userStorage';
-
-export const PICKER_COLORS = [
-  '#F44E3B',
-  '#FF6B6B',
-  '#FE9200',
-  '#FF8C42',
-  '#FCDC00',
-  '#FFE66D',
-  '#DBDF00',
-  '#A4DD00',
-  '#2ECC71',
-  '#68CCCA',
-  '#4ECDC4',
-  '#73D8FF',
-  '#45B7D1',
-  '#AEA1FF',
-  '#9B59B6',
-  '#FDA1FF',
-  '#FF69B4',
-  '#D33115',
-  '#E27300',
-  '#FCC400',
-  '#B0BC00',
-  '#68BC00',
-  '#96CEB4',
-  '#16A5A5',
-  '#009CE0',
-  '#7B64FF',
-  '#FA28FF',
-  '#9F0500',
-  '#C45100',
-  '#FB9E00',
-  '#194D33',
-  '#0C797D',
-  '#0062B1',
-  '#653294',
-  '#AB149E',
-  '#3498DB',
-  '#F39C12',
-];
 
 type SignUpFormProps = {
   visible: boolean;
   color: string;
   onColorChange: (color: string) => void;
+  onColorHover?: (color: string) => void;
+  onColorHoverEnd?: () => void;
   onClose: () => void;
   onSuccess: () => void;
 };
@@ -55,6 +19,8 @@ function SignUpForm({
   visible,
   color,
   onColorChange,
+  onColorHover,
+  onColorHoverEnd,
   onClose,
   onSuccess,
 }: SignUpFormProps) {
@@ -76,6 +42,7 @@ function SignUpForm({
         return;
       }
 
+      storeColour(color);
       storeUser({
         id: result.id,
         email: result.email,
@@ -127,11 +94,15 @@ function SignUpForm({
 
       <fieldset className="signup-form__field signup-form__color">
         <legend className="signup-form__label">Colour</legend>
-        <div className="signup-form__picker">
+        <div
+          className="signup-form__picker"
+          onMouseLeave={onColorHoverEnd}
+        >
           <CompactPicker
             color={color}
             colors={PICKER_COLORS}
             onChange={(result: ColorResult) => onColorChange(result.hex)}
+            onSwatchHover={(result: ColorResult) => onColorHover?.(result.hex)}
           />
         </div>
         <input type="hidden" name="color" value={color} required />

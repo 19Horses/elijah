@@ -1,5 +1,17 @@
 :root {
+  --selection-color: #f44e3b;
+  --selection-text-color: #ffffff;
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+}
+
+::selection {
+  background-color: var(--selection-color);
+  color: var(--selection-text-color);
+}
+
+::-moz-selection {
+  background-color: var(--selection-color);
+  color: var(--selection-text-color);
 }
 
 body {
