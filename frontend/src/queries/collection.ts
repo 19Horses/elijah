@@ -11,15 +11,17 @@ export type Collection = {
   name: string;
   description: string | null;
   expiresAt: string | null;
+  unlockTime: string | null;
   created_at: string;
   content: MediaAsset[] | null;
 };
 
-const COLLECTIONS_QUERY = `*[_type == "collection"] | order(_createdAt desc) {
+const COLLECTIONS_QUERY = `*[_type == "collection" && expiresAt > now()] | order(_createdAt desc) {
   _id,
   name,
   description,
   expiresAt,
+  unlockTime,
   "created_at": _createdAt,
   content[]->{
     _id,
