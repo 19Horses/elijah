@@ -25,6 +25,12 @@ export const event = defineType({
       validation: (Rule) => Rule.required(),
     }),
     defineField({
+      name: 'image',
+      title: 'Image',
+      type: 'image',
+      options: {hotspot: true},
+    }),
+    defineField({
       name: 'link',
       title: 'Link',
       type: 'url',
@@ -35,11 +41,13 @@ export const event = defineType({
     select: {
       title: 'title',
       date: 'date',
+      media: 'image',
     },
     prepare(selection) {
-      const {title, date} = selection
+      const {title, date, media} = selection
       return {
         title,
+        media,
         subtitle: date ? new Date(date).toLocaleString() : undefined,
       }
     },
