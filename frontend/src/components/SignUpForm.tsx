@@ -94,10 +94,7 @@ function SignUpForm({
 
       <fieldset className="signup-form__field signup-form__color">
         <legend className="signup-form__label">Colour</legend>
-        <div
-          className="signup-form__picker"
-          onMouseLeave={onColorHoverEnd}
-        >
+        <div className="signup-form__picker" onMouseLeave={onColorHoverEnd}>
           <CompactPicker
             color={color}
             colors={PICKER_COLORS}
