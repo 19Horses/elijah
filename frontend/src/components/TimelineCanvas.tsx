@@ -166,7 +166,16 @@ function drawCurvedConnector(
   p.stroke(17);
   p.strokeWeight(1);
   p.noFill();
-  p.bezier(from.x, from.y, from.x + handle, from.y, to.x - handle, to.y, to.x, to.y);
+  p.bezier(
+    from.x,
+    from.y,
+    from.x + handle,
+    from.y,
+    to.x - handle,
+    to.y,
+    to.x,
+    to.y
+  );
 
   p.fill(17);
   p.noStroke();
@@ -202,9 +211,9 @@ function TimelineCanvas({ items, colour }: TimelineCanvasProps) {
     let targetCameraY = 0;
 
     const sketch = (p: p5) => {
-      const loadedImages: (p5.Image | null)[] = new Array(processed.length).fill(
-        null
-      );
+      const loadedImages: (p5.Image | null)[] = new Array(
+        processed.length
+      ).fill(null);
 
       const getAllBounds = () =>
         processed.map((item, index) =>
