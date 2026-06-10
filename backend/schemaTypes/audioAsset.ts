@@ -23,6 +23,12 @@ export const audioAsset = defineType({
       type: 'date',
     }),
     defineField({
+      name: 'image',
+      title: 'Image',
+      type: 'image',
+      options: {hotspot: true},
+    }),
+    defineField({
       name: 'audio',
       title: 'Audio',
       type: 'file',
@@ -35,6 +41,7 @@ export const audioAsset = defineType({
   preview: {
     select: {
       title: 'title',
+      media: 'image',
       hasAudio: 'audio.asset',
     },
     prepare(selection) {

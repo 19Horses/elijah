@@ -1,8 +1,33 @@
+import {
+  createImageUrlBuilder,
+  type SanityImageSource,
+} from '@sanity/image-url';
+
 const projectId = '8l62ppj0';
+const dataset = 'production';
+
 export const SANITY_URL = `https://${projectId}.apicdn.sanity.io/v2025-06-01`;
 
+const imageBuilder = createImageUrlBuilder({ projectId, dataset });
+
+export function urlFor(source: SanityImageSource) {
+  return imageBuilder.image(source);
+}
+
+export function getSanityImageUrl(
+  source: SanityImageSource,
+  width: number,
+  height?: number
+): string {
+  let builder = urlFor(source).width(width).auto('format').quality(80);
+  if (height) {
+    builder = builder.height(height);
+  }
+  return builder.url();
+}
+
 export const getApiUrl = (query: string) =>
-  `${SANITY_URL}/data/query/production?query=${encodeURI(query)}`;
+  `${SANITY_URL}/data/query/production?query=${encodeURIComponent(query)}`;
 
 type ImageOptions = {
   width: number;
