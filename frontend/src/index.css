@@ -173,6 +173,35 @@ main.main--landing {
   width: 100%;
 }
 
+main.main--home {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  padding: 0;
+  width: 100%;
+}
+
+.home {
+  height: 100%;
+  overflow: hidden;
+  width: 100%;
+}
+
+.home-status {
+  margin: 0;
+  padding: 2rem;
+}
+
+.timeline-canvas {
+  height: 100%;
+  width: 100%;
+}
+
+.timeline-canvas canvas {
+  cursor: crosshair;
+  display: block;
+}
+
 .landing {
   background: #000;
   height: 100%;

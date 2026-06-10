@@ -12,11 +12,17 @@ const queryClient = new QueryClient();
 const AppRoutes = () => {
   const { pathname } = useLocation();
   const isLanding = pathname === '/';
+  const isHome = pathname === '/home';
+  const showHeader = !isLanding && !isHome;
 
   return (
     <>
-      {!isLanding && <Header />}
-      <main className={isLanding ? 'main--landing' : undefined}>
+      {showHeader && <Header />}
+      <main
+        className={
+          isLanding ? 'main--landing' : isHome ? 'main--home' : undefined
+        }
+      >
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/home" element={<Home />} />
