@@ -9,14 +9,14 @@ type MainTimelineItemBase = {
   _id: string;
   date: string | null;
   created_at: string;
+  unlockTime: string | null;
+  expiryTime: string | null;
 };
 
 export type MainTimelineImage = MainTimelineItemBase & {
   _type: 'imageAsset';
   title: string;
   description: string | null;
-  expiryDate: string | null;
-  unlockDate: string | null;
   imageUrl: string | null;
   imageDimensions: ImageDimensions | null;
 };
@@ -25,8 +25,6 @@ export type MainTimelineAudio = MainTimelineItemBase & {
   _type: 'audioAsset';
   title: string;
   description: string | null;
-  expiryDate: string | null;
-  unlockDate: string | null;
   audioUrl: string | null;
 };
 
@@ -34,8 +32,6 @@ export type MainTimelineNewsletter = MainTimelineItemBase & {
   _type: 'newsletter';
   title: string;
   content: string;
-  expiryDate: string | null;
-  unlockDate: string | null;
   imageUrl: string | null;
   imageDimensions: ImageDimensions | null;
 };
@@ -55,45 +51,49 @@ export type MainTimelineItem =
   | MainTimelineNewsletter
   | MainTimelineEvent;
 
-const MAIN_TIMELINE_QUERY = `*[
-  _type in ["imageAsset", "audioAsset", "newsletter", "event"] &&
-  isOnMainTimeline == true
-] | order(date asc) {
-  _id,
-  _type,
-  date,
-  "created_at": _createdAt,
-  _type == "imageAsset" => {
-    title,
-    description,
-    expiryDate,
-    unlockDate,
-    "imageUrl": image.asset->url,
-    "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
-  },
-  _type == "audioAsset" => {
-    title,
-    description,
-    expiryDate,
-    unlockDate,
-    "audioUrl": audio.asset->url
-  },
-  _type == "newsletter" => {
-    title,
-    content,
-    expiryDate,
-    unlockDate,
-    "imageUrl": image.asset->url,
-    "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
-  },
-  _type == "event" => {
+const MAIN_TIMELINE_QUERY = `(
+  coalesce(*[_type == "mainTimeline"][0].items, [])[] {
+    unlockTime,
+    expiryTime,
+    ...content-> {
+      _id,
+      _type,
+      date,
+      "created_at": _createdAt,
+      _type == "imageAsset" => {
+        title,
+        description,
+        "imageUrl": image.asset->url,
+        "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
+      },
+      _type == "audioAsset" => {
+        title,
+        description,
+        "audioUrl": audio.asset->url
+      },
+      _type == "newsletter" => {
+        title,
+        content,
+        "imageUrl": image.asset->url,
+        "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
+      }
+    }
+  }
+) + (
+  *[_type == "event"] {
+    "unlockTime": null,
+    "expiryTime": null,
+    _id,
+    _type,
+    date,
+    "created_at": _createdAt,
     title,
     description,
     link,
     "imageUrl": image.asset->url,
     "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
   }
-}`;
+) | order(date asc)`;
 
 export async function fetchMainTimeline(): Promise<MainTimelineItem[]> {
   const response = await fetch(getApiUrl(MAIN_TIMELINE_QUERY));

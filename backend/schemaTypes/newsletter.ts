@@ -17,24 +17,6 @@ export const newsletter = defineType({
       type: 'date',
     }),
     defineField({
-      name: 'isOnMainTimeline',
-      title: 'On Main Timeline',
-      type: 'boolean',
-      initialValue: true,
-    }),
-    defineField({
-      name: 'expiryDate',
-      title: 'Expiry Date',
-      type: 'datetime',
-      hidden: ({document}) => !document?.isOnMainTimeline,
-    }),
-    defineField({
-      name: 'unlockDate',
-      title: 'Unlock Date',
-      type: 'datetime',
-      hidden: ({document}) => !document?.isOnMainTimeline,
-    }),
-    defineField({
       name: 'image',
       title: 'Image',
       type: 'image',

@@ -12,12 +12,6 @@ export const event = defineType({
       validation: (Rule) => Rule.required(),
     }),
     defineField({
-      name: 'isOnMainTimeline',
-      title: 'On Main Timeline',
-      type: 'boolean',
-      initialValue: true,
-    }),
-    defineField({
       name: 'title',
       title: 'Title',
       type: 'string',
