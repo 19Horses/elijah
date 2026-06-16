@@ -40,13 +40,11 @@ function CollectionCountdown({
   }, [collection._id]);
 
   useEffect(() => {
-    if (!collection.expiresAt) return;
+    const expiresAt = collection.expiresAt;
+    if (!expiresAt) return;
 
     const tick = () => {
-      const ms = Math.max(
-        0,
-        new Date(collection.expiresAt!).getTime() - Date.now()
-      );
+      const ms = Math.max(0, new Date(expiresAt).getTime() - Date.now());
       setRemaining(ms);
     };
 
@@ -60,7 +58,8 @@ function CollectionCountdown({
   const colour = getStoredColour() ?? DEFAULT_COLOUR;
 
   return (
-    <div
+    <button
+      type="button"
       className={`collection-countdown${
         isVisible ? ' collection-countdown--visible' : ''
       }`}
@@ -77,7 +76,7 @@ function CollectionCountdown({
       <span className="collection-countdown__timer">
         {formatCountdown(remaining)}
       </span>
-    </div>
+    </button>
   );
 }
 

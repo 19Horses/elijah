@@ -16,9 +16,10 @@
     "import/resolver": {
       "node": {
         "paths": ["src"],
-        "extensions": [".js", ".jsx", ".ts", ".tsx"]
+        "extensions": [".js", ".jsx", ".ts", ".tsx", ".mjs"]
       }
-    }
+    },
+    "import/core-modules": ["p5"]
   },
   "rules": {
     "react/react-in-jsx-scope": "off"

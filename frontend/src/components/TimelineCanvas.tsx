@@ -133,14 +133,12 @@ function drawCurvedConnector(
   const dx = to.x - from.x;
   const handle = Math.max(48, Math.abs(dx) * 0.4);
 
+  const ctx = p.drawingContext as CanvasRenderingContext2D;
+
   p.stroke(17);
   p.strokeWeight(1);
   p.noFill();
-  if (dashed) {
-    p.drawingContext.setLineDash([6, 6]);
-  } else {
-    p.drawingContext.setLineDash([]);
-  }
+  ctx.setLineDash(dashed ? [6, 6] : []);
   p.bezier(
     from.x,
     from.y,
@@ -151,7 +149,7 @@ function drawCurvedConnector(
     to.x,
     to.y
   );
-  p.drawingContext.setLineDash([]);
+  ctx.setLineDash([]);
 
   p.fill(17);
   p.noStroke();
