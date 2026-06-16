@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { Collection } from '../queries/collection';
+import { DEFAULT_COLOUR, getStoredColour } from '../services/userColor';
 
 type CollectionCountdownProps = {
   collection: Collection;
+  onClick?: () => void;
 };
 
 function formatCountdown(ms: number): string {
@@ -22,7 +24,7 @@ function formatCountdown(ms: number): string {
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 }
 
-function CollectionCountdown({ collection }: CollectionCountdownProps) {
+function CollectionCountdown({ collection, onClick }: CollectionCountdownProps) {
   const [remaining, setRemaining] = useState<number>(() => {
     if (!collection.expiresAt) return 0;
     return Math.max(0, new Date(collection.expiresAt).getTime() - Date.now());
@@ -49,13 +51,16 @@ function CollectionCountdown({ collection }: CollectionCountdownProps) {
 
   if (!collection.expiresAt || remaining <= 0) return null;
 
+  const colour = getStoredColour() ?? DEFAULT_COLOUR;
+
   return (
     <div
       className={`collection-countdown${isVisible ? ' collection-countdown--visible' : ''}`}
+      style={{ '--countdown-tint': colour } as React.CSSProperties}
       aria-live="polite"
       aria-atomic="true"
       onMouseDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
     >
       <span className="collection-countdown__label">{collection.name}</span>
       <span className="collection-countdown__timer">{formatCountdown(remaining)}</span>
