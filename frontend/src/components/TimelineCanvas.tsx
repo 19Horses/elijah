@@ -158,7 +158,8 @@ function drawSplashes(p: p5, splashes: Splash[]): void {
 function drawCurvedConnector(
   p: p5,
   from: ConnectorPoint,
-  to: ConnectorPoint
+  to: ConnectorPoint,
+  dashed = false
 ): void {
   const dx = to.x - from.x;
   const handle = Math.max(48, Math.abs(dx) * 0.4);
@@ -166,6 +167,11 @@ function drawCurvedConnector(
   p.stroke(17);
   p.strokeWeight(1);
   p.noFill();
+  if (dashed) {
+    p.drawingContext.setLineDash([6, 6]);
+  } else {
+    p.drawingContext.setLineDash([]);
+  }
   p.bezier(
     from.x,
     from.y,
@@ -176,6 +182,7 @@ function drawCurvedConnector(
     to.x,
     to.y
   );
+  p.drawingContext.setLineDash([]);
 
   p.fill(17);
   p.noStroke();
@@ -223,6 +230,17 @@ function TimelineCanvas({ items, colour }: TimelineCanvasProps) {
       const panToWorldPoint = (worldX: number, worldY: number) => {
         targetCameraX = worldX - p.width / 2;
         targetCameraY = worldY - p.height / 2;
+      };
+
+      const isFutureDatedItem = (item: MainTimelineItem | undefined) => {
+        if (!item?.date) {
+          return false;
+        }
+        const time = new Date(item.date).getTime();
+        if (Number.isNaN(time)) {
+          return false;
+        }
+        return time > Date.now();
       };
 
       p.setup = () => {
@@ -278,7 +296,8 @@ function TimelineCanvas({ items, colour }: TimelineCanvasProps) {
           drawCurvedConnector(
             p,
             { x: bounds[index].right, y: bounds[index].centerY },
-            { x: bounds[index + 1].left, y: bounds[index + 1].centerY }
+            { x: bounds[index + 1].left, y: bounds[index + 1].centerY },
+            isFutureDatedItem(items[index + 1])
           );
         }
 
