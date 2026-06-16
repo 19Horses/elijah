@@ -197,9 +197,242 @@ main.main--home {
   width: 100%;
 }
 
+.collection-countdown {
+  align-items: center;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background: color-mix(
+    in srgb,
+    var(--countdown-tint, #ffffff) 10%,
+    rgba(255, 255, 255, 0.15)
+  );
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 999px;
+  display: flex;
+  gap: 0.625rem;
+  left: 50%;
+  padding: 0.5rem 1.25rem;
+  cursor: pointer;
+  pointer-events: auto;
+  position: absolute;
+  top: 1.5rem;
+  z-index: 10;
+  opacity: 0;
+  transform: translateX(-50%) translateY(-8px);
+  white-space: nowrap;
+}
+
+.collection-countdown--visible {
+  animation: collection-countdown-enter 500ms cubic-bezier(0.4, 0, 0.2, 1)
+    forwards;
+}
+
+@keyframes collection-countdown-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.collection-countdown__label {
+  color: rgba(0, 0, 0, 0.6);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.collection-countdown__timer {
+  color: #111827;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
 .timeline-canvas canvas {
   cursor: crosshair;
   display: block;
+}
+
+/* ── Collection viewer ────────────────────────── */
+
+.collection-viewer__overlay {
+  background: rgba(0, 0, 0, 0);
+  inset: 0;
+  position: absolute;
+  transition: background 0.4s ease;
+  z-index: 20;
+}
+
+.collection-viewer__overlay--visible {
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.collection-viewer__stage {
+  --cv-slot: 38vw;
+  align-items: center;
+  display: flex;
+  height: 100%;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: relative;
+  transition: opacity 0.3s ease;
+  width: 100%;
+}
+
+.collection-viewer__stage--visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.collection-viewer__track {
+  align-items: center;
+  display: flex;
+  left: 50%;
+  position: relative;
+  transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.collection-viewer__slot {
+  align-items: center;
+  display: flex;
+  flex: 0 0 var(--cv-slot);
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(28px);
+  width: var(--cv-slot);
+}
+
+.collection-viewer__stage--visible .collection-viewer__slot {
+  animation: collection-viewer-item-enter 0.55s cubic-bezier(0.4, 0, 0.2, 1)
+    forwards;
+  animation-delay: calc(var(--anim-index) * 90ms);
+}
+
+@keyframes collection-viewer-item-enter {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.collection-viewer__item {
+  cursor: pointer;
+  position: relative;
+  transform: scale(0.92);
+  transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+  width: fit-content;
+}
+
+.collection-viewer__media {
+  display: block;
+  position: relative;
+  width: fit-content;
+}
+
+.collection-viewer__media::after {
+  background: rgba(0, 0, 0, 0.4);
+  content: '';
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  transition: opacity 0.45s ease;
+}
+
+.collection-viewer__item--active {
+  cursor: default;
+  transform: scale(1);
+}
+
+.collection-viewer__item--active .collection-viewer__media::after {
+  opacity: 0;
+}
+
+.collection-viewer__image {
+  display: block;
+  height: 58vh;
+  width: auto;
+}
+
+.collection-viewer__placeholder {
+  align-items: center;
+  background: #1a1a1a;
+  color: rgba(255, 255, 255, 0.5);
+  display: flex;
+  font-size: 0.875rem;
+  height: 58vh;
+  justify-content: center;
+  width: 32vw;
+}
+
+.collection-viewer__meta {
+  height: 6.5rem;
+  margin-bottom: 1rem;
+  opacity: 0;
+  overflow: hidden;
+  text-align: left;
+  transition: opacity 0.4s ease;
+}
+
+.collection-viewer__meta--visible {
+  opacity: 1;
+}
+
+.collection-viewer__heading {
+  align-items: baseline;
+  display: flex;
+  gap: 0.75rem;
+}
+
+.collection-viewer__plus {
+  color: #fff;
+  cursor: pointer;
+  font-size: 1.75rem;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.collection-viewer__title {
+  color: #fff;
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.collection-viewer__description {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  margin: 0.5rem 0 0;
+  max-height: 6em;
+  max-width: 80%;
+  overflow: hidden;
+}
+
+.collection-viewer__close {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.5rem;
+  position: absolute;
+  right: 1.5rem;
+  top: 1.5rem;
+}
+
+.collection-viewer__close:hover {
+  color: #fff;
+}
+
+.collection-viewer__empty {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.875rem;
 }
 
 .landing {

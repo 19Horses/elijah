@@ -1,10 +1,16 @@
+import { useState } from 'react';
+import CollectionCountdown from '../components/CollectionCountdown';
+import CollectionViewer from '../components/CollectionViewer';
 import TimelineCanvas from '../components/TimelineCanvas';
 import { useCollections } from '../queries/collection';
 import { useMainTimeline } from '../queries/mainTimeline';
 
 function Home() {
   const { data: timeline, isLoading, error } = useMainTimeline();
-  useCollections();
+  const { data: collections } = useCollections();
+  const [viewerOpen, setViewerOpen] = useState(false);
+
+  const activeCollection = collections?.[0] ?? null;
 
   if (isLoading) {
     return <p className="home-status">Loading timeline…</p>;
@@ -21,6 +27,18 @@ function Home() {
   return (
     <section className="home">
       <TimelineCanvas items={timeline.items} colour={timeline.colour} />
+      {activeCollection && (
+        <CollectionCountdown
+          collection={activeCollection}
+          onClick={() => setViewerOpen(true)}
+        />
+      )}
+      {viewerOpen && activeCollection && (
+        <CollectionViewer
+          collection={activeCollection}
+          onClose={() => setViewerOpen(false)}
+        />
+      )}
     </section>
   );
 }

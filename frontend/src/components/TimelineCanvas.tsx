@@ -14,16 +14,7 @@ const PADDING_Y = 48;
 const DATE_OFFSET = 28;
 const DOT_RADIUS = 4;
 const DEFAULT_BACKGROUND = '#ffffff';
-const SPLASH_DURATION_MS = 700;
-const SPLASH_MAX_RADIUS = 24;
 const DRAG_THRESHOLD = 5;
-const PAN_LERP = 0.12;
-
-type Splash = {
-  worldX: number;
-  worldY: number;
-  startMs: number;
-};
 
 type TimelineCanvasProps = {
   items: MainTimelineItem[];
@@ -133,39 +124,21 @@ function screenToWorld(
   return { x: x + cameraX, y: y + cameraY };
 }
 
-function drawSplashes(p: p5, splashes: Splash[]): void {
-  const now = p.millis();
-
-  for (let index = splashes.length - 1; index >= 0; index--) {
-    const splash = splashes[index];
-    const progress = (now - splash.startMs) / SPLASH_DURATION_MS;
-
-    if (progress >= 1) {
-      splashes.splice(index, 1);
-      continue;
-    }
-
-    const radius = SPLASH_MAX_RADIUS * progress;
-    const alpha = 255 * (1 - progress);
-
-    p.noFill();
-    p.stroke(17, alpha);
-    p.strokeWeight(1.5);
-    p.circle(splash.worldX, splash.worldY, radius * 2);
-  }
-}
-
 function drawCurvedConnector(
   p: p5,
   from: ConnectorPoint,
-  to: ConnectorPoint
+  to: ConnectorPoint,
+  dashed = false
 ): void {
   const dx = to.x - from.x;
   const handle = Math.max(48, Math.abs(dx) * 0.4);
 
+  const ctx = p.drawingContext as CanvasRenderingContext2D;
+
   p.stroke(17);
   p.strokeWeight(1);
   p.noFill();
+  ctx.setLineDash(dashed ? [6, 6] : []);
   p.bezier(
     from.x,
     from.y,
@@ -176,6 +149,7 @@ function drawCurvedConnector(
     to.x,
     to.y
   );
+  ctx.setLineDash([]);
 
   p.fill(17);
   p.noStroke();
@@ -201,14 +175,8 @@ function TimelineCanvas({ items, colour }: TimelineCanvasProps) {
     let dragPointerOffsetY = 0;
     let pressX = 0;
     let pressY = 0;
-    let pressWorldX = 0;
-    let pressWorldY = 0;
-    let didDrag = false;
-    const splashes: Splash[] = [];
     let cameraX = 0;
     let cameraY = 0;
-    let targetCameraX = 0;
-    let targetCameraY = 0;
 
     const sketch = (p: p5) => {
       const loadedImages: (p5.Image | null)[] = new Array(
@@ -220,27 +188,35 @@ function TimelineCanvas({ items, colour }: TimelineCanvasProps) {
           getContentBounds(index, item, itemOffsets[index])
         );
 
-      const panToWorldPoint = (worldX: number, worldY: number) => {
-        targetCameraX = worldX - p.width / 2;
-        targetCameraY = worldY - p.height / 2;
+      const centerCamera = () => {
+        const bounds = getAllBounds();
+        if (bounds.length === 0) {
+          return;
+        }
+        const first = bounds[0];
+        const last = bounds[bounds.length - 1];
+        const contentCenterX = (first.left + last.right) / 2;
+        const contentCenterY = (first.top + first.dateBottom) / 2;
+        cameraX = contentCenterX - p.width / 2;
+        cameraY = contentCenterY - p.height / 2;
+      };
+
+      const isFutureDatedItem = (item: MainTimelineItem | undefined) => {
+        if (!item?.date) {
+          return false;
+        }
+        const time = new Date(item.date).getTime();
+        if (Number.isNaN(time)) {
+          return false;
+        }
+        return time > Date.now();
       };
 
       p.setup = () => {
         p.createCanvas(window.innerWidth, window.innerHeight);
         p.cursor('crosshair');
         p.textSize(12);
-
-        const initialBounds = getAllBounds();
-        if (initialBounds.length > 0) {
-          const first = initialBounds[0];
-          const last = initialBounds[initialBounds.length - 1];
-          const contentCenterX = (first.left + last.right) / 2;
-          const contentCenterY = (first.top + first.dateBottom) / 2;
-          cameraX = contentCenterX - p.width / 2;
-          cameraY = contentCenterY - p.height / 2;
-          targetCameraX = cameraX;
-          targetCameraY = cameraY;
-        }
+        centerCamera();
 
         processed.forEach((item, index) => {
           if (!item.imageUrl) {
@@ -261,12 +237,10 @@ function TimelineCanvas({ items, colour }: TimelineCanvasProps) {
 
       p.windowResized = () => {
         p.resizeCanvas(window.innerWidth, window.innerHeight);
+        centerCamera();
       };
 
       p.draw = () => {
-        cameraX = p.lerp(cameraX, targetCameraX, PAN_LERP);
-        cameraY = p.lerp(cameraY, targetCameraY, PAN_LERP);
-
         p.background(backgroundColour);
 
         p.push();
@@ -278,7 +252,8 @@ function TimelineCanvas({ items, colour }: TimelineCanvasProps) {
           drawCurvedConnector(
             p,
             { x: bounds[index].right, y: bounds[index].centerY },
-            { x: bounds[index + 1].left, y: bounds[index + 1].centerY }
+            { x: bounds[index + 1].left, y: bounds[index + 1].centerY },
+            isFutureDatedItem(items[index + 1])
           );
         }
 
@@ -307,18 +282,21 @@ function TimelineCanvas({ items, colour }: TimelineCanvasProps) {
           p.text(item.dateLabel, left + width / 2, top + height + 12);
         });
 
-        drawSplashes(p, splashes);
-
         p.pop();
       };
 
       p.mousePressed = () => {
+        if (
+          p.mouseX < 0 ||
+          p.mouseX > p.width ||
+          p.mouseY < 0 ||
+          p.mouseY > p.height
+        ) {
+          return;
+        }
         pressX = p.mouseX;
         pressY = p.mouseY;
         const world = screenToWorld(pressX, pressY, cameraX, cameraY);
-        pressWorldX = world.x;
-        pressWorldY = world.y;
-        didDrag = false;
         const bounds = getAllBounds();
 
         for (let index = processed.length - 1; index >= 0; index--) {
@@ -334,11 +312,11 @@ function TimelineCanvas({ items, colour }: TimelineCanvasProps) {
       };
 
       p.mouseDragged = () => {
-        if (p.dist(pressX, pressY, p.mouseX, p.mouseY) > DRAG_THRESHOLD) {
-          didDrag = true;
+        if (dragIndex === null) {
+          return;
         }
 
-        if (dragIndex === null) {
+        if (p.dist(pressX, pressY, p.mouseX, p.mouseY) <= DRAG_THRESHOLD) {
           return;
         }
 
@@ -362,15 +340,6 @@ function TimelineCanvas({ items, colour }: TimelineCanvasProps) {
       };
 
       p.mouseReleased = () => {
-        if (!didDrag) {
-          splashes.push({
-            worldX: pressWorldX,
-            worldY: pressWorldY,
-            startMs: p.millis(),
-          });
-          panToWorldPoint(pressWorldX, pressWorldY);
-        }
-
         dragIndex = null;
       };
     };

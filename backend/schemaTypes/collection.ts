@@ -37,7 +37,7 @@ export const collection = defineType({
       of: [
         {
           type: 'reference',
-          to: [{type: 'imageAsset'}, {type: 'audioAsset'}],
+          to: [{type: 'imageAsset'}, {type: 'audioAsset'}, {type: 'newsletter'}],
         },
       ],
     }),
