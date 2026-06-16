@@ -24,7 +24,10 @@ function formatCountdown(ms: number): string {
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 }
 
-function CollectionCountdown({ collection, onClick }: CollectionCountdownProps) {
+function CollectionCountdown({
+  collection,
+  onClick,
+}: CollectionCountdownProps) {
   const [remaining, setRemaining] = useState<number>(() => {
     if (!collection.expiresAt) return 0;
     return Math.max(0, new Date(collection.expiresAt).getTime() - Date.now());
@@ -40,7 +43,10 @@ function CollectionCountdown({ collection, onClick }: CollectionCountdownProps) 
     if (!collection.expiresAt) return;
 
     const tick = () => {
-      const ms = Math.max(0, new Date(collection.expiresAt!).getTime() - Date.now());
+      const ms = Math.max(
+        0,
+        new Date(collection.expiresAt!).getTime() - Date.now()
+      );
       setRemaining(ms);
     };
 
@@ -55,15 +61,22 @@ function CollectionCountdown({ collection, onClick }: CollectionCountdownProps) 
 
   return (
     <div
-      className={`collection-countdown${isVisible ? ' collection-countdown--visible' : ''}`}
+      className={`collection-countdown${
+        isVisible ? ' collection-countdown--visible' : ''
+      }`}
       style={{ '--countdown-tint': colour } as React.CSSProperties}
       aria-live="polite"
       aria-atomic="true"
       onMouseDown={(e) => e.stopPropagation()}
-      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.();
+      }}
     >
       <span className="collection-countdown__label">{collection.name}</span>
-      <span className="collection-countdown__timer">{formatCountdown(remaining)}</span>
+      <span className="collection-countdown__timer">
+        {formatCountdown(remaining)}
+      </span>
     </div>
   );
 }

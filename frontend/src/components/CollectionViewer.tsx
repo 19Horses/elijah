@@ -24,7 +24,9 @@ function CollectionItem({
       style={{ '--anim-index': animIndex } as React.CSSProperties}
     >
       <div
-        className={`collection-viewer__item${isActive ? ' collection-viewer__item--active' : ''}`}
+        className={`collection-viewer__item${
+          isActive ? ' collection-viewer__item--active' : ''
+        }`}
         onClick={(e) => {
           e.stopPropagation();
           if (!isActive) onSelect();
@@ -40,7 +42,9 @@ function CollectionItem({
         tabIndex={isActive ? -1 : 0}
       >
         <div
-          className={`collection-viewer__meta${isActive ? ' collection-viewer__meta--visible' : ''}`}
+          className={`collection-viewer__meta${
+            isActive ? ' collection-viewer__meta--visible' : ''
+          }`}
           aria-hidden={!isActive}
         >
           <div className="collection-viewer__heading">
@@ -108,7 +112,9 @@ function CollectionViewer({ collection, onClose }: CollectionViewerProps) {
   return (
     <div
       ref={overlayRef}
-      className={`collection-viewer__overlay${overlayVisible ? ' collection-viewer__overlay--visible' : ''}`}
+      className={`collection-viewer__overlay${
+        overlayVisible ? ' collection-viewer__overlay--visible' : ''
+      }`}
       onClick={handleOverlayClick}
       onMouseDown={(e) => e.stopPropagation()}
       role="presentation"
@@ -117,7 +123,9 @@ function CollectionViewer({ collection, onClose }: CollectionViewerProps) {
         <p className="collection-viewer__empty">No content yet.</p>
       ) : (
         <div
-          className={`collection-viewer__stage${contentVisible ? ' collection-viewer__stage--visible' : ''}`}
+          className={`collection-viewer__stage${
+            contentVisible ? ' collection-viewer__stage--visible' : ''
+          }`}
         >
           <div
             className="collection-viewer__track"

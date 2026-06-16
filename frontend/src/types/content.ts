@@ -54,4 +54,3 @@ export type ContentItem = MediaAsset | Newsletter | Event;
 
 // Collection documents only reference these types.
 export type CollectionContent = MediaAsset | Newsletter;
-
