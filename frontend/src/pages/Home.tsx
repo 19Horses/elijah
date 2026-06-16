@@ -1,10 +1,13 @@
+import CollectionCountdown from '../components/CollectionCountdown';
 import TimelineCanvas from '../components/TimelineCanvas';
 import { useCollections } from '../queries/collection';
 import { useMainTimeline } from '../queries/mainTimeline';
 
 function Home() {
   const { data: timeline, isLoading, error } = useMainTimeline();
-  useCollections();
+  const { data: collections } = useCollections();
+
+  const activeCollection = collections?.[0] ?? null;
 
   if (isLoading) {
     return <p className="home-status">Loading timeline…</p>;
@@ -21,6 +24,9 @@ function Home() {
   return (
     <section className="home">
       <TimelineCanvas items={timeline.items} colour={timeline.colour} />
+      {activeCollection && (
+        <CollectionCountdown collection={activeCollection} />
+      )}
     </section>
   );
 }

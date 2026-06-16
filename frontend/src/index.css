@@ -197,6 +197,57 @@ main.main--home {
   width: 100%;
 }
 
+.collection-countdown {
+  align-items: center;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 999px;
+  display: flex;
+  gap: 0.625rem;
+  left: 50%;
+  padding: 0.5rem 1.25rem;
+  cursor: pointer;
+  pointer-events: auto;
+  position: absolute;
+  top: 1.5rem;
+  z-index: 10;
+  opacity: 0;
+  transform: translateX(-50%) translateY(-8px);
+  white-space: nowrap;
+}
+
+.collection-countdown--visible {
+  animation: collection-countdown-enter 500ms cubic-bezier(0.4, 0, 0.2, 1)
+    forwards;
+}
+
+@keyframes collection-countdown-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.collection-countdown__label {
+  color: rgba(0, 0, 0, 0.6);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.collection-countdown__timer {
+  color: #111827;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
 .timeline-canvas canvas {
   cursor: crosshair;
   display: block;
