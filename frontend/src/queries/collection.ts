@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { getApiUrl } from '../sanityIntegration';
-import type { MediaAsset } from './mediaAsset';
+import type { CollectionContent } from '../types/content';
 
 type SanityResponse<T> = {
   result: T;
 };
+
+export type { CollectionContent };
 
 export type Collection = {
   _id: string;
@@ -13,7 +15,7 @@ export type Collection = {
   expiresAt: string | null;
   unlockTime: string | null;
   created_at: string;
-  content: MediaAsset[] | null;
+  content: CollectionContent[] | null;
 };
 
 const COLLECTIONS_QUERY = `*[_type == "collection" && expiresAt > now()] | order(_createdAt desc) {
@@ -26,12 +28,20 @@ const COLLECTIONS_QUERY = `*[_type == "collection" && expiresAt > now()] | order
   content[]->{
     _id,
     _type,
-    title,
-    description,
     "created_at": _createdAt,
-    "imageUrl": image.asset->url,
-    "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio},
-    "audioUrl": audio.asset->url
+    _type == "newsletter" => {
+      title,
+      content,
+      "imageUrl": image.asset->url,
+      "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
+    },
+    _type in ["imageAsset", "audioAsset"] => {
+      title,
+      description,
+      "imageUrl": image.asset->url,
+      "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio},
+      "audioUrl": audio.asset->url
+    }
   }
 }`;
 

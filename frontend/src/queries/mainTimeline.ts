@@ -1,53 +1,33 @@
 import { useQuery } from '@tanstack/react-query';
 import type { SanityImageSource } from '@sanity/image-url';
 import { getApiUrl, getSanityImageUrl } from '../sanityIntegration';
-import type { ImageDimensions } from './products';
+import type {
+  AudioAsset,
+  Event,
+  ImageAsset,
+  Newsletter,
+} from '../types/content';
 
 type SanityResponse<T> = {
   result: T;
 };
 
 type MainTimelineItemBase = {
-  _id: string;
-  date: string | null;
-  created_at: string;
   unlockTime: string | null;
   expiryTime: string | null;
 };
 
-export type MainTimelineImage = MainTimelineItemBase & {
-  _type: 'imageAsset';
-  title: string;
-  description: string | null;
-  image: SanityImageSource | null;
-  imageDimensions: ImageDimensions | null;
-};
+export type MainTimelineImage = MainTimelineItemBase &
+  ImageAsset & { image: SanityImageSource | null };
 
-export type MainTimelineAudio = MainTimelineItemBase & {
-  _type: 'audioAsset';
-  title: string;
-  description: string | null;
-  image: SanityImageSource | null;
-  imageDimensions: ImageDimensions | null;
-  audioUrl: string | null;
-};
+export type MainTimelineAudio = MainTimelineItemBase &
+  AudioAsset & { image: SanityImageSource | null };
 
-export type MainTimelineNewsletter = MainTimelineItemBase & {
-  _type: 'newsletter';
-  title: string;
-  content: string;
-  image: SanityImageSource | null;
-  imageDimensions: ImageDimensions | null;
-};
+export type MainTimelineNewsletter = MainTimelineItemBase &
+  Newsletter & { image: SanityImageSource | null };
 
-export type MainTimelineEvent = MainTimelineItemBase & {
-  _type: 'event';
-  title: string;
-  description: string;
-  link: string;
-  image: SanityImageSource | null;
-  imageDimensions: ImageDimensions | null;
-};
+export type MainTimelineEvent = MainTimelineItemBase &
+  Event & { image: SanityImageSource | null };
 
 export type MainTimelineItem =
   | MainTimelineImage
@@ -75,12 +55,14 @@ const MAIN_TIMELINE_QUERY = `{
         title,
         description,
         image,
+        "imageUrl": image.asset->url,
         "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
       },
       _type == "audioAsset" => {
         title,
         description,
         image,
+        "imageUrl": image.asset->url,
         "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio},
         "audioUrl": audio.asset->url
       },
@@ -88,6 +70,7 @@ const MAIN_TIMELINE_QUERY = `{
         title,
         content,
         image,
+        "imageUrl": image.asset->url,
         "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
       }
     }
@@ -104,6 +87,7 @@ const MAIN_TIMELINE_QUERY = `{
     description,
     link,
     image,
+    "imageUrl": image.asset->url,
     "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
   }
 ) | order(date asc)
@@ -112,6 +96,9 @@ const MAIN_TIMELINE_QUERY = `{
 const TIMELINE_IMAGE_WIDTH = 400;
 
 export function getMainTimelineImageUrl(item: MainTimelineItem): string | null {
+  if ('imageUrl' in item && item.imageUrl) {
+    return item.imageUrl;
+  }
   if (!('image' in item) || !item.image) {
     return null;
   }
