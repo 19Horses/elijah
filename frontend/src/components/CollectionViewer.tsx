@@ -1,26 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Collection } from '../queries/collection';
 import type { CollectionContent } from '../types/content';
+import { getStoredUser } from '../services/userStorage';
+import { collectItem } from '../services/collectItem';
 
 type CollectionViewerProps = {
   collection: Collection;
   onClose: () => void;
+  onCollected?: () => void;
 };
 
 function CollectionItem({
   item,
   isActive,
   onSelect,
+  onCollect,
+  canCollect,
   animIndex,
 }: {
   item: CollectionContent;
   isActive: boolean;
   onSelect: () => void;
+  onCollect: () => void;
+  canCollect: boolean;
   animIndex: number;
 }) {
   return (
     <div
-      className="collection-viewer__slot"
+      className={`collection-viewer__slot${
+        isActive ? ' collection-viewer__slot--active' : ''
+      }`}
       style={{ '--anim-index': animIndex } as React.CSSProperties}
     >
       <div
@@ -48,9 +57,21 @@ function CollectionItem({
           aria-hidden={!isActive}
         >
           <div className="collection-viewer__heading">
-            <span className="collection-viewer__plus" aria-hidden="true">
-              +
-            </span>
+            {canCollect && (
+              <button
+                type="button"
+                className="collection-viewer__plus"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCollect();
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                aria-label={`Add ${item.title} to your collection`}
+                tabIndex={isActive ? 0 : -1}
+              >
+                +
+              </button>
+            )}
             <p className="collection-viewer__title">{item.title}</p>
           </div>
           {'description' in item && item.description && (
@@ -79,11 +100,17 @@ function CollectionItem({
   );
 }
 
-function CollectionViewer({ collection, onClose }: CollectionViewerProps) {
+function CollectionViewer({
+  collection,
+  onClose,
+  onCollected,
+}: CollectionViewerProps) {
   const items = collection.content ?? [];
   const [activeIndex, setActiveIndex] = useState(0);
   const [overlayVisible, setOverlayVisible] = useState(false);
   const [contentVisible, setContentVisible] = useState(false);
+  const [collecting, setCollecting] = useState(false);
+  const [currentUser] = useState(() => getStoredUser());
   const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -109,6 +136,23 @@ function CollectionViewer({ collection, onClose }: CollectionViewerProps) {
     }
   };
 
+  const handleCollect = () => {
+    if (!currentUser || collecting) return;
+    const activeItem = items[activeIndex];
+    if (!activeItem) return;
+
+    setCollecting(true);
+    void collectItem(currentUser.id, activeItem._id, collection._id)
+      .then(() => {
+        onCollected?.();
+      })
+      .catch((error) => {
+        console.error('Failed to add item to collection', error);
+      });
+
+    window.setTimeout(() => onClose(), 900);
+  };
+
   return (
     <div
       ref={overlayRef}
@@ -128,7 +172,9 @@ function CollectionViewer({ collection, onClose }: CollectionViewerProps) {
           }`}
         >
           <div
-            className="collection-viewer__track"
+            className={`collection-viewer__track${
+              collecting ? ' collection-viewer__track--collecting' : ''
+            }`}
             style={{
               transform: `translateX(calc(-1 * (${activeIndex} + 0.5) * var(--cv-slot)))`,
             }}
@@ -139,6 +185,8 @@ function CollectionViewer({ collection, onClose }: CollectionViewerProps) {
                 item={item}
                 isActive={index === activeIndex}
                 onSelect={() => setActiveIndex(index)}
+                onCollect={handleCollect}
+                canCollect={Boolean(currentUser)}
                 animIndex={index}
               />
             ))}
