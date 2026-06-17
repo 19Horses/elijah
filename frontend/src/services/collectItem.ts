@@ -8,7 +8,7 @@ export type CollectedItem = {
 };
 
 export async function getCollectedItems(
-  userId: string,
+  userId: string
 ): Promise<CollectedItem[]> {
   const userRef = doc(db, 'users', userId);
   const snapshot = await getDoc(userRef);
@@ -19,7 +19,7 @@ export async function getCollectedItems(
 
 export async function hasCollectedFrom(
   userId: string,
-  collectionId: string,
+  collectionId: string
 ): Promise<boolean> {
   const collectedItems = await getCollectedItems(userId);
   return collectedItems.some((item) => item.collectedFrom === collectionId);
@@ -28,7 +28,7 @@ export async function hasCollectedFrom(
 export async function collectItem(
   userId: string,
   contentId: string,
-  collectionId: string,
+  collectionId: string
 ): Promise<void> {
   const userRef = doc(db, 'users', userId);
   const item: CollectedItem = {

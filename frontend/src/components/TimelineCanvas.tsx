@@ -97,7 +97,9 @@ function buildProcessedItems(items: MainTimelineItem[]): ProcessedItem[] {
   }));
 }
 
-function getEarliestCollectedAt(collectors: CollectedEntry['collectors']): number {
+function getEarliestCollectedAt(
+  collectors: CollectedEntry['collectors']
+): number {
   const times = collectors
     .map((collector) => new Date(collector.collectedAt).getTime())
     .filter((time) => !Number.isNaN(time));
@@ -198,7 +200,10 @@ function findTForX(curve: Bezier, targetX: number): number {
   return (lo + hi) / 2;
 }
 
-function splitBezier(curve: Bezier, t: number): { left: Bezier; right: Bezier } {
+function splitBezier(
+  curve: Bezier,
+  t: number
+): { left: Bezier; right: Bezier } {
   const [p0, p1, p2, p3] = curve;
   const p01 = lerpPoint(p0, p1, t);
   const p12 = lerpPoint(p1, p2, t);

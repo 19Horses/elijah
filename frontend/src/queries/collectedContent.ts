@@ -1,9 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getApiUrl } from '../sanityIntegration';
-import {
-  getAllCollectors,
-  type Collector,
-} from '../services/collectedContent';
+import { getAllCollectors, type Collector } from '../services/collectedContent';
 import { CONTENT_PROJECTION, type MainTimelineItem } from './mainTimeline';
 
 type SanityResponse<T> = {
@@ -16,7 +13,7 @@ export type CollectedEntry = {
 };
 
 export async function fetchContentByIds(
-  ids: string[],
+  ids: string[]
 ): Promise<MainTimelineItem[]> {
   if (ids.length === 0) return [];
 
