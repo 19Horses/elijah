@@ -1,11 +1,12 @@
 import { addDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
+import type { CollectedItem } from './collectItem';
 
 export type UserRecord = {
   email: string;
   username: string;
   colour: string;
-  collectedItems: Record<string, unknown>[];
+  collectedItems: CollectedItem[];
 };
 
 type CreateUserInput = {

@@ -40,6 +40,33 @@ export type MainTimelineData = {
   items: MainTimelineItem[];
 };
 
+export const CONTENT_PROJECTION = `_id,
+  _type,
+  date,
+  "created_at": _createdAt,
+  _type == "imageAsset" => {
+    title,
+    description,
+    image,
+    "imageUrl": image.asset->url,
+    "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
+  },
+  _type == "audioAsset" => {
+    title,
+    description,
+    image,
+    "imageUrl": image.asset->url,
+    "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio},
+    "audioUrl": audio.asset->url
+  },
+  _type == "newsletter" => {
+    title,
+    content,
+    image,
+    "imageUrl": image.asset->url,
+    "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
+  }`;
+
 const MAIN_TIMELINE_QUERY = `{
   "colour": *[_type == "mainTimeline"][0].colour,
   "items": (
@@ -47,32 +74,7 @@ const MAIN_TIMELINE_QUERY = `{
     unlockTime,
     expiryTime,
     ...content-> {
-      _id,
-      _type,
-      date,
-      "created_at": _createdAt,
-      _type == "imageAsset" => {
-        title,
-        description,
-        image,
-        "imageUrl": image.asset->url,
-        "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
-      },
-      _type == "audioAsset" => {
-        title,
-        description,
-        image,
-        "imageUrl": image.asset->url,
-        "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio},
-        "audioUrl": audio.asset->url
-      },
-      _type == "newsletter" => {
-        title,
-        content,
-        image,
-        "imageUrl": image.asset->url,
-        "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
-      }
+      ${CONTENT_PROJECTION}
     }
   }
 ) + (
@@ -119,6 +121,23 @@ export function formatMainTimelineDate(date: string | null): string {
     month: 'short',
     day: 'numeric',
   });
+}
+
+export function formatMainTimelineNow(date: Date = new Date()): {
+  date: string;
+  time: string;
+} {
+  return {
+    date: date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    }),
+    time: date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+    }),
+  };
 }
 
 export async function fetchMainTimeline(): Promise<MainTimelineData> {
