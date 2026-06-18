@@ -754,24 +754,11 @@ function TimelineCanvas({
         const mainHighlighted = hoveredMain !== -1 || mainConnectorHover;
 
         for (let index = 0; index < processed.length - 1; index++) {
-          const connectorDimmed =
-            highlightedType &&
-            !matchesHighlightedType(items[index]._type, highlightedType) &&
-            !matchesHighlightedType(items[index + 1]._type, highlightedType);
+          const connectorDimmed = Boolean(highlightedType);
 
           if (mainHighlighted) {
             mainCtx.shadowBlur = 16;
             mainCtx.shadowColor = hexToRgba(MAIN_GLOW_COLOUR, 0.55);
-          } else if (
-            highlightedType &&
-            (matchesHighlightedType(items[index]._type, highlightedType) ||
-              matchesHighlightedType(items[index + 1]._type, highlightedType))
-          ) {
-            mainCtx.shadowBlur = TYPE_HIGHLIGHT_BLUR;
-            mainCtx.shadowColor = hexToRgba(
-              getContentTypeColour(highlightedType),
-              0.55
-            );
           }
 
           if (connectorDimmed) {
@@ -899,23 +886,13 @@ function TimelineCanvas({
                   y: bounds[prevIndex].centerY,
                 }
               : { x: itemBounds.left, y: MAIN_LINE_Y };
-          const typeMatch = matchesHighlightedType(
-            item.contentType,
-            highlightedType
-          );
 
           if (item.rowIndex === hoveredRow) {
             collectedCtx.shadowBlur = 16;
             collectedCtx.shadowColor = hexToRgba(item.colour, 0.55);
-          } else if (typeMatch) {
-            collectedCtx.shadowBlur = TYPE_HIGHLIGHT_BLUR;
-            collectedCtx.shadowColor = hexToRgba(
-              getContentTypeColour(item.contentType),
-              0.55
-            );
           }
 
-          if (highlightedType && !typeMatch) {
+          if (highlightedType) {
             collectedCtx.globalAlpha = TYPE_DIM_ALPHA;
           }
 
