@@ -1,5 +1,6 @@
 import p5 from 'p5';
 import { useEffect, useRef } from 'react';
+import { getContentTypeColour } from '../constants/contentTypes';
 import type { CollectedUserRow } from '../queries/collectedContent';
 import {
   formatMainTimelineDate,
@@ -7,6 +8,7 @@ import {
   getMainTimelineImageUrl,
   type MainTimelineItem,
 } from '../queries/mainTimeline';
+import type { ContentType } from '../types/content';
 
 const ITEM_WIDTH = 130;
 const ITEM_GAP = 60;
@@ -27,16 +29,21 @@ const COLLECTED_ROW_HEIGHT = IMAGE_HEIGHT + 56;
 const CONNECTOR_HOVER_THRESHOLD = 6;
 const MAIN_USERNAME = 'dialE';
 const MAIN_GLOW_COLOUR = '#ff0000';
+const TYPE_DIM_ALPHA = 0.4;
+const TYPE_DIM_OVERLAY = 0.3;
+const TYPE_HIGHLIGHT_BLUR = 22;
 
 type TimelineCanvasProps = {
   items: MainTimelineItem[];
   collectedRows?: CollectedUserRow[];
   colour?: string | null;
+  highlightedType?: ContentType | null;
 };
 
 type ProcessedCollected = {
   imageUrl: string | null;
   dateLabel: string;
+  contentType: ContentType;
   title: string;
   aspectRatio: number;
   anchorTime: number;
@@ -48,6 +55,7 @@ type ProcessedCollected = {
 type ProcessedItem = {
   imageUrl: string | null;
   dateLabel: string;
+  contentType: ContentType;
   title: string;
   aspectRatio: number;
 };
@@ -98,6 +106,7 @@ function buildProcessedItems(items: MainTimelineItem[]): ProcessedItem[] {
   return items.map((item) => ({
     imageUrl: getMainTimelineImageUrl(item),
     dateLabel: formatMainTimelineDate(item.date),
+    contentType: item._type,
     title: item.title,
     aspectRatio: getItemAspectRatio(item),
   }));
@@ -117,6 +126,7 @@ function buildProcessedCollected(
         return {
           imageUrl: getMainTimelineImageUrl(item.content),
           dateLabel: formatMainTimelineDate(item.content.date),
+          contentType: item.content._type,
           title: item.content.title,
           aspectRatio: getItemAspectRatio(item.content),
           anchorTime: Number.isNaN(contentTime) ? Date.now() : contentTime,
@@ -293,6 +303,34 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+function matchesHighlightedType(
+  contentType: ContentType,
+  highlightedType: ContentType | null | undefined
+): boolean {
+  return Boolean(highlightedType && contentType === highlightedType);
+}
+
+function resetCanvasEffects(ctx: CanvasRenderingContext2D): void {
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+  ctx.shadowColor = 'rgba(0, 0, 0, 0)';
+}
+
+function drawDimOverlay(
+  p: p5,
+  ctx: CanvasRenderingContext2D,
+  left: number,
+  top: number,
+  width: number,
+  height: number
+): void {
+  p.fill(255);
+  p.noStroke();
+  ctx.globalAlpha = TYPE_DIM_OVERLAY;
+  p.rect(left, top, width, height);
+  resetCanvasEffects(ctx);
+}
+
 function getContrastText(hex: string): string {
   const value = hex.replace('#', '');
   if (value.length !== 6) {
@@ -428,9 +466,15 @@ function TimelineCanvas({
   items,
   collectedRows = [],
   colour,
+  highlightedType = null,
 }: TimelineCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const p5InstanceRef = useRef<p5 | null>(null);
+  const highlightedTypeRef = useRef<ContentType | null>(highlightedType);
+
+  useEffect(() => {
+    highlightedTypeRef.current = highlightedType ?? null;
+  }, [highlightedType]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -666,6 +710,7 @@ function TimelineCanvas({
       };
 
       p.draw = () => {
+        const highlightedType = highlightedTypeRef.current;
         p.background(backgroundColour);
 
         p.push();
@@ -709,10 +754,30 @@ function TimelineCanvas({
         const mainHighlighted = hoveredMain !== -1 || mainConnectorHover;
 
         for (let index = 0; index < processed.length - 1; index++) {
+          const connectorDimmed =
+            highlightedType &&
+            !matchesHighlightedType(items[index]._type, highlightedType) &&
+            !matchesHighlightedType(items[index + 1]._type, highlightedType);
+
           if (mainHighlighted) {
             mainCtx.shadowBlur = 16;
             mainCtx.shadowColor = hexToRgba(MAIN_GLOW_COLOUR, 0.55);
+          } else if (
+            highlightedType &&
+            (matchesHighlightedType(items[index]._type, highlightedType) ||
+              matchesHighlightedType(items[index + 1]._type, highlightedType))
+          ) {
+            mainCtx.shadowBlur = TYPE_HIGHLIGHT_BLUR;
+            mainCtx.shadowColor = hexToRgba(
+              getContentTypeColour(highlightedType),
+              0.55
+            );
           }
+
+          if (connectorDimmed) {
+            mainCtx.globalAlpha = TYPE_DIM_ALPHA;
+          }
+
           drawCurvedConnector(
             p,
             { x: bounds[index].right, y: bounds[index].centerY },
@@ -721,17 +786,30 @@ function TimelineCanvas({
             isFutureDatedItem(items[index + 1]),
             lineWorldX
           );
-          mainCtx.shadowBlur = 0;
-          mainCtx.shadowColor = 'rgba(0, 0, 0, 0)';
+          resetCanvasEffects(mainCtx);
         }
 
         processed.forEach((item, index) => {
           const { left, top, width, height } = bounds[index];
           const img = loadedImages[index];
+          const typeMatch = matchesHighlightedType(
+            item.contentType,
+            highlightedType
+          );
 
           if (mainHighlighted) {
             mainCtx.shadowBlur = 22;
             mainCtx.shadowColor = hexToRgba(MAIN_GLOW_COLOUR, 0.45);
+          } else if (typeMatch) {
+            mainCtx.shadowBlur = TYPE_HIGHLIGHT_BLUR;
+            mainCtx.shadowColor = hexToRgba(
+              getContentTypeColour(item.contentType),
+              0.55
+            );
+          }
+
+          if (highlightedType && !typeMatch) {
+            mainCtx.globalAlpha = TYPE_DIM_ALPHA;
           }
 
           if (img) {
@@ -749,13 +827,20 @@ function TimelineCanvas({
             }
           }
 
-          mainCtx.shadowBlur = 0;
-          mainCtx.shadowColor = 'rgba(0, 0, 0, 0)';
+          resetCanvasEffects(mainCtx);
+
+          if (highlightedType && !typeMatch) {
+            drawDimOverlay(p, mainCtx, left, top, width, height);
+          }
 
           p.fill(17);
           p.noStroke();
           p.textAlign(p.CENTER, p.TOP);
+          if (highlightedType && !typeMatch) {
+            mainCtx.globalAlpha = TYPE_DIM_ALPHA;
+          }
           p.text(item.dateLabel, left + width / 2, top + height + 12);
+          resetCanvasEffects(mainCtx);
         });
 
         const collectedBounds = getCollectedBounds();
@@ -814,29 +899,57 @@ function TimelineCanvas({
                   y: bounds[prevIndex].centerY,
                 }
               : { x: itemBounds.left, y: MAIN_LINE_Y };
+          const typeMatch = matchesHighlightedType(
+            item.contentType,
+            highlightedType
+          );
 
           if (item.rowIndex === hoveredRow) {
             collectedCtx.shadowBlur = 16;
             collectedCtx.shadowColor = hexToRgba(item.colour, 0.55);
+          } else if (typeMatch) {
+            collectedCtx.shadowBlur = TYPE_HIGHLIGHT_BLUR;
+            collectedCtx.shadowColor = hexToRgba(
+              getContentTypeColour(item.contentType),
+              0.55
+            );
           }
+
+          if (highlightedType && !typeMatch) {
+            collectedCtx.globalAlpha = TYPE_DIM_ALPHA;
+          }
+
           drawBranchConnector(
             p,
             fromPoint,
             { x: itemBounds.left, y: itemBounds.centerY },
             item.colour
           );
-          collectedCtx.shadowBlur = 0;
-          collectedCtx.shadowColor = 'rgba(0, 0, 0, 0)';
+          resetCanvasEffects(collectedCtx);
         });
 
         processedCollected.forEach((item, index) => {
           const { left, top, width, height } = collectedBounds[index];
           const img = loadedCollectedImages[index];
           const isHovered = item.rowIndex === hoveredRow;
+          const typeMatch = matchesHighlightedType(
+            item.contentType,
+            highlightedType
+          );
 
           if (isHovered) {
             collectedCtx.shadowBlur = 22;
             collectedCtx.shadowColor = hexToRgba(item.colour, 0.45);
+          } else if (typeMatch) {
+            collectedCtx.shadowBlur = TYPE_HIGHLIGHT_BLUR;
+            collectedCtx.shadowColor = hexToRgba(
+              getContentTypeColour(item.contentType),
+              0.55
+            );
+          }
+
+          if (highlightedType && !typeMatch) {
+            collectedCtx.globalAlpha = TYPE_DIM_ALPHA;
           }
 
           if (img) {
@@ -854,13 +967,20 @@ function TimelineCanvas({
             }
           }
 
-          collectedCtx.shadowBlur = 0;
-          collectedCtx.shadowColor = 'rgba(0, 0, 0, 0)';
+          resetCanvasEffects(collectedCtx);
+
+          if (highlightedType && !typeMatch) {
+            drawDimOverlay(p, collectedCtx, left, top, width, height);
+          }
 
           p.fill(17);
           p.noStroke();
           p.textAlign(p.CENTER, p.TOP);
+          if (highlightedType && !typeMatch) {
+            collectedCtx.globalAlpha = TYPE_DIM_ALPHA;
+          }
           p.text(item.dateLabel, left + width / 2, top + height + 12);
+          resetCanvasEffects(collectedCtx);
         });
 
         p.pop();

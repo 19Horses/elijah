@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import CollectionCountdown from '../components/CollectionCountdown';
 import CollectionViewer from '../components/CollectionViewer';
+import ContentLegend from '../components/ContentLegend';
 import TimelineCanvas from '../components/TimelineCanvas';
 import UserCard from '../components/UserCard';
 import { useCollectedTimeline } from '../queries/collectedContent';
@@ -9,6 +10,7 @@ import { useCollections } from '../queries/collection';
 import { useMainTimeline } from '../queries/mainTimeline';
 import { hasCollectedFrom } from '../services/collectItem';
 import { getStoredUser } from '../services/userStorage';
+import type { ContentType } from '../types/content';
 
 function Home() {
   const queryClient = useQueryClient();
@@ -20,6 +22,9 @@ function Home() {
   const [alreadyCollected, setAlreadyCollected] = useState(false);
   const [statusChecked, setStatusChecked] = useState(false);
   const [collectedSignal, setCollectedSignal] = useState(0);
+  const [highlightedType, setHighlightedType] = useState<ContentType | null>(
+    null
+  );
 
   const activeCollection = collections?.[0] ?? null;
 
@@ -74,6 +79,7 @@ function Home() {
         items={timeline.items}
         collectedRows={collectedRows}
         colour={timeline.colour}
+        highlightedType={highlightedType}
       />
       {statusChecked && activeCollection && !alreadyCollected && (
         <CollectionCountdown
@@ -89,6 +95,10 @@ function Home() {
         />
       )}
       <UserCard refreshSignal={collectedSignal} />
+      <ContentLegend
+        highlightedType={highlightedType}
+        onHighlight={setHighlightedType}
+      />
     </section>
   );
 }
