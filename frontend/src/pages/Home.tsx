@@ -14,7 +14,7 @@ function Home() {
   const queryClient = useQueryClient();
   const { data: timeline, isLoading, error } = useMainTimeline();
   const { data: collections } = useCollections();
-  const { data: collectedItems, isLoading: isCollectedLoading } =
+  const { data: collectedRows, isLoading: isCollectedLoading } =
     useCollectedTimeline();
   const [viewerOpen, setViewerOpen] = useState(false);
   const [alreadyCollected, setAlreadyCollected] = useState(false);
@@ -72,7 +72,7 @@ function Home() {
     <section className="home">
       <TimelineCanvas
         items={timeline.items}
-        collectedItems={collectedItems}
+        collectedRows={collectedRows}
         colour={timeline.colour}
       />
       {statusChecked && activeCollection && !alreadyCollected && (

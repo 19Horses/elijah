@@ -1,15 +1,22 @@
 import { useQuery } from '@tanstack/react-query';
 import { getApiUrl } from '../sanityIntegration';
-import { getAllCollectors, type Collector } from '../services/collectedContent';
+import { getUserCollections } from '../services/collectedContent';
 import { CONTENT_PROJECTION, type MainTimelineItem } from './mainTimeline';
 
 type SanityResponse<T> = {
   result: T;
 };
 
-export type CollectedEntry = {
+export type CollectedRowItem = {
   content: MainTimelineItem;
-  collectors: Collector[];
+  collectedAt: string;
+};
+
+export type CollectedUserRow = {
+  userId: string;
+  username: string;
+  colour: string;
+  items: CollectedRowItem[];
 };
 
 export async function fetchContentByIds(
@@ -31,20 +38,32 @@ export async function fetchContentByIds(
   return data.result ?? [];
 }
 
-async function fetchCollectedTimeline(): Promise<CollectedEntry[]> {
-  const groups = await getAllCollectors();
-  const ids = groups.map((group) => group.id);
+async function fetchCollectedTimeline(): Promise<CollectedUserRow[]> {
+  const users = await getUserCollections();
+  const ids = Array.from(
+    new Set(users.flatMap((user) => user.items.map((item) => item.id)))
+  );
   const content = await fetchContentByIds(ids);
 
   const contentById = new Map(content.map((item) => [item._id, item]));
 
-  return groups
-    .map((group) => {
-      const item = contentById.get(group.id);
-      if (!item) return null;
-      return { content: item, collectors: group.collectors };
+  return users
+    .map((user) => {
+      const items = user.items
+        .map((item) => {
+          const matched = contentById.get(item.id);
+          if (!matched) return null;
+          return { content: matched, collectedAt: item.collectedAt };
+        })
+        .filter((item): item is CollectedRowItem => item !== null);
+      return {
+        userId: user.userId,
+        username: user.username,
+        colour: user.colour,
+        items,
+      };
     })
-    .filter((entry): entry is CollectedEntry => entry !== null);
+    .filter((row) => row.items.length > 0);
 }
 
 export function useCollectedTimeline() {

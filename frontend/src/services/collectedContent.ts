@@ -3,21 +3,18 @@ import { db } from '../firebase';
 import { DEFAULT_COLOUR } from './userColor';
 import type { CollectedItem } from './collectItem';
 
-export type Collector = {
+export type UserCollection = {
+  userId: string;
+  username: string;
   colour: string;
-  collectedAt: string;
+  items: CollectedItem[];
 };
 
-export type CollectorGroup = {
-  id: string;
-  collectors: Collector[];
-};
-
-export async function getAllCollectors(): Promise<CollectorGroup[]> {
+export async function getUserCollections(): Promise<UserCollection[]> {
   const usersRef = collection(db, 'users');
   const snapshot = await getDocs(usersRef);
 
-  const groups = new Map<string, Collector[]>();
+  const rows: UserCollection[] = [];
 
   snapshot.forEach((userDoc) => {
     const data = userDoc.data();
@@ -25,19 +22,16 @@ export async function getAllCollectors(): Promise<CollectorGroup[]> {
       typeof data.colour === 'string' && data.colour
         ? data.colour
         : DEFAULT_COLOUR;
+    const username =
+      typeof data.username === 'string' ? data.username : 'Anonymous';
     const collectedItems =
       (data.collectedItems as CollectedItem[] | undefined) ?? [];
+    const items = collectedItems.filter((item) => item?.id);
 
-    collectedItems.forEach((item) => {
-      if (!item?.id) return;
-      const collectors = groups.get(item.id) ?? [];
-      collectors.push({ colour, collectedAt: item.collectedAt });
-      groups.set(item.id, collectors);
-    });
+    if (items.length === 0) return;
+
+    rows.push({ userId: userDoc.id, username, colour, items });
   });
 
-  return Array.from(groups.entries()).map(([id, collectors]) => ({
-    id,
-    collectors,
-  }));
+  return rows;
 }
