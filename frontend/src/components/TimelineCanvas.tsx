@@ -10,22 +10,22 @@ import {
 } from '../queries/mainTimeline';
 import type { ContentType } from '../types/content';
 
-const ITEM_WIDTH = 130;
-const ITEM_GAP = 60;
-const IMAGE_HEIGHT = 104;
+const ITEM_WIDTH = 180;
+const ITEM_GAP = 140;
+const IMAGE_HEIGHT = 144;
 const PADDING_X = 48;
 const PADDING_Y = 48;
 const DATE_OFFSET = 24;
 const DOT_RADIUS = 3;
 const DEFAULT_BACKGROUND = '#ffffff';
 const DRAG_THRESHOLD = 5;
-const TODAY_LINE_RATIO = 0.7;
+const EDGE_MARGIN = 3;
 const TODAY_LABEL_BOTTOM_OFFSET = 24;
 const TODAY_LABEL_GAP = 8;
-const LANE_GAP = 110;
+const LANE_GAP = 50;
 const MAIN_LINE_Y = PADDING_Y + IMAGE_HEIGHT / 2;
 const COLLECTED_LANE_TOP = PADDING_Y + IMAGE_HEIGHT + LANE_GAP;
-const COLLECTED_ROW_HEIGHT = IMAGE_HEIGHT + 56;
+const COLLECTED_ROW_HEIGHT = IMAGE_HEIGHT + 30;
 const CONNECTOR_HOVER_THRESHOLD = 6;
 const MAIN_USERNAME = 'dialE';
 const MAIN_GLOW_COLOUR = '#ff0000';
@@ -182,9 +182,10 @@ function screenToWorld(
   x: number,
   y: number,
   cameraX: number,
-  cameraY: number
+  cameraY: number,
+  zoom: number
 ): { x: number; y: number } {
-  return { x: x + cameraX, y: y + cameraY };
+  return { x: x / zoom + cameraX, y: y / zoom + cameraY };
 }
 
 type Bezier = [ConnectorPoint, ConnectorPoint, ConnectorPoint, ConnectorPoint];
@@ -285,11 +286,6 @@ function drawCurvedConnector(
   } else {
     drawBezierSegment(p, curve, startFuture || endFuture);
   }
-
-  p.fill(17);
-  p.noStroke();
-  p.circle(from.x, from.y, DOT_RADIUS * 2);
-  p.circle(to.x, to.y, DOT_RADIUS * 2);
 }
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -386,12 +382,31 @@ function drawUserLabel(
   p.textStyle(p.NORMAL);
 }
 
-function getBranchCurve(from: ConnectorPoint, to: ConnectorPoint): Bezier {
-  const handleX = Math.max(32, Math.abs(to.x - from.x) * 0.4);
+type BranchLine = [
+  ConnectorPoint,
+  ConnectorPoint,
+  ConnectorPoint,
+  ConnectorPoint,
+];
+
+const BRANCH_HORIZONTAL_STUB = 16;
+
+function getBranchPoints(from: ConnectorPoint, to: ConnectorPoint): BranchLine {
+  // Vertical stub out of the main item's bottom, a fixed 45° diagonal across,
+  // then a horizontal stub into the branched item's side.
+  const dirX = Math.sign(to.x - from.x) || 1;
+  const dirY = Math.sign(to.y - from.y) || 1;
+  const adx = Math.abs(to.x - from.x);
+  const ady = Math.abs(to.y - from.y);
+  // 45° diagonal spans equal horizontal and vertical distance; whatever is left
+  // over becomes the straight vertical (top) and horizontal (bottom) stubs.
+  const diag = Math.max(0, Math.min(adx - BRANCH_HORIZONTAL_STUB, ady));
+  const vStub = ady - diag;
+  const elbowY = from.y + dirY * vStub;
   return [
     { x: from.x, y: from.y },
-    { x: from.x + handleX, y: from.y },
-    { x: to.x - handleX, y: to.y },
+    { x: from.x, y: elbowY },
+    { x: from.x + dirX * diag, y: elbowY + dirY * diag },
     { x: to.x, y: to.y },
   ];
 }
@@ -433,6 +448,33 @@ function distanceToCurve(curve: Bezier, point: ConnectorPoint): number {
   return min;
 }
 
+function distanceToSegment(
+  point: ConnectorPoint,
+  a: ConnectorPoint,
+  b: ConnectorPoint
+): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lengthSq = dx * dx + dy * dy;
+  if (lengthSq === 0) {
+    return Math.hypot(point.x - a.x, point.y - a.y);
+  }
+  let t = ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(point.x - (a.x + t * dx), point.y - (a.y + t * dy));
+}
+
+function distanceToPolyline(
+  points: ConnectorPoint[],
+  point: ConnectorPoint
+): number {
+  let min = Infinity;
+  for (let i = 0; i < points.length - 1; i++) {
+    min = Math.min(min, distanceToSegment(point, points[i], points[i + 1]));
+  }
+  return min;
+}
+
 function drawBranchConnector(
   p: p5,
   from: ConnectorPoint,
@@ -440,26 +482,28 @@ function drawBranchConnector(
   colour: string
 ): void {
   const ctx = p.drawingContext as CanvasRenderingContext2D;
-  const curve = getBranchCurve(from, to);
+  const points = getBranchPoints(from, to);
   ctx.setLineDash([]);
   p.stroke(colour);
   p.strokeWeight(1);
   p.noFill();
-  p.bezier(
-    curve[0].x,
-    curve[0].y,
-    curve[1].x,
-    curve[1].y,
-    curve[2].x,
-    curve[2].y,
-    curve[3].x,
-    curve[3].y
-  );
+  p.beginShape();
+  points.forEach((point) => p.vertex(point.x, point.y));
+  p.endShape();
+}
 
-  p.fill(colour);
+function drawDot(p: p5, x: number, y: number, colour: string): void {
+  const ctx = p.drawingContext as CanvasRenderingContext2D;
   p.noStroke();
-  p.circle(from.x, from.y, DOT_RADIUS * 2);
-  p.circle(to.x, to.y, DOT_RADIUS * 2);
+  p.fill(colour);
+  p.circle(x, y, DOT_RADIUS * 2);
+
+  // White centre — drawn without the surrounding glow.
+  const prevBlur = ctx.shadowBlur;
+  ctx.shadowBlur = 0;
+  p.fill(255);
+  p.circle(x, y, DOT_RADIUS);
+  ctx.shadowBlur = prevBlur;
 }
 
 function TimelineCanvas({
@@ -498,6 +542,7 @@ function TimelineCanvas({
     let pressY = 0;
     let cameraX = 0;
     let cameraY = 0;
+    let zoom = 1;
 
     const sketch = (p: p5) => {
       const loadedImages: (p5.Image | null)[] = new Array(
@@ -546,10 +591,10 @@ function TimelineCanvas({
         if (!Number.isNaN(tPrev) && !Number.isNaN(tNext) && tNext > tPrev) {
           frac = (targetTime - tPrev) / (tNext - tPrev);
         }
-        return (
-          slotCenterX(prev) +
-          frac * (slotCenterX(firstFuture) - slotCenterX(prev))
-        );
+        const bounds = getAllBounds();
+        const gapStart = bounds[prev].right;
+        const gapEnd = bounds[firstFuture].left;
+        return gapStart + frac * (gapEnd - gapStart);
       };
 
       const getNowWorldX = () => timeToWorldX(Date.now());
@@ -558,7 +603,7 @@ function TimelineCanvas({
         if (processed.length === 0) {
           return -1;
         }
-        let prevIndex = 0;
+        let prevIndex = -1;
         for (let index = 0; index < items.length; index++) {
           const date = items[index].date;
           const time = date ? new Date(date).getTime() : Number.NaN;
@@ -567,6 +612,34 @@ function TimelineCanvas({
           }
         }
         return prevIndex;
+      };
+
+      const getBranchEndpoints = (
+        anchorTime: number,
+        itemBounds: ContentBounds,
+        mainBounds: ContentBounds[]
+      ): { from: ConnectorPoint; to: ConnectorPoint } => {
+        if (mainBounds.length === 0) {
+          return {
+            from: { x: itemBounds.left, y: MAIN_LINE_Y },
+            to: { x: itemBounds.left, y: itemBounds.centerY },
+          };
+        }
+        // Drop from the bottom edge of the nearest main item (the previous one,
+        // or the first item if the branch predates the whole timeline), and meet
+        // the branched item on whichever side faces that main item.
+        const prevIndex = getPreviousMainIndex(anchorTime);
+        const main = mainBounds[prevIndex >= 0 ? prevIndex : 0];
+        const fromX = (main.left + main.right) / 2;
+        const itemCenterX = (itemBounds.left + itemBounds.right) / 2;
+        const to =
+          fromX <= itemCenterX
+            ? { x: itemBounds.left, y: itemBounds.centerY }
+            : { x: itemBounds.right, y: itemBounds.centerY };
+        return {
+          from: { x: fromX, y: main.top + main.height },
+          to,
+        };
       };
 
       const getCollectedBounds = (): ContentBounds[] => {
@@ -612,30 +685,28 @@ function TimelineCanvas({
         return bounds;
       };
 
-      const positionCameraToToday = () => {
-        cameraX = getNowWorldX() - p.width * TODAY_LINE_RATIO;
-        const bounds = getAllBounds();
-        if (bounds.length === 0) {
-          cameraY = 0;
-          return;
+      const fitView = () => {
+        // Zoom so the full horizontal extent of the timeline (main items plus
+        // any branched items) fits the viewport with EDGE_MARGIN px either side.
+        let minX = Infinity;
+        let maxX = -Infinity;
+        [...getAllBounds(), ...getCollectedBounds()].forEach((b) => {
+          minX = Math.min(minX, b.left);
+          maxX = Math.max(maxX, b.right);
+        });
+
+        if (Number.isFinite(minX) && maxX > minX) {
+          zoom = (p.width - 2 * EDGE_MARGIN) / (maxX - minX);
+          cameraX = minX - EDGE_MARGIN / zoom;
+        } else {
+          zoom = 1;
+          cameraX = 0;
         }
-        const first = bounds[0];
-        const rowCount =
-          processedCollected.length > 0
-            ? Math.max(...processedCollected.map((item) => item.rowIndex)) + 1
-            : 0;
-        const laneCenterY =
-          rowCount > 0
-            ? (MAIN_LINE_Y +
-                COLLECTED_LANE_TOP +
-                (rowCount * COLLECTED_ROW_HEIGHT) / 2) /
-              2
-            : (first.top + first.dateBottom) / 2;
-        cameraY = laneCenterY - p.height / 2;
+        cameraY = MAIN_LINE_Y - p.height / (2 * zoom);
       };
 
       const drawTodayLine = () => {
-        const lineX = p.width * TODAY_LINE_RATIO;
+        const lineX = (getNowWorldX() - cameraX) * zoom;
         const ctx = p.drawingContext as CanvasRenderingContext2D;
 
         ctx.setLineDash([]);
@@ -669,7 +740,7 @@ function TimelineCanvas({
         p.createCanvas(window.innerWidth, window.innerHeight);
         p.cursor('crosshair');
         p.textSize(12);
-        positionCameraToToday();
+        fitView();
 
         processed.forEach((item, index) => {
           if (!item.imageUrl) {
@@ -706,7 +777,7 @@ function TimelineCanvas({
 
       p.windowResized = () => {
         p.resizeCanvas(window.innerWidth, window.innerHeight);
-        positionCameraToToday();
+        fitView();
       };
 
       p.draw = () => {
@@ -714,12 +785,19 @@ function TimelineCanvas({
         p.background(backgroundColour);
 
         p.push();
+        p.scale(zoom);
         p.translate(-cameraX, -cameraY);
 
         const bounds = getAllBounds();
-        const lineWorldX = cameraX + p.width * TODAY_LINE_RATIO;
+        const lineWorldX = getNowWorldX();
         const mainCtx = p.drawingContext as CanvasRenderingContext2D;
-        const mouseWorld = screenToWorld(p.mouseX, p.mouseY, cameraX, cameraY);
+        const mouseWorld = screenToWorld(
+          p.mouseX,
+          p.mouseY,
+          cameraX,
+          cameraY,
+          zoom
+        );
 
         let hoveredMain = -1;
         for (let index = processed.length - 1; index >= 0; index--) {
@@ -853,17 +931,14 @@ function TimelineCanvas({
           for (let index = processedCollected.length - 1; index >= 0; index--) {
             const item = processedCollected[index];
             const itemBounds = collectedBounds[index];
-            const prevIndex = getPreviousMainIndex(item.anchorTime);
-            const fromPoint =
-              prevIndex >= 0
-                ? { x: bounds[prevIndex].right, y: bounds[prevIndex].centerY }
-                : { x: itemBounds.left, y: MAIN_LINE_Y };
-            const curve = getBranchCurve(fromPoint, {
-              x: itemBounds.left,
-              y: itemBounds.centerY,
-            });
+            const { from: fromPoint, to: toPoint } = getBranchEndpoints(
+              item.anchorTime,
+              itemBounds,
+              bounds
+            );
+            const line = getBranchPoints(fromPoint, toPoint);
             if (
-              distanceToCurve(curve, mouseWorld) <= CONNECTOR_HOVER_THRESHOLD
+              distanceToPolyline(line, mouseWorld) <= CONNECTOR_HOVER_THRESHOLD
             ) {
               hoveredCollected = index;
               break;
@@ -878,14 +953,11 @@ function TimelineCanvas({
 
         processedCollected.forEach((item, index) => {
           const itemBounds = collectedBounds[index];
-          const prevIndex = getPreviousMainIndex(item.anchorTime);
-          const fromPoint =
-            prevIndex >= 0
-              ? {
-                  x: bounds[prevIndex].right,
-                  y: bounds[prevIndex].centerY,
-                }
-              : { x: itemBounds.left, y: MAIN_LINE_Y };
+          const { from: fromPoint, to: toPoint } = getBranchEndpoints(
+            item.anchorTime,
+            itemBounds,
+            bounds
+          );
 
           if (item.rowIndex === hoveredRow) {
             collectedCtx.shadowBlur = 16;
@@ -896,12 +968,7 @@ function TimelineCanvas({
             collectedCtx.globalAlpha = TYPE_DIM_ALPHA;
           }
 
-          drawBranchConnector(
-            p,
-            fromPoint,
-            { x: itemBounds.left, y: itemBounds.centerY },
-            item.colour
-          );
+          drawBranchConnector(p, fromPoint, toPoint, item.colour);
           resetCanvasEffects(collectedCtx);
         });
 
@@ -960,6 +1027,44 @@ function TimelineCanvas({
           resetCanvasEffects(collectedCtx);
         });
 
+        // Connector dots, drawn on top of every image so they stay visible.
+        for (let index = 0; index < processed.length - 1; index++) {
+          if (mainHighlighted) {
+            mainCtx.shadowBlur = 16;
+            mainCtx.shadowColor = hexToRgba(MAIN_GLOW_COLOUR, 0.55);
+          }
+          if (highlightedType) {
+            mainCtx.globalAlpha = TYPE_DIM_ALPHA;
+          }
+          drawDot(p, bounds[index].right, bounds[index].centerY, '#111111');
+          drawDot(
+            p,
+            bounds[index + 1].left,
+            bounds[index + 1].centerY,
+            '#111111'
+          );
+          resetCanvasEffects(mainCtx);
+        }
+
+        processedCollected.forEach((item, index) => {
+          const itemBounds = collectedBounds[index];
+          const { from: fromPoint, to: toPoint } = getBranchEndpoints(
+            item.anchorTime,
+            itemBounds,
+            bounds
+          );
+          if (item.rowIndex === hoveredRow) {
+            collectedCtx.shadowBlur = 16;
+            collectedCtx.shadowColor = hexToRgba(item.colour, 0.55);
+          }
+          if (highlightedType) {
+            collectedCtx.globalAlpha = TYPE_DIM_ALPHA;
+          }
+          drawDot(p, fromPoint.x, fromPoint.y, item.colour);
+          drawDot(p, toPoint.x, toPoint.y, item.colour);
+          resetCanvasEffects(collectedCtx);
+        });
+
         p.pop();
 
         drawTodayLine();
@@ -997,7 +1102,7 @@ function TimelineCanvas({
         }
         pressX = p.mouseX;
         pressY = p.mouseY;
-        const world = screenToWorld(pressX, pressY, cameraX, cameraY);
+        const world = screenToWorld(pressX, pressY, cameraX, cameraY, zoom);
         const bounds = getAllBounds();
 
         for (let index = processed.length - 1; index >= 0; index--) {
@@ -1035,7 +1140,7 @@ function TimelineCanvas({
           return;
         }
 
-        const world = screenToWorld(p.mouseX, p.mouseY, cameraX, cameraY);
+        const world = screenToWorld(p.mouseX, p.mouseY, cameraX, cameraY, zoom);
 
         if (dragLane === 'collected') {
           const current = getCollectedBounds()[dragIndex];
@@ -1065,7 +1170,7 @@ function TimelineCanvas({
         let newLeft = world.x - dragPointerOffsetX;
         const newTop = world.y - dragPointerOffsetY;
 
-        const lineWorldX = cameraX + p.width * TODAY_LINE_RATIO;
+        const lineWorldX = getNowWorldX();
         if (isFutureDatedItem(items[dragIndex])) {
           newLeft = Math.max(newLeft, lineWorldX);
         } else {
@@ -1080,6 +1185,13 @@ function TimelineCanvas({
 
       p.mouseReleased = () => {
         dragLane = null;
+      };
+
+      p.mouseWheel = (event?: WheelEvent) => {
+        if (event) {
+          cameraY += (event as WheelEvent & { delta: number }).delta / zoom;
+        }
+        return false;
       };
     };
 
