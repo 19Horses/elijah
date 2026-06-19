@@ -41,6 +41,15 @@ const MIN_ZOOM_FACTOR = 0.25;
 const MAX_ZOOM_FACTOR = 4;
 const MAX_VISIBLE_COLLECTOR_LABELS = 3;
 const OTHERS_LABEL_BG = '#9ca3af';
+const HIGHLIGHT_FADE_OUT_LERP = 0.08;
+const HIGHLIGHT_FADE_SNAP = 0.01;
+const LOAD_INITIAL_DELAY_MS = 120;
+const LOAD_IMAGE_STAGGER_MS = 80;
+const LOAD_IMAGE_FADE_MS = 450;
+const LOAD_CONNECTOR_DELAY_MS = 180;
+const LOAD_CONNECTOR_STAGGER_MS = 45;
+const LOAD_CONNECTOR_FADE_MS = 400;
+const LOAD_ALPHA_SNAP = 0.01;
 
 type TimelineCanvasProps = {
   items: MainTimelineItem[];
@@ -348,17 +357,41 @@ function resetCanvasEffects(ctx: CanvasRenderingContext2D): void {
   ctx.shadowColor = 'rgba(0, 0, 0, 0)';
 }
 
+function getTypeDimAlpha(strength: number): number {
+  return 1 - strength * (1 - TYPE_DIM_ALPHA);
+}
+
+function getStaggeredLoadAlpha(
+  elapsedMs: number,
+  index: number,
+  fadeMs: number,
+  staggerMs: number,
+  baseDelayMs = LOAD_INITIAL_DELAY_MS
+): number {
+  const start = baseDelayMs + index * staggerMs;
+  if (elapsedMs <= start) {
+    return 0;
+  }
+  const t = Math.min(1, (elapsedMs - start) / fadeMs);
+  return 1 - (1 - t) ** 3;
+}
+
+function getCombinedAlpha(loadAlpha: number, effectAlpha = 1): number {
+  return loadAlpha * effectAlpha;
+}
+
 function drawDimOverlay(
   p: p5,
   ctx: CanvasRenderingContext2D,
   left: number,
   top: number,
   width: number,
-  height: number
+  height: number,
+  strength = 1
 ): void {
   p.fill(255);
   p.noStroke();
-  ctx.globalAlpha = TYPE_DIM_OVERLAY;
+  ctx.globalAlpha = TYPE_DIM_OVERLAY * strength;
   p.rect(left, top, width, height);
   resetCanvasEffects(ctx);
 }
@@ -676,6 +709,26 @@ function TimelineCanvas({
     let animationStartScreenX = 0;
     let animationStartScreenY = 0;
     let animationStartZoom = 1;
+    let activeHighlightType: ContentType | null = null;
+    let highlightStrength = 0;
+    let loadStartMs = 0;
+
+    const updateHighlightFade = () => {
+      const targetType = highlightedTypeRef.current;
+      if (targetType) {
+        activeHighlightType = targetType;
+        highlightStrength = 1;
+        return;
+      }
+
+      if (highlightStrength <= HIGHLIGHT_FADE_SNAP) {
+        highlightStrength = 0;
+        activeHighlightType = null;
+        return;
+      }
+
+      highlightStrength += (0 - highlightStrength) * HIGHLIGHT_FADE_OUT_LERP;
+    };
 
     const sketch = (p: p5) => {
       const loadedImages: (p5.Image | null)[] = new Array(
@@ -1037,10 +1090,15 @@ function TimelineCanvas({
         viewAnimating = true;
       };
 
-      const drawTodayLine = () => {
+      const drawTodayLine = (alpha = 1) => {
+        if (alpha <= LOAD_ALPHA_SNAP) {
+          return;
+        }
+
         const lineX = (getNowWorldX() - cameraX) * zoom;
         const ctx = p.drawingContext as CanvasRenderingContext2D;
 
+        ctx.globalAlpha = alpha;
         ctx.setLineDash([]);
         p.stroke(210);
         p.strokeWeight(0.75);
@@ -1055,6 +1113,7 @@ function TimelineCanvas({
         p.text(date, lineX - TODAY_LABEL_GAP, labelY);
         p.textAlign(p.LEFT, p.BOTTOM);
         p.text(time, lineX + TODAY_LABEL_GAP, labelY);
+        resetCanvasEffects(ctx);
       };
 
       const isFutureDatedItem = (item: MainTimelineItem | undefined) => {
@@ -1073,6 +1132,7 @@ function TimelineCanvas({
         p.cursor('crosshair');
         p.textSize(12);
         fitView();
+        loadStartMs = p.millis();
 
         processed.forEach((item, index) => {
           if (!item.imageUrl) {
@@ -1119,8 +1179,52 @@ function TimelineCanvas({
 
       p.draw = () => {
         animateView();
+        updateHighlightFade();
 
-        const highlightedType = highlightedTypeRef.current;
+        const highlightedType = activeHighlightType;
+        const typeHighlightStrength = highlightStrength;
+        const isTypeHighlightActive =
+          typeHighlightStrength > HIGHLIGHT_FADE_SNAP && highlightedType !== null;
+        const dimAlpha = getTypeDimAlpha(typeHighlightStrength);
+        const elapsed = p.millis() - loadStartMs;
+        const totalImages = processed.length + processedCollected.length;
+        const connectorBaseStart =
+          LOAD_INITIAL_DELAY_MS +
+          Math.max(0, totalImages - 1) * LOAD_IMAGE_STAGGER_MS +
+          LOAD_CONNECTOR_DELAY_MS;
+        const collectedConnectorBaseStart =
+          connectorBaseStart +
+          Math.max(0, processed.length - 1) * LOAD_CONNECTOR_STAGGER_MS;
+        const getImageLoadAlpha = (imageIndex: number) =>
+          getStaggeredLoadAlpha(
+            elapsed,
+            imageIndex,
+            LOAD_IMAGE_FADE_MS,
+            LOAD_IMAGE_STAGGER_MS
+          );
+        const getMainConnectorLoadAlpha = (connectorIndex: number) =>
+          getStaggeredLoadAlpha(
+            elapsed,
+            connectorIndex,
+            LOAD_CONNECTOR_FADE_MS,
+            LOAD_CONNECTOR_STAGGER_MS,
+            connectorBaseStart
+          );
+        const getCollectedConnectorLoadAlpha = (connectorIndex: number) =>
+          getStaggeredLoadAlpha(
+            elapsed,
+            connectorIndex,
+            LOAD_CONNECTOR_FADE_MS,
+            LOAD_CONNECTOR_STAGGER_MS,
+            collectedConnectorBaseStart
+          );
+        const todayLineAlpha = getStaggeredLoadAlpha(
+          elapsed,
+          0,
+          LOAD_CONNECTOR_FADE_MS,
+          0,
+          connectorBaseStart
+        );
         p.background(backgroundColour);
 
         p.push();
@@ -1171,15 +1275,25 @@ function TimelineCanvas({
         const mainHighlighted = hoveredMain !== -1 || mainConnectorHover;
 
         for (let index = 0; index < processed.length - 1; index++) {
-          const connectorDimmed = Boolean(highlightedType);
+          const connectorLoadAlpha = getMainConnectorLoadAlpha(index);
+          if (connectorLoadAlpha <= LOAD_ALPHA_SNAP) {
+            continue;
+          }
+
+          const connectorDimmed = isTypeHighlightActive;
 
           if (mainHighlighted) {
             mainCtx.shadowBlur = 16;
-            mainCtx.shadowColor = hexToRgba(MAIN_GLOW_COLOUR, 0.55);
+            mainCtx.shadowColor = hexToRgba(
+              MAIN_GLOW_COLOUR,
+              0.55 * connectorLoadAlpha
+            );
           }
 
           if (connectorDimmed) {
-            mainCtx.globalAlpha = TYPE_DIM_ALPHA;
+            mainCtx.globalAlpha = getCombinedAlpha(connectorLoadAlpha, dimAlpha);
+          } else {
+            mainCtx.globalAlpha = connectorLoadAlpha;
           }
 
           drawCurvedConnector(
@@ -1194,6 +1308,11 @@ function TimelineCanvas({
         }
 
         processed.forEach((item, index) => {
+          const imageLoadAlpha = getImageLoadAlpha(index);
+          if (imageLoadAlpha <= LOAD_ALPHA_SNAP) {
+            return;
+          }
+
           const { left, top, width, height } = bounds[index];
           const img = loadedImages[index];
           const typeMatch = matchesHighlightedType(
@@ -1203,17 +1322,22 @@ function TimelineCanvas({
 
           if (mainHighlighted) {
             mainCtx.shadowBlur = 22;
-            mainCtx.shadowColor = hexToRgba(MAIN_GLOW_COLOUR, 0.45);
-          } else if (typeMatch) {
-            mainCtx.shadowBlur = TYPE_HIGHLIGHT_BLUR;
+            mainCtx.shadowColor = hexToRgba(
+              MAIN_GLOW_COLOUR,
+              0.45 * imageLoadAlpha
+            );
+          } else if (typeMatch && isTypeHighlightActive) {
+            mainCtx.shadowBlur = TYPE_HIGHLIGHT_BLUR * typeHighlightStrength;
             mainCtx.shadowColor = hexToRgba(
               getContentTypeColour(item.contentType),
-              0.55
+              0.55 * typeHighlightStrength * imageLoadAlpha
             );
           }
 
-          if (highlightedType && !typeMatch) {
-            mainCtx.globalAlpha = TYPE_DIM_ALPHA;
+          if (isTypeHighlightActive && !typeMatch) {
+            mainCtx.globalAlpha = getCombinedAlpha(imageLoadAlpha, dimAlpha);
+          } else {
+            mainCtx.globalAlpha = imageLoadAlpha;
           }
 
           if (img) {
@@ -1233,15 +1357,25 @@ function TimelineCanvas({
 
           resetCanvasEffects(mainCtx);
 
-          if (highlightedType && !typeMatch) {
-            drawDimOverlay(p, mainCtx, left, top, width, height);
+          if (isTypeHighlightActive && !typeMatch) {
+            drawDimOverlay(
+              p,
+              mainCtx,
+              left,
+              top,
+              width,
+              height,
+              typeHighlightStrength * imageLoadAlpha
+            );
           }
 
           p.fill(17);
           p.noStroke();
           p.textAlign(p.CENTER, p.TOP);
-          if (highlightedType && !typeMatch) {
-            mainCtx.globalAlpha = TYPE_DIM_ALPHA;
+          if (isTypeHighlightActive && !typeMatch) {
+            mainCtx.globalAlpha = getCombinedAlpha(imageLoadAlpha, dimAlpha);
+          } else {
+            mainCtx.globalAlpha = imageLoadAlpha;
           }
           p.text(item.dateLabel, left + width / 2, top + height + 12);
           resetCanvasEffects(mainCtx);
@@ -1301,6 +1435,11 @@ function TimelineCanvas({
         processedCollected.forEach((item, index) => {
           const itemBounds = collectedBounds[index];
           const isHovered = hoveredCollected === index;
+          const connectorLoadAlpha = getCollectedConnectorLoadAlpha(index);
+
+          if (connectorLoadAlpha <= LOAD_ALPHA_SNAP) {
+            return;
+          }
 
           item.sources.forEach((source, sourceIndex) => {
             const { from: fromPoint, to: toPoint } =
@@ -1314,11 +1453,19 @@ function TimelineCanvas({
 
             if (isHovered) {
               collectedCtx.shadowBlur = 16;
-              collectedCtx.shadowColor = hexToRgba(source.colour, 0.55);
+              collectedCtx.shadowColor = hexToRgba(
+                source.colour,
+                0.55 * connectorLoadAlpha
+              );
             }
 
-            if (highlightedType) {
-              collectedCtx.globalAlpha = TYPE_DIM_ALPHA;
+            if (isTypeHighlightActive) {
+              collectedCtx.globalAlpha = getCombinedAlpha(
+                connectorLoadAlpha,
+                dimAlpha
+              );
+            } else {
+              collectedCtx.globalAlpha = connectorLoadAlpha;
             }
 
             drawBranchConnector(p, fromPoint, toPoint, source.colour);
@@ -1327,6 +1474,11 @@ function TimelineCanvas({
         });
 
         processedCollected.forEach((item, index) => {
+          const imageLoadAlpha = getImageLoadAlpha(processed.length + index);
+          if (imageLoadAlpha <= LOAD_ALPHA_SNAP) {
+            return;
+          }
+
           const { left, top, width, height } = collectedBounds[index];
           const img = loadedCollectedImages[index];
           const isHovered = hoveredCollected === index;
@@ -1337,17 +1489,22 @@ function TimelineCanvas({
 
           if (isHovered) {
             collectedCtx.shadowBlur = 22;
-            collectedCtx.shadowColor = hexToRgba(item.sources[0].colour, 0.45);
-          } else if (typeMatch) {
-            collectedCtx.shadowBlur = TYPE_HIGHLIGHT_BLUR;
+            collectedCtx.shadowColor = hexToRgba(
+              item.sources[0].colour,
+              0.45 * imageLoadAlpha
+            );
+          } else if (typeMatch && isTypeHighlightActive) {
+            collectedCtx.shadowBlur = TYPE_HIGHLIGHT_BLUR * typeHighlightStrength;
             collectedCtx.shadowColor = hexToRgba(
               getContentTypeColour(item.contentType),
-              0.55
+              0.55 * typeHighlightStrength * imageLoadAlpha
             );
           }
 
-          if (highlightedType && !typeMatch) {
-            collectedCtx.globalAlpha = TYPE_DIM_ALPHA;
+          if (isTypeHighlightActive && !typeMatch) {
+            collectedCtx.globalAlpha = getCombinedAlpha(imageLoadAlpha, dimAlpha);
+          } else {
+            collectedCtx.globalAlpha = imageLoadAlpha;
           }
 
           if (img) {
@@ -1367,15 +1524,25 @@ function TimelineCanvas({
 
           resetCanvasEffects(collectedCtx);
 
-          if (highlightedType && !typeMatch) {
-            drawDimOverlay(p, collectedCtx, left, top, width, height);
+          if (isTypeHighlightActive && !typeMatch) {
+            drawDimOverlay(
+              p,
+              collectedCtx,
+              left,
+              top,
+              width,
+              height,
+              typeHighlightStrength * imageLoadAlpha
+            );
           }
 
           p.fill(17);
           p.noStroke();
           p.textAlign(p.CENTER, p.TOP);
-          if (highlightedType && !typeMatch) {
-            collectedCtx.globalAlpha = TYPE_DIM_ALPHA;
+          if (isTypeHighlightActive && !typeMatch) {
+            collectedCtx.globalAlpha = getCombinedAlpha(imageLoadAlpha, dimAlpha);
+          } else {
+            collectedCtx.globalAlpha = imageLoadAlpha;
           }
           p.text(item.dateLabel, left + width / 2, top + height + 12);
           resetCanvasEffects(collectedCtx);
@@ -1383,12 +1550,22 @@ function TimelineCanvas({
 
         // Connector dots, drawn on top of every image so they stay visible.
         for (let index = 0; index < processed.length - 1; index++) {
+          const connectorLoadAlpha = getMainConnectorLoadAlpha(index);
+          if (connectorLoadAlpha <= LOAD_ALPHA_SNAP) {
+            continue;
+          }
+
           if (mainHighlighted) {
             mainCtx.shadowBlur = 16;
-            mainCtx.shadowColor = hexToRgba(MAIN_GLOW_COLOUR, 0.55);
+            mainCtx.shadowColor = hexToRgba(
+              MAIN_GLOW_COLOUR,
+              0.55 * connectorLoadAlpha
+            );
           }
-          if (highlightedType) {
-            mainCtx.globalAlpha = TYPE_DIM_ALPHA;
+          if (isTypeHighlightActive) {
+            mainCtx.globalAlpha = getCombinedAlpha(connectorLoadAlpha, dimAlpha);
+          } else {
+            mainCtx.globalAlpha = connectorLoadAlpha;
           }
           drawDot(p, bounds[index].right, bounds[index].centerY, '#111111');
           drawDot(
@@ -1403,6 +1580,11 @@ function TimelineCanvas({
         processedCollected.forEach((item, index) => {
           const itemBounds = collectedBounds[index];
           const isHovered = hoveredCollected === index;
+          const connectorLoadAlpha = getCollectedConnectorLoadAlpha(index);
+
+          if (connectorLoadAlpha <= LOAD_ALPHA_SNAP) {
+            return;
+          }
 
           item.sources.forEach((source, sourceIndex) => {
             const { from: fromPoint, to: toPoint } =
@@ -1415,10 +1597,18 @@ function TimelineCanvas({
               );
             if (isHovered) {
               collectedCtx.shadowBlur = 16;
-              collectedCtx.shadowColor = hexToRgba(source.colour, 0.55);
+              collectedCtx.shadowColor = hexToRgba(
+                source.colour,
+                0.55 * connectorLoadAlpha
+              );
             }
-            if (highlightedType) {
-              collectedCtx.globalAlpha = TYPE_DIM_ALPHA;
+            if (isTypeHighlightActive) {
+              collectedCtx.globalAlpha = getCombinedAlpha(
+                connectorLoadAlpha,
+                dimAlpha
+              );
+            } else {
+              collectedCtx.globalAlpha = connectorLoadAlpha;
             }
             drawDot(p, fromPoint.x, fromPoint.y, source.colour);
             drawDot(p, toPoint.x, toPoint.y, source.colour);
@@ -1428,7 +1618,7 @@ function TimelineCanvas({
 
         p.pop();
 
-        drawTodayLine();
+        drawTodayLine(todayLineAlpha);
 
         if (hoveredCollected !== -1) {
           const hovered = processedCollected[hoveredCollected];
