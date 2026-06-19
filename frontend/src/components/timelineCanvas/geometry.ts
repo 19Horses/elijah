@@ -96,6 +96,23 @@ export function applyDetailLayoutTransform(
   };
 }
 
+export function getDetailImageScreenHeight(
+  bounds: DrawRect,
+  detailLayout: number,
+  zoom: number,
+  viewportWidth: number,
+  cameraX: number
+): number {
+  const transformed = applyDetailLayoutTransform(
+    bounds,
+    detailLayout,
+    zoom,
+    viewportWidth,
+    cameraX
+  );
+  return transformed.height * zoom;
+}
+
 export function getContentBounds(
   index: number,
   item: ProcessedItem,

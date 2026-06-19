@@ -11,6 +11,8 @@ import UserCard from '../components/UserCard';
 import {
   getContentDetailDateLabel,
   getContentDetailDescription,
+  getContentDetailLink,
+  getContentDetailNewsletterContent,
   useContentDetail,
 } from '../queries/contentDetail';
 import { useCollectedTimeline } from '../queries/collectedContent';
@@ -35,6 +37,9 @@ function Home() {
   );
   const [focusSlug, setFocusSlug] = useState<string | null>(null);
   const [detailReady, setDetailReady] = useState(false);
+  const [detailImageHeightPx, setDetailImageHeightPx] = useState<number | null>(
+    null
+  );
   const userCardWrapRef = useRef<HTMLDivElement>(null);
   const legendWrapRef = useRef<HTMLDivElement>(null);
 
@@ -54,15 +59,21 @@ function Home() {
   const handleContentFocus = useCallback((slug: string) => {
     setFocusSlug(slug);
     setDetailReady(false);
+    setDetailImageHeightPx(null);
   }, []);
 
   const handleContentUnfocus = useCallback(() => {
     setFocusSlug(null);
     setDetailReady(false);
+    setDetailImageHeightPx(null);
   }, []);
 
   const handleDetailLayoutStart = useCallback(() => {
     setDetailReady(true);
+  }, []);
+
+  const handleDetailImageHeight = useCallback((heightPx: number) => {
+    setDetailImageHeightPx(heightPx);
   }, []);
 
   const timelineDetail = useMemo((): TimelineDetailView | null => {
@@ -74,6 +85,8 @@ function Home() {
       title: contentDetail.title,
       dateLabel: getContentDetailDateLabel(contentDetail),
       description: getContentDetailDescription(contentDetail),
+      link: getContentDetailLink(contentDetail),
+      newsletterContent: getContentDetailNewsletterContent(contentDetail),
     };
   }, [contentDetail, detailReady, focusSlug]);
 
@@ -135,8 +148,12 @@ function Home() {
         onContentFocus={handleContentFocus}
         onContentUnfocus={handleContentUnfocus}
         onDetailLayoutStart={handleDetailLayoutStart}
+        onDetailImageHeight={handleDetailImageHeight}
       />
-      <TimelineDetailOverlay detail={timelineDetail} />
+      <TimelineDetailOverlay
+        detail={timelineDetail}
+        imageHeightPx={detailImageHeightPx}
+      />
       {statusChecked && activeCollection && !alreadyCollected && (
         <CollectionCountdown
           collection={activeCollection}

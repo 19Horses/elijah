@@ -12,6 +12,7 @@ export type TimelineCanvasProps = {
   onContentFocus?: (slug: string) => void;
   onContentUnfocus?: () => void;
   onDetailLayoutStart?: () => void;
+  onDetailImageHeight?: (heightPx: number) => void;
 };
 
 export type CollectedSource = {
@@ -110,6 +111,7 @@ export type TimelineSketchRefs = {
   onContentFocusRef: RefObject<((slug: string) => void) | undefined>;
   onContentUnfocusRef: RefObject<(() => void) | undefined>;
   onDetailLayoutStartRef: RefObject<(() => void) | undefined>;
+  onDetailImageHeightRef: RefObject<((heightPx: number) => void) | undefined>;
 };
 
 export type TimelineSketchDeps = {

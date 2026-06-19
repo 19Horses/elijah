@@ -19,7 +19,7 @@ import {
   TODAY_LABEL_BOTTOM_OFFSET,
   TODAY_LABEL_GAP,
 } from '../constants';
-import { screenToWorld } from '../geometry';
+import { getDetailImageScreenHeight, screenToWorld } from '../geometry';
 import { drawCollectedSourcesLabel, drawUserLabel } from '../labels';
 import {
   animateDetailReveal,
@@ -198,6 +198,20 @@ export function createDrawFrameHandler(
     drawMainLaneItems(p, deps, loadedImages, drawCtx, mainHover);
 
     const collectedBounds = boundsCtx.getCollectedBounds();
+
+    if (runtime.focusTarget && runtime.detailLayout > 0) {
+      const { lane, index } = runtime.focusTarget;
+      const laneBounds = lane === 'main' ? bounds[index] : collectedBounds[index];
+      const imageHeightPx = getDetailImageScreenHeight(
+        laneBounds,
+        runtime.detailLayout,
+        runtime.zoom,
+        p.width,
+        runtime.cameraX
+      );
+      deps.refs.onDetailImageHeightRef.current?.(imageHeightPx);
+    }
+
     const collectedHover = computeCollectedLaneHover(
       deps,
       boundsCtx,

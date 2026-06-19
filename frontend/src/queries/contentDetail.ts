@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { CONTENT_TYPES } from '../constants/contentTypes';
 import { getApiUrl } from '../sanityIntegration';
 import type { ContentType } from '../types/content';
 import { formatMainTimelineDate } from './mainTimeline';
@@ -15,6 +14,8 @@ export type ContentDetail = {
   slug: string;
   date: string | null;
   description: string | null;
+  content: string | null;
+  link: string | null;
 };
 
 const CONTENT_BY_SLUG_QUERY = (slug: string) => `*[
@@ -28,6 +29,12 @@ const CONTENT_BY_SLUG_QUERY = (slug: string) => `*[
   date,
   _type in ["imageAsset", "audioAsset", "event"] => {
     description
+  },
+  _type == "event" => {
+    link
+  },
+  _type == "newsletter" => {
+    content
   }
 }`;
 
@@ -53,12 +60,25 @@ export function useContentDetail(slug: string | null) {
 
 export function getContentDetailDescription(detail: ContentDetail): string {
   if (detail._type === 'newsletter') {
-    return (
-      CONTENT_TYPES.find((entry) => entry.type === 'newsletter')?.label ??
-      'Newsletter'
-    );
+    return '';
   }
   return detail.description ?? '';
+}
+
+export function getContentDetailLink(detail: ContentDetail): string | null {
+  if (detail._type === 'event') {
+    return detail.link;
+  }
+  return null;
+}
+
+export function getContentDetailNewsletterContent(
+  detail: ContentDetail
+): string | null {
+  if (detail._type === 'newsletter') {
+    return detail.content;
+  }
+  return null;
 }
 
 export function getContentDetailDateLabel(detail: ContentDetail): string {

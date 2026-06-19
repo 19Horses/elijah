@@ -166,8 +166,6 @@ export function drawCollectedLaneItems(
       collectedBounds[index]
     );
     const img = loadedCollectedImages[index];
-    const isConnectorHovered =
-      hover.hoveredCollected === index && !hover.hoveredCollectedIsImage;
     const typeMatch = matchesHighlightedType(
       item.contentType,
       ctx.highlightedType

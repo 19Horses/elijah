@@ -4,13 +4,19 @@ export type TimelineDetailView = {
   title: string;
   dateLabel: string;
   description: string;
+  link: string | null;
+  newsletterContent: string | null;
 };
 
 type TimelineDetailOverlayProps = {
   detail: TimelineDetailView | null;
+  imageHeightPx?: number | null;
 };
 
-function TimelineDetailOverlay({ detail }: TimelineDetailOverlayProps) {
+function TimelineDetailOverlay({
+  detail,
+  imageHeightPx = null,
+}: TimelineDetailOverlayProps) {
   const overlayRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -20,6 +26,18 @@ function TimelineDetailOverlay({ detail }: TimelineDetailOverlayProps) {
     }
 
     const blockScroll = (event: WheelEvent) => {
+      const body = overlay.querySelector('.timeline-detail__body');
+      if (body instanceof HTMLElement && body.contains(event.target as Node)) {
+        const { scrollTop, scrollHeight, clientHeight } = body;
+        const deltaY = event.deltaY;
+        const canScrollUp = scrollTop > 0;
+        const canScrollDown = scrollTop + clientHeight < scrollHeight - 1;
+
+        if ((deltaY < 0 && canScrollUp) || (deltaY > 0 && canScrollDown)) {
+          return;
+        }
+      }
+
       event.preventDefault();
       event.stopImmediatePropagation();
     };
@@ -41,6 +59,11 @@ function TimelineDetailOverlay({ detail }: TimelineDetailOverlayProps) {
       ref={overlayRef}
       className="timeline-detail timeline-detail--visible"
       aria-label={detail.title}
+      style={
+        imageHeightPx
+          ? { maxHeight: `${Math.round(imageHeightPx)}px` }
+          : undefined
+      }
     >
       <div className="timeline-detail__meta">
         <h2 className="timeline-detail__title">{detail.title}</h2>
@@ -48,8 +71,20 @@ function TimelineDetailOverlay({ detail }: TimelineDetailOverlayProps) {
           <p className="timeline-detail__date">{detail.dateLabel}</p>
         ) : null}
       </div>
-      {detail.description ? (
+      {detail.newsletterContent ? (
+        <div className="timeline-detail__body">{detail.newsletterContent}</div>
+      ) : detail.description ? (
         <p className="timeline-detail__description">{detail.description}</p>
+      ) : null}
+      {detail.link ? (
+        <a
+          className="timeline-detail__link"
+          href={detail.link}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          {detail.link}
+        </a>
       ) : null}
     </aside>
   );

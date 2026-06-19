@@ -17,6 +17,7 @@ function TimelineCanvas({
   onContentFocus,
   onContentUnfocus,
   onDetailLayoutStart,
+  onDetailImageHeight,
 }: TimelineCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const interactionLockedRef = useRef(false);
@@ -26,6 +27,7 @@ function TimelineCanvas({
   const onContentFocusRef = useRef(onContentFocus);
   const onContentUnfocusRef = useRef(onContentUnfocus);
   const onDetailLayoutStartRef = useRef(onDetailLayoutStart);
+  const onDetailImageHeightRef = useRef(onDetailImageHeight);
 
   useEffect(() => {
     highlightedTypeRef.current = highlightedType ?? null;
@@ -46,6 +48,10 @@ function TimelineCanvas({
   useEffect(() => {
     onDetailLayoutStartRef.current = onDetailLayoutStart;
   }, [onDetailLayoutStart]);
+
+  useEffect(() => {
+    onDetailImageHeightRef.current = onDetailImageHeight;
+  }, [onDetailImageHeight]);
 
   useEffect(() => {
     const preventScrollWhileFocused = (event: WheelEvent) => {
@@ -94,6 +100,7 @@ function TimelineCanvas({
         onContentFocusRef,
         onContentUnfocusRef,
         onDetailLayoutStartRef,
+        onDetailImageHeightRef,
       },
     });
 
