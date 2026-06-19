@@ -201,7 +201,8 @@ export function createDrawFrameHandler(
 
     if (runtime.focusTarget && runtime.detailLayout > 0) {
       const { lane, index } = runtime.focusTarget;
-      const laneBounds = lane === 'main' ? bounds[index] : collectedBounds[index];
+      const laneBounds =
+        lane === 'main' ? bounds[index] : collectedBounds[index];
       const imageHeightPx = getDetailImageScreenHeight(
         laneBounds,
         runtime.detailLayout,

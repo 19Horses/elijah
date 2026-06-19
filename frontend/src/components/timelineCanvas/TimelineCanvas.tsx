@@ -65,10 +65,7 @@ function TimelineCanvas({
         const scrollable = overlay?.querySelector(
           '.timeline-detail__body, .timeline-detail__description'
         );
-        if (
-          scrollable instanceof HTMLElement &&
-          scrollable.contains(target)
-        ) {
+        if (scrollable instanceof HTMLElement && scrollable.contains(target)) {
           const { scrollTop, scrollHeight, clientHeight } = scrollable;
           const deltaY = event.deltaY;
           const canScrollUp = scrollTop > 0;
