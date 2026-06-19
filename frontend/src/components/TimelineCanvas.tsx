@@ -1275,16 +1275,18 @@ function TimelineCanvas({
               sourceIndex < item.sources.length;
               sourceIndex++
             ) {
-              const { from: fromPoint, to: toPoint } = getBranchEndpointsForSource(
-                item.anchorTime,
-                itemBounds,
-                bounds,
-                sourceIndex,
-                item.sources.length
-              );
+              const { from: fromPoint, to: toPoint } =
+                getBranchEndpointsForSource(
+                  item.anchorTime,
+                  itemBounds,
+                  bounds,
+                  sourceIndex,
+                  item.sources.length
+                );
               const line = getBranchPoints(fromPoint, toPoint);
               if (
-                distanceToPolyline(line, mouseWorld) <= CONNECTOR_HOVER_THRESHOLD
+                distanceToPolyline(line, mouseWorld) <=
+                CONNECTOR_HOVER_THRESHOLD
               ) {
                 hoveredCollected = index;
                 break;
@@ -1301,13 +1303,14 @@ function TimelineCanvas({
           const isHovered = hoveredCollected === index;
 
           item.sources.forEach((source, sourceIndex) => {
-            const { from: fromPoint, to: toPoint } = getBranchEndpointsForSource(
-              item.anchorTime,
-              itemBounds,
-              bounds,
-              sourceIndex,
-              item.sources.length
-            );
+            const { from: fromPoint, to: toPoint } =
+              getBranchEndpointsForSource(
+                item.anchorTime,
+                itemBounds,
+                bounds,
+                sourceIndex,
+                item.sources.length
+              );
 
             if (isHovered) {
               collectedCtx.shadowBlur = 16;
@@ -1402,13 +1405,14 @@ function TimelineCanvas({
           const isHovered = hoveredCollected === index;
 
           item.sources.forEach((source, sourceIndex) => {
-            const { from: fromPoint, to: toPoint } = getBranchEndpointsForSource(
-              item.anchorTime,
-              itemBounds,
-              bounds,
-              sourceIndex,
-              item.sources.length
-            );
+            const { from: fromPoint, to: toPoint } =
+              getBranchEndpointsForSource(
+                item.anchorTime,
+                itemBounds,
+                bounds,
+                sourceIndex,
+                item.sources.length
+              );
             if (isHovered) {
               collectedCtx.shadowBlur = 16;
               collectedCtx.shadowColor = hexToRgba(source.colour, 0.55);
