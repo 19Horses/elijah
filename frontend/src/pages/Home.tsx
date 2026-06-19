@@ -1,10 +1,18 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CollectionCountdown from '../components/CollectionCountdown';
 import CollectionViewer from '../components/CollectionViewer';
 import ContentLegend from '../components/ContentLegend';
-import TimelineCanvas from '../components/TimelineCanvas';
+import TimelineCanvas from '../components/timelineCanvas';
+import TimelineDetailOverlay, {
+  type TimelineDetailView,
+} from '../components/TimelineDetailOverlay';
 import UserCard from '../components/UserCard';
+import {
+  getContentDetailDateLabel,
+  getContentDetailDescription,
+  useContentDetail,
+} from '../queries/contentDetail';
 import { useCollectedTimeline } from '../queries/collectedContent';
 import { useCollections } from '../queries/collection';
 import { useMainTimeline } from '../queries/mainTimeline';
@@ -25,8 +33,12 @@ function Home() {
   const [highlightedType, setHighlightedType] = useState<ContentType | null>(
     null
   );
+  const [focusSlug, setFocusSlug] = useState<string | null>(null);
+  const [detailReady, setDetailReady] = useState(false);
   const userCardWrapRef = useRef<HTMLDivElement>(null);
   const legendWrapRef = useRef<HTMLDivElement>(null);
+
+  const { data: contentDetail } = useContentDetail(focusSlug);
 
   const handleFocusFadeChange = useCallback((fade: number) => {
     const opacity = 1 - fade;
@@ -38,6 +50,32 @@ function Home() {
       }
     }
   }, []);
+
+  const handleContentFocus = useCallback((slug: string) => {
+    setFocusSlug(slug);
+    setDetailReady(false);
+  }, []);
+
+  const handleContentUnfocus = useCallback(() => {
+    setFocusSlug(null);
+    setDetailReady(false);
+  }, []);
+
+  const handleDetailLayoutStart = useCallback(() => {
+    setDetailReady(true);
+  }, []);
+
+  const timelineDetail = useMemo((): TimelineDetailView | null => {
+    if (!focusSlug || !detailReady || !contentDetail) {
+      return null;
+    }
+
+    return {
+      title: contentDetail.title,
+      dateLabel: getContentDetailDateLabel(contentDetail),
+      description: getContentDetailDescription(contentDetail),
+    };
+  }, [contentDetail, detailReady, focusSlug]);
 
   const activeCollection = collections?.[0] ?? null;
 
@@ -94,7 +132,11 @@ function Home() {
         colour={timeline.colour}
         highlightedType={highlightedType}
         onFocusFadeChange={handleFocusFadeChange}
+        onContentFocus={handleContentFocus}
+        onContentUnfocus={handleContentUnfocus}
+        onDetailLayoutStart={handleDetailLayoutStart}
       />
+      <TimelineDetailOverlay detail={timelineDetail} />
       {statusChecked && activeCollection && !alreadyCollected && (
         <CollectionCountdown
           collection={activeCollection}
