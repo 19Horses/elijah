@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { HashRouter, Route, Routes, useLocation } from 'react-router-dom';
 import Header from './components/Header';
+import ResetButton from './components/ResetButton';
 import Home from './pages/Home';
 import Landing from './pages/Landing';
 import Shop from './pages/Shop';
@@ -29,6 +30,7 @@ const AppRoutes = () => {
           <Route path="/shop" element={<Shop />} />
         </Routes>
       </main>
+      <ResetButton />
     </>
   );
 };

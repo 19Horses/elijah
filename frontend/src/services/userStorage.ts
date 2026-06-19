@@ -27,3 +27,7 @@ export function getStoredUser(): StoredUser | null {
 
   return null;
 }
+
+export function clearStoredUser(): void {
+  localStorage.removeItem(STORAGE_KEY);
+}

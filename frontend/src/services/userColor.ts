@@ -20,6 +20,10 @@ export function storeColour(colour: string): void {
   localStorage.setItem(COLOUR_KEY, colour);
 }
 
+export function clearStoredColour(): void {
+  localStorage.removeItem(COLOUR_KEY);
+}
+
 export function applySelectionColour(colour: string): void {
   document.documentElement.style.setProperty('--selection-color', colour);
   document.documentElement.style.setProperty(
