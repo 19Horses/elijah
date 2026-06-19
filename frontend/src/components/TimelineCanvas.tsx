@@ -234,8 +234,6 @@ function screenToWorld(
   return { x: x / zoom + cameraX, y: y / zoom + cameraY };
 }
 
-type Bezier = [ConnectorPoint, ConnectorPoint, ConnectorPoint, ConnectorPoint];
-
 function lerpPoint(
   a: ConnectorPoint,
   b: ConnectorPoint,
@@ -244,67 +242,77 @@ function lerpPoint(
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
 }
 
-function bezierX(curve: Bezier, t: number): number {
-  const mt = 1 - t;
-  return (
-    mt * mt * mt * curve[0].x +
-    3 * mt * mt * t * curve[1].x +
-    3 * mt * t * t * curve[2].x +
-    t * t * t * curve[3].x
+const MAIN_CONNECTOR_HORIZONTAL_STUB = 16;
+
+function getMainConnectorPoints(
+  from: ConnectorPoint,
+  to: ConnectorPoint
+): ConnectorPoint[] {
+  // Horizontal stub out of the item's side, a fixed 45° diagonal across,
+  // then into the next item — rigid elbows like branch connectors.
+  const dirX = Math.sign(to.x - from.x) || 1;
+  const dirY = Math.sign(to.y - from.y) || 1;
+  const adx = Math.abs(to.x - from.x);
+  const ady = Math.abs(to.y - from.y);
+  const diag = Math.max(
+    0,
+    Math.min(adx - MAIN_CONNECTOR_HORIZONTAL_STUB, ady)
   );
+  const hStub = adx - diag;
+  const elbowX = from.x + dirX * hStub;
+  return [
+    { x: from.x, y: from.y },
+    { x: elbowX, y: from.y },
+    { x: elbowX + dirX * diag, y: from.y + dirY * diag },
+    { x: to.x, y: to.y },
+  ];
 }
 
-function findTForX(curve: Bezier, targetX: number): number {
-  let lo = 0;
-  let hi = 1;
-  for (let i = 0; i < 24; i++) {
-    const mid = (lo + hi) / 2;
-    if (bezierX(curve, mid) < targetX) {
-      lo = mid;
-    } else {
-      hi = mid;
+function splitPolylineAtX(
+  points: ConnectorPoint[],
+  targetX: number
+): { left: ConnectorPoint[]; right: ConnectorPoint[] } {
+  for (let index = 0; index < points.length - 1; index++) {
+    const a = points[index];
+    const b = points[index + 1];
+    if (a.x === b.x) {
+      continue;
     }
+    const minX = Math.min(a.x, b.x);
+    const maxX = Math.max(a.x, b.x);
+    if (targetX < minX || targetX > maxX) {
+      continue;
+    }
+    const t = (targetX - a.x) / (b.x - a.x);
+    if (t < 0 || t > 1) {
+      continue;
+    }
+    const splitPoint = lerpPoint(a, b, t);
+    return {
+      left: [...points.slice(0, index + 1), splitPoint],
+      right: [splitPoint, ...points.slice(index + 1)],
+    };
   }
-  return (lo + hi) / 2;
+  return { left: points, right: [points[points.length - 1]] };
 }
 
-function splitBezier(
-  curve: Bezier,
-  t: number
-): { left: Bezier; right: Bezier } {
-  const [p0, p1, p2, p3] = curve;
-  const p01 = lerpPoint(p0, p1, t);
-  const p12 = lerpPoint(p1, p2, t);
-  const p23 = lerpPoint(p2, p3, t);
-  const p012 = lerpPoint(p01, p12, t);
-  const p123 = lerpPoint(p12, p23, t);
-  const p0123 = lerpPoint(p012, p123, t);
-  return {
-    left: [p0, p01, p012, p0123],
-    right: [p0123, p123, p23, p3],
-  };
-}
-
-function drawBezierSegment(p: p5, curve: Bezier, dashed: boolean): void {
+function drawPolylineSegment(
+  p: p5,
+  points: ConnectorPoint[],
+  dashed: boolean
+): void {
   const ctx = p.drawingContext as CanvasRenderingContext2D;
   p.stroke(17);
   p.strokeWeight(1);
   p.noFill();
   ctx.setLineDash(dashed ? [6, 6] : []);
-  p.bezier(
-    curve[0].x,
-    curve[0].y,
-    curve[1].x,
-    curve[1].y,
-    curve[2].x,
-    curve[2].y,
-    curve[3].x,
-    curve[3].y
-  );
+  p.beginShape();
+  points.forEach((point) => p.vertex(point.x, point.y));
+  p.endShape();
   ctx.setLineDash([]);
 }
 
-function drawCurvedConnector(
+function drawMainConnector(
   p: p5,
   from: ConnectorPoint,
   to: ConnectorPoint,
@@ -312,25 +320,16 @@ function drawCurvedConnector(
   endFuture: boolean,
   lineWorldX: number
 ): void {
-  const dx = to.x - from.x;
-  const handle = Math.max(48, Math.abs(dx) * 0.4);
-  const curve: Bezier = [
-    { x: from.x, y: from.y },
-    { x: from.x + handle, y: from.y },
-    { x: to.x - handle, y: to.y },
-    { x: to.x, y: to.y },
-  ];
-
+  const points = getMainConnectorPoints(from, to);
   const crosses =
     startFuture !== endFuture && lineWorldX > from.x && lineWorldX < to.x;
 
   if (crosses) {
-    const t = findTForX(curve, lineWorldX);
-    const { left, right } = splitBezier(curve, t);
-    drawBezierSegment(p, left, false);
-    drawBezierSegment(p, right, true);
+    const { left, right } = splitPolylineAtX(points, lineWorldX);
+    drawPolylineSegment(p, left, false);
+    drawPolylineSegment(p, right, true);
   } else {
-    drawBezierSegment(p, curve, startFuture || endFuture);
+    drawPolylineSegment(p, points, startFuture || endFuture);
   }
 }
 
@@ -565,43 +564,6 @@ function getBranchPoints(from: ConnectorPoint, to: ConnectorPoint): BranchLine {
     { x: from.x + dirX * diag, y: elbowY + dirY * diag },
     { x: to.x, y: to.y },
   ];
-}
-
-function getMainCurve(from: ConnectorPoint, to: ConnectorPoint): Bezier {
-  const handle = Math.max(48, Math.abs(to.x - from.x) * 0.4);
-  return [
-    { x: from.x, y: from.y },
-    { x: from.x + handle, y: from.y },
-    { x: to.x - handle, y: to.y },
-    { x: to.x, y: to.y },
-  ];
-}
-
-function bezierPointAt(curve: Bezier, t: number): ConnectorPoint {
-  const mt = 1 - t;
-  const a = mt * mt * mt;
-  const b = 3 * mt * mt * t;
-  const c = 3 * mt * t * t;
-  const d = t * t * t;
-  return {
-    x: a * curve[0].x + b * curve[1].x + c * curve[2].x + d * curve[3].x,
-    y: a * curve[0].y + b * curve[1].y + c * curve[2].y + d * curve[3].y,
-  };
-}
-
-function distanceToCurve(curve: Bezier, point: ConnectorPoint): number {
-  let min = Infinity;
-  const samples = 24;
-  for (let i = 0; i <= samples; i++) {
-    const pt = bezierPointAt(curve, i / samples);
-    const dx = pt.x - point.x;
-    const dy = pt.y - point.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    if (distance < min) {
-      min = distance;
-    }
-  }
-  return min;
 }
 
 function distanceToSegment(
@@ -1269,12 +1231,12 @@ function TimelineCanvas({
         let mainConnectorHover = false;
         if (hoveredMain === -1) {
           for (let index = 0; index < processed.length - 1; index++) {
-            const curve = getMainCurve(
+            const line = getMainConnectorPoints(
               { x: bounds[index].right, y: bounds[index].centerY },
               { x: bounds[index + 1].left, y: bounds[index + 1].centerY }
             );
             if (
-              distanceToCurve(curve, mouseWorld) <= CONNECTOR_HOVER_THRESHOLD
+              distanceToPolyline(line, mouseWorld) <= CONNECTOR_HOVER_THRESHOLD
             ) {
               mainConnectorHover = true;
               break;
@@ -1309,7 +1271,7 @@ function TimelineCanvas({
             mainCtx.globalAlpha = connectorLoadAlpha;
           }
 
-          drawCurvedConnector(
+          drawMainConnector(
             p,
             { x: bounds[index].right, y: bounds[index].centerY },
             { x: bounds[index + 1].left, y: bounds[index + 1].centerY },
