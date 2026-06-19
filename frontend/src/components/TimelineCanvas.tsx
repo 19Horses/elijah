@@ -34,11 +34,13 @@ const TYPE_DIM_ALPHA = 0.4;
 const TYPE_DIM_OVERLAY = 0.3;
 const TYPE_HIGHLIGHT_BLUR = 22;
 const FOCUS_VIEWPORT_FILL = 0.65;
-const VIEW_ANIMATION_LERP = 0.14;
+const VIEW_ANIMATION_LERP = 0.08;
 const VIEW_SNAP_THRESHOLD = 0.001;
 const WHEEL_ZOOM_SENSITIVITY = 0.001;
 const MIN_ZOOM_FACTOR = 0.25;
 const MAX_ZOOM_FACTOR = 4;
+const MAX_VISIBLE_COLLECTOR_LABELS = 3;
+const OTHERS_LABEL_BG = '#9ca3af';
 
 type TimelineCanvasProps = {
   items: MainTimelineItem[];
@@ -47,7 +49,14 @@ type TimelineCanvasProps = {
   highlightedType?: ContentType | null;
 };
 
+type CollectedSource = {
+  rowIndex: number;
+  colour: string;
+  username: string;
+};
+
 type ProcessedCollected = {
+  contentId: string;
   imageUrl: string | null;
   dateLabel: string;
   contentType: ContentType;
@@ -55,8 +64,7 @@ type ProcessedCollected = {
   aspectRatio: number;
   anchorTime: number;
   rowIndex: number;
-  colour: string;
-  username: string;
+  sources: CollectedSource[];
 };
 
 type ProcessedItem = {
@@ -127,31 +135,47 @@ function buildProcessedItems(items: MainTimelineItem[]): ProcessedItem[] {
 function buildProcessedCollected(
   rows: CollectedUserRow[]
 ): ProcessedCollected[] {
-  const result: ProcessedCollected[] = [];
+  const byContentId = new Map<string, ProcessedCollected>();
 
   rows.forEach((row, rowIndex) => {
-    const items = row.items
-      .map((item) => {
-        const contentTime = item.content.date
-          ? new Date(item.content.date).getTime()
-          : Number.NaN;
-        return {
-          imageUrl: getMainTimelineImageUrl(item.content),
-          dateLabel: formatMainTimelineDate(item.content.date),
-          contentType: item.content._type,
-          title: item.content.title,
-          aspectRatio: getItemAspectRatio(item.content),
-          anchorTime: Number.isNaN(contentTime) ? Date.now() : contentTime,
-          rowIndex,
-          colour: row.colour,
-          username: row.username,
-        };
-      })
-      .sort((a, b) => a.anchorTime - b.anchorTime);
-    result.push(...items);
+    row.items.forEach((item) => {
+      const contentId = item.content._id;
+      const contentTime = item.content.date
+        ? new Date(item.content.date).getTime()
+        : Number.NaN;
+      const source: CollectedSource = {
+        rowIndex,
+        colour: row.colour,
+        username: row.username,
+      };
+      const existing = byContentId.get(contentId);
+
+      if (existing) {
+        existing.sources.push(source);
+        existing.rowIndex = Math.min(existing.rowIndex, rowIndex);
+        return;
+      }
+
+      byContentId.set(contentId, {
+        contentId,
+        imageUrl: getMainTimelineImageUrl(item.content),
+        dateLabel: formatMainTimelineDate(item.content.date),
+        contentType: item.content._type,
+        title: item.content.title,
+        aspectRatio: getItemAspectRatio(item.content),
+        anchorTime: Number.isNaN(contentTime) ? Date.now() : contentTime,
+        rowIndex,
+        sources: [source],
+      });
+    });
   });
 
-  return result;
+  return Array.from(byContentId.values()).sort((a, b) => {
+    if (a.rowIndex !== b.rowIndex) {
+      return a.rowIndex - b.rowIndex;
+    }
+    return a.anchorTime - b.anchorTime;
+  });
 }
 
 function getContentBounds(
@@ -394,6 +418,92 @@ function drawUserLabel(
   p.textStyle(p.NORMAL);
 }
 
+type LabelChip = {
+  text: string;
+  bg: string;
+};
+
+function drawCollectedSourcesLabel(
+  p: p5,
+  sources: CollectedSource[],
+  x: number,
+  y: number,
+  title?: string
+): void {
+  if (sources.length === 1) {
+    drawUserLabel(p, sources[0].username, sources[0].colour, x, y, title);
+    return;
+  }
+
+  p.textSize(12);
+  const padX = 8;
+  const padY = 4;
+  const lineHeight = 16;
+  const chipGap = 4;
+  const titleGap = title ? 4 : 0;
+
+  const visibleSources = sources.slice(0, MAX_VISIBLE_COLLECTOR_LABELS);
+  const overflow = sources.length - MAX_VISIBLE_COLLECTOR_LABELS;
+  const chips: LabelChip[] = visibleSources.map((source) => ({
+    text: source.username,
+    bg: source.colour,
+  }));
+
+  if (overflow > 0) {
+    chips.push({
+      text: `+ ${overflow} other${overflow === 1 ? '' : 's'}`,
+      bg: OTHERS_LABEL_BG,
+    });
+  }
+
+  p.textStyle(p.NORMAL);
+  const chipWidths = chips.map((chip) => p.textWidth(chip.text) + padX * 2);
+  const chipsWidth =
+    chipWidths.reduce((sum, width) => sum + width, 0) +
+    chipGap * Math.max(chips.length - 1, 0);
+
+  let titleWidth = 0;
+  let titleHeight = 0;
+  if (title) {
+    p.textStyle(p.BOLD);
+    titleWidth = p.textWidth(title) + padX * 2;
+    titleHeight = lineHeight + padY * 2;
+  }
+
+  const totalWidth = Math.max(chipsWidth, titleWidth);
+  const chipsRowHeight = lineHeight + padY * 2;
+  const totalHeight = titleHeight + titleGap + chipsRowHeight;
+  const left = x - totalWidth / 2;
+  const top = y - 14 - totalHeight;
+
+  if (title) {
+    p.noStroke();
+    p.fill(17);
+    p.rect(left, top, totalWidth, titleHeight, 4, 4, 0, 0);
+    p.fill(255);
+    p.textAlign(p.CENTER, p.CENTER);
+    p.textStyle(p.BOLD);
+    p.text(title, x, top + titleHeight / 2);
+  }
+
+  const chipsTop = top + titleHeight + titleGap;
+  let chipLeft = x - chipsWidth / 2;
+
+  chips.forEach((chip, index) => {
+    const width = chipWidths[index];
+    p.noStroke();
+    p.fill(chip.bg);
+    p.rect(chipLeft, chipsTop, width, chipsRowHeight, 4);
+    p.fill(getContrastText(chip.bg));
+    p.textAlign(p.CENTER, p.CENTER);
+    p.textStyle(p.NORMAL);
+    p.text(chip.text, chipLeft + width / 2, chipsTop + chipsRowHeight / 2);
+    chipLeft += width + chipGap;
+  });
+
+  p.textStyle(p.NORMAL);
+}
+
 type BranchLine = [
   ConnectorPoint,
   ConnectorPoint,
@@ -561,6 +671,11 @@ function TimelineCanvas({
     let focusTarget: FocusTarget | null = null;
     let viewAnimating = false;
     let fitZoomLevel = 1;
+    let animationWorldX = 0;
+    let animationWorldY = 0;
+    let animationStartScreenX = 0;
+    let animationStartScreenY = 0;
+    let animationStartZoom = 1;
 
     const sketch = (p: p5) => {
       const loadedImages: (p5.Image | null)[] = new Array(
@@ -660,6 +775,32 @@ function TimelineCanvas({
         };
       };
 
+      const getBranchEndpointsForSource = (
+        anchorTime: number,
+        itemBounds: ContentBounds,
+        mainBounds: ContentBounds[],
+        sourceIndex: number,
+        sourceCount: number
+      ): { from: ConnectorPoint; to: ConnectorPoint } => {
+        const endpoints = getBranchEndpoints(
+          anchorTime,
+          itemBounds,
+          mainBounds
+        );
+
+        if (sourceCount <= 1) {
+          return endpoints;
+        }
+
+        const spread = Math.min(itemBounds.width * 0.25, 10);
+        const offset = (sourceIndex - (sourceCount - 1) / 2) * spread;
+
+        return {
+          from: { x: endpoints.from.x + offset, y: endpoints.from.y },
+          to: { x: endpoints.to.x, y: endpoints.to.y + offset * 0.5 },
+        };
+      };
+
       const getCollectedBounds = (): ContentBounds[] => {
         const bounds: ContentBounds[] = [];
         let prevRight = -Infinity;
@@ -701,6 +842,37 @@ function TimelineCanvas({
         });
 
         return bounds;
+      };
+
+      const setCameraFromScreenAnchor = (
+        worldX: number,
+        worldY: number,
+        screenX: number,
+        screenY: number,
+        nextZoom: number
+      ) => {
+        cameraX = worldX - screenX / nextZoom;
+        cameraY = worldY - screenY / nextZoom;
+        zoom = nextZoom;
+      };
+
+      const getAnimationProgress = (nextZoom: number): number => {
+        const zoomRange = targetZoom - animationStartZoom;
+        if (Math.abs(zoomRange) <= VIEW_SNAP_THRESHOLD) {
+          return 1;
+        }
+        return Math.max(
+          0,
+          Math.min(1, (nextZoom - animationStartZoom) / zoomRange)
+        );
+      };
+
+      const beginViewAnimation = (worldX: number, worldY: number) => {
+        animationWorldX = worldX;
+        animationWorldY = worldY;
+        animationStartScreenX = (worldX - cameraX) * zoom;
+        animationStartScreenY = (worldY - cameraY) * zoom;
+        animationStartZoom = zoom;
       };
 
       const computeFitViewTargets = () => {
@@ -801,18 +973,24 @@ function TimelineCanvas({
         const lerp = (current: number, target: number) =>
           current + (target - current) * VIEW_ANIMATION_LERP;
 
-        if (
-          Math.abs(cameraX - targetCameraX) > VIEW_SNAP_THRESHOLD ||
-          Math.abs(cameraY - targetCameraY) > VIEW_SNAP_THRESHOLD ||
-          Math.abs(zoom - targetZoom) > VIEW_SNAP_THRESHOLD
-        ) {
-          cameraX = lerp(cameraX, targetCameraX);
-          cameraY = lerp(cameraY, targetCameraY);
-          zoom = lerp(zoom, targetZoom);
+        if (Math.abs(zoom - targetZoom) > VIEW_SNAP_THRESHOLD) {
+          const nextZoom = lerp(zoom, targetZoom);
+          const progress = getAnimationProgress(nextZoom);
+          const screenX =
+            animationStartScreenX +
+            (p.width / 2 - animationStartScreenX) * progress;
+          const screenY =
+            animationStartScreenY +
+            (p.height / 2 - animationStartScreenY) * progress;
+          setCameraFromScreenAnchor(
+            animationWorldX,
+            animationWorldY,
+            screenX,
+            screenY,
+            nextZoom
+          );
         } else {
-          cameraX = targetCameraX;
-          cameraY = targetCameraY;
-          zoom = targetZoom;
+          applyViewTargets();
           viewAnimating = false;
         }
       };
@@ -840,13 +1018,22 @@ function TimelineCanvas({
 
       const focusItem = (target: FocusTarget) => {
         focusTarget = target;
-        computeFocusViewTargets(getFocusBounds(target));
+        const bounds = getFocusBounds(target);
+        computeFocusViewTargets(bounds);
+        beginViewAnimation(
+          (bounds.left + bounds.right) / 2,
+          bounds.top + bounds.height / 2
+        );
         viewAnimating = true;
       };
 
       const unfocusItem = () => {
         focusTarget = null;
         computeFitViewTargets();
+        beginViewAnimation(
+          targetCameraX + p.width / (2 * targetZoom),
+          targetCameraY + p.height / (2 * targetZoom)
+        );
         viewAnimating = true;
       };
 
@@ -1083,51 +1270,63 @@ function TimelineCanvas({
           for (let index = processedCollected.length - 1; index >= 0; index--) {
             const item = processedCollected[index];
             const itemBounds = collectedBounds[index];
-            const { from: fromPoint, to: toPoint } = getBranchEndpoints(
-              item.anchorTime,
-              itemBounds,
-              bounds
-            );
-            const line = getBranchPoints(fromPoint, toPoint);
-            if (
-              distanceToPolyline(line, mouseWorld) <= CONNECTOR_HOVER_THRESHOLD
+            for (
+              let sourceIndex = 0;
+              sourceIndex < item.sources.length;
+              sourceIndex++
             ) {
-              hoveredCollected = index;
+              const { from: fromPoint, to: toPoint } = getBranchEndpointsForSource(
+                item.anchorTime,
+                itemBounds,
+                bounds,
+                sourceIndex,
+                item.sources.length
+              );
+              const line = getBranchPoints(fromPoint, toPoint);
+              if (
+                distanceToPolyline(line, mouseWorld) <= CONNECTOR_HOVER_THRESHOLD
+              ) {
+                hoveredCollected = index;
+                break;
+              }
+            }
+            if (hoveredCollected !== -1) {
               break;
             }
           }
         }
 
-        const hoveredRow =
-          hoveredCollected !== -1
-            ? processedCollected[hoveredCollected].rowIndex
-            : -1;
-
         processedCollected.forEach((item, index) => {
           const itemBounds = collectedBounds[index];
-          const { from: fromPoint, to: toPoint } = getBranchEndpoints(
-            item.anchorTime,
-            itemBounds,
-            bounds
-          );
+          const isHovered = hoveredCollected === index;
 
-          if (item.rowIndex === hoveredRow) {
-            collectedCtx.shadowBlur = 16;
-            collectedCtx.shadowColor = hexToRgba(item.colour, 0.55);
-          }
+          item.sources.forEach((source, sourceIndex) => {
+            const { from: fromPoint, to: toPoint } = getBranchEndpointsForSource(
+              item.anchorTime,
+              itemBounds,
+              bounds,
+              sourceIndex,
+              item.sources.length
+            );
 
-          if (highlightedType) {
-            collectedCtx.globalAlpha = TYPE_DIM_ALPHA;
-          }
+            if (isHovered) {
+              collectedCtx.shadowBlur = 16;
+              collectedCtx.shadowColor = hexToRgba(source.colour, 0.55);
+            }
 
-          drawBranchConnector(p, fromPoint, toPoint, item.colour);
-          resetCanvasEffects(collectedCtx);
+            if (highlightedType) {
+              collectedCtx.globalAlpha = TYPE_DIM_ALPHA;
+            }
+
+            drawBranchConnector(p, fromPoint, toPoint, source.colour);
+            resetCanvasEffects(collectedCtx);
+          });
         });
 
         processedCollected.forEach((item, index) => {
           const { left, top, width, height } = collectedBounds[index];
           const img = loadedCollectedImages[index];
-          const isHovered = item.rowIndex === hoveredRow;
+          const isHovered = hoveredCollected === index;
           const typeMatch = matchesHighlightedType(
             item.contentType,
             highlightedType
@@ -1135,7 +1334,7 @@ function TimelineCanvas({
 
           if (isHovered) {
             collectedCtx.shadowBlur = 22;
-            collectedCtx.shadowColor = hexToRgba(item.colour, 0.45);
+            collectedCtx.shadowColor = hexToRgba(item.sources[0].colour, 0.45);
           } else if (typeMatch) {
             collectedCtx.shadowBlur = TYPE_HIGHLIGHT_BLUR;
             collectedCtx.shadowColor = hexToRgba(
@@ -1200,21 +1399,27 @@ function TimelineCanvas({
 
         processedCollected.forEach((item, index) => {
           const itemBounds = collectedBounds[index];
-          const { from: fromPoint, to: toPoint } = getBranchEndpoints(
-            item.anchorTime,
-            itemBounds,
-            bounds
-          );
-          if (item.rowIndex === hoveredRow) {
-            collectedCtx.shadowBlur = 16;
-            collectedCtx.shadowColor = hexToRgba(item.colour, 0.55);
-          }
-          if (highlightedType) {
-            collectedCtx.globalAlpha = TYPE_DIM_ALPHA;
-          }
-          drawDot(p, fromPoint.x, fromPoint.y, item.colour);
-          drawDot(p, toPoint.x, toPoint.y, item.colour);
-          resetCanvasEffects(collectedCtx);
+          const isHovered = hoveredCollected === index;
+
+          item.sources.forEach((source, sourceIndex) => {
+            const { from: fromPoint, to: toPoint } = getBranchEndpointsForSource(
+              item.anchorTime,
+              itemBounds,
+              bounds,
+              sourceIndex,
+              item.sources.length
+            );
+            if (isHovered) {
+              collectedCtx.shadowBlur = 16;
+              collectedCtx.shadowColor = hexToRgba(source.colour, 0.55);
+            }
+            if (highlightedType) {
+              collectedCtx.globalAlpha = TYPE_DIM_ALPHA;
+            }
+            drawDot(p, fromPoint.x, fromPoint.y, source.colour);
+            drawDot(p, toPoint.x, toPoint.y, source.colour);
+            resetCanvasEffects(collectedCtx);
+          });
         });
 
         p.pop();
@@ -1223,10 +1428,9 @@ function TimelineCanvas({
 
         if (hoveredCollected !== -1) {
           const hovered = processedCollected[hoveredCollected];
-          drawUserLabel(
+          drawCollectedSourcesLabel(
             p,
-            hovered.username,
-            hovered.colour,
+            hovered.sources,
             p.mouseX,
             p.mouseY,
             hoveredCollectedIsImage ? hovered.title : undefined
