@@ -19,7 +19,8 @@ const DATE_OFFSET = 24;
 const DOT_RADIUS = 3;
 const DEFAULT_BACKGROUND = '#ffffff';
 const DRAG_THRESHOLD = 5;
-const EDGE_MARGIN = 3;
+const FIT_VIEW_PADDING = 80;
+const FIT_ZOOM_SCALAR = 0.85;
 const TODAY_LABEL_BOTTOM_OFFSET = 24;
 const TODAY_LABEL_GAP = 8;
 const LANE_GAP = 50;
@@ -32,6 +33,12 @@ const MAIN_GLOW_COLOUR = '#ff0000';
 const TYPE_DIM_ALPHA = 0.4;
 const TYPE_DIM_OVERLAY = 0.3;
 const TYPE_HIGHLIGHT_BLUR = 22;
+const FOCUS_VIEWPORT_FILL = 0.65;
+const VIEW_ANIMATION_LERP = 0.14;
+const VIEW_SNAP_THRESHOLD = 0.001;
+const WHEEL_ZOOM_SENSITIVITY = 0.001;
+const MIN_ZOOM_FACTOR = 0.25;
+const MAX_ZOOM_FACTOR = 4;
 
 type TimelineCanvasProps = {
   items: MainTimelineItem[];
@@ -78,6 +85,11 @@ type ContentBounds = {
 type ConnectorPoint = {
   x: number;
   y: number;
+};
+
+type FocusTarget = {
+  lane: 'main' | 'collected';
+  index: number;
 };
 
 function getItemAspectRatio(item: MainTimelineItem): number {
@@ -386,7 +398,7 @@ type BranchLine = [
   ConnectorPoint,
   ConnectorPoint,
   ConnectorPoint,
-  ConnectorPoint,
+  ConnectorPoint
 ];
 
 const BRANCH_HORIZONTAL_STUB = 16;
@@ -534,7 +546,7 @@ function TimelineCanvas({
       dx: 0,
       dy: 0,
     }));
-    let dragLane: 'main' | 'collected' | null = null;
+    let dragLane: 'main' | 'collected' | 'canvas' | null = null;
     let dragIndex = 0;
     let dragPointerOffsetX = 0;
     let dragPointerOffsetY = 0;
@@ -543,6 +555,12 @@ function TimelineCanvas({
     let cameraX = 0;
     let cameraY = 0;
     let zoom = 1;
+    let targetCameraX = 0;
+    let targetCameraY = 0;
+    let targetZoom = 1;
+    let focusTarget: FocusTarget | null = null;
+    let viewAnimating = false;
+    let fitZoomLevel = 1;
 
     const sketch = (p: p5) => {
       const loadedImages: (p5.Image | null)[] = new Array(
@@ -685,24 +703,151 @@ function TimelineCanvas({
         return bounds;
       };
 
-      const fitView = () => {
-        // Zoom so the full horizontal extent of the timeline (main items plus
-        // any branched items) fits the viewport with EDGE_MARGIN px either side.
+      const computeFitViewTargets = () => {
+        // Fit the full content bounds (main + collected lanes) in the viewport
+        // with padding, then scale down slightly so more context is visible.
         let minX = Infinity;
         let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
         [...getAllBounds(), ...getCollectedBounds()].forEach((b) => {
           minX = Math.min(minX, b.left);
           maxX = Math.max(maxX, b.right);
+          minY = Math.min(minY, b.top);
+          maxY = Math.max(maxY, b.dateBottom);
         });
 
-        if (Number.isFinite(minX) && maxX > minX) {
-          zoom = (p.width - 2 * EDGE_MARGIN) / (maxX - minX);
-          cameraX = minX - EDGE_MARGIN / zoom;
+        if (Number.isFinite(minX) && maxX > minX && maxY > minY) {
+          const paddedWidth = maxX - minX + FIT_VIEW_PADDING * 2;
+          const paddedHeight = maxY - minY + FIT_VIEW_PADDING * 2;
+          const zoomX = p.width / paddedWidth;
+          const zoomY = p.height / paddedHeight;
+          targetZoom = Math.min(zoomX, zoomY) * FIT_ZOOM_SCALAR;
+          const centerX = (minX + maxX) / 2;
+          const centerY = (minY + maxY) / 2;
+          targetCameraX = centerX - p.width / (2 * targetZoom);
+          targetCameraY = centerY - p.height / (2 * targetZoom);
         } else {
-          zoom = 1;
-          cameraX = 0;
+          targetZoom = 1;
+          targetCameraX = 0;
+          targetCameraY = MAIN_LINE_Y - p.height / (2 * targetZoom);
         }
-        cameraY = MAIN_LINE_Y - p.height / (2 * zoom);
+        fitZoomLevel = targetZoom;
+      };
+
+      const computeFocusViewTargets = (bounds: ContentBounds) => {
+        const zoomW = (p.width * FOCUS_VIEWPORT_FILL) / bounds.width;
+        const zoomH = (p.height * FOCUS_VIEWPORT_FILL) / bounds.height;
+        targetZoom = Math.min(zoomW, zoomH);
+        const centerX = (bounds.left + bounds.right) / 2;
+        const centerY = bounds.top + bounds.height / 2;
+        targetCameraX = centerX - p.width / (2 * targetZoom);
+        targetCameraY = centerY - p.height / (2 * targetZoom);
+      };
+
+      const getFocusBounds = (target: FocusTarget): ContentBounds => {
+        if (target.lane === 'main') {
+          return getAllBounds()[target.index];
+        }
+        return getCollectedBounds()[target.index];
+      };
+
+      const applyViewTargets = () => {
+        cameraX = targetCameraX;
+        cameraY = targetCameraY;
+        zoom = targetZoom;
+      };
+
+      const syncViewTargets = () => {
+        targetCameraX = cameraX;
+        targetCameraY = cameraY;
+        targetZoom = zoom;
+        viewAnimating = false;
+      };
+
+      const panView = (deltaScreenX: number, deltaScreenY: number) => {
+        cameraX -= deltaScreenX / zoom;
+        cameraY -= deltaScreenY / zoom;
+        syncViewTargets();
+      };
+
+      const zoomViewAt = (screenX: number, screenY: number, delta: number) => {
+        const worldX = screenX / zoom + cameraX;
+        const worldY = screenY / zoom + cameraY;
+        const minZoom = fitZoomLevel * MIN_ZOOM_FACTOR;
+        const maxZoom = fitZoomLevel * MAX_ZOOM_FACTOR;
+        const zoomFactor = Math.exp(-delta * WHEEL_ZOOM_SENSITIVITY);
+        const newZoom = Math.max(minZoom, Math.min(maxZoom, zoom * zoomFactor));
+
+        cameraX = worldX - screenX / newZoom;
+        cameraY = worldY - screenY / newZoom;
+        zoom = newZoom;
+        focusTarget = null;
+        syncViewTargets();
+      };
+
+      const fitView = () => {
+        focusTarget = null;
+        computeFitViewTargets();
+        applyViewTargets();
+        viewAnimating = false;
+      };
+
+      const animateView = () => {
+        if (!viewAnimating) {
+          return;
+        }
+
+        const lerp = (current: number, target: number) =>
+          current + (target - current) * VIEW_ANIMATION_LERP;
+
+        if (
+          Math.abs(cameraX - targetCameraX) > VIEW_SNAP_THRESHOLD ||
+          Math.abs(cameraY - targetCameraY) > VIEW_SNAP_THRESHOLD ||
+          Math.abs(zoom - targetZoom) > VIEW_SNAP_THRESHOLD
+        ) {
+          cameraX = lerp(cameraX, targetCameraX);
+          cameraY = lerp(cameraY, targetCameraY);
+          zoom = lerp(zoom, targetZoom);
+        } else {
+          cameraX = targetCameraX;
+          cameraY = targetCameraY;
+          zoom = targetZoom;
+          viewAnimating = false;
+        }
+      };
+
+      const findClickedItem = (
+        worldX: number,
+        worldY: number
+      ): FocusTarget | null => {
+        const bounds = getAllBounds();
+        for (let index = processed.length - 1; index >= 0; index--) {
+          if (hitTest(bounds[index], worldX, worldY)) {
+            return { lane: 'main', index };
+          }
+        }
+
+        const collectedBounds = getCollectedBounds();
+        for (let index = processedCollected.length - 1; index >= 0; index--) {
+          if (hitTest(collectedBounds[index], worldX, worldY)) {
+            return { lane: 'collected', index };
+          }
+        }
+
+        return null;
+      };
+
+      const focusItem = (target: FocusTarget) => {
+        focusTarget = target;
+        computeFocusViewTargets(getFocusBounds(target));
+        viewAnimating = true;
+      };
+
+      const unfocusItem = () => {
+        focusTarget = null;
+        computeFitViewTargets();
+        viewAnimating = true;
       };
 
       const drawTodayLine = () => {
@@ -777,10 +922,17 @@ function TimelineCanvas({
 
       p.windowResized = () => {
         p.resizeCanvas(window.innerWidth, window.innerHeight);
-        fitView();
+        if (focusTarget) {
+          computeFocusViewTargets(getFocusBounds(focusTarget));
+          viewAnimating = true;
+        } else {
+          fitView();
+        }
       };
 
       p.draw = () => {
+        animateView();
+
         const highlightedType = highlightedTypeRef.current;
         p.background(backgroundColour);
 
@@ -1089,6 +1241,15 @@ function TimelineCanvas({
             hoveredMain !== -1 ? processed[hoveredMain].title : undefined
           );
         }
+
+        const hoveringContent = hoveredMain !== -1 || hoveredCollectedIsImage;
+        if (dragLane === 'canvas') {
+          p.cursor('grabbing');
+        } else if (hoveringContent) {
+          p.cursor('pointer');
+        } else {
+          p.cursor('grab');
+        }
       };
 
       p.mousePressed = () => {
@@ -1129,6 +1290,8 @@ function TimelineCanvas({
           dragPointerOffsetY = world.y - collectedBounds[index].top;
           return;
         }
+
+        dragLane = 'canvas';
       };
 
       p.mouseDragged = () => {
@@ -1137,6 +1300,11 @@ function TimelineCanvas({
         }
 
         if (p.dist(pressX, pressY, p.mouseX, p.mouseY) <= DRAG_THRESHOLD) {
+          return;
+        }
+
+        if (dragLane === 'canvas') {
+          panView(p.mouseX - p.pmouseX, p.mouseY - p.pmouseY);
           return;
         }
 
@@ -1184,12 +1352,32 @@ function TimelineCanvas({
       };
 
       p.mouseReleased = () => {
+        if (p.dist(pressX, pressY, p.mouseX, p.mouseY) <= DRAG_THRESHOLD) {
+          const world = screenToWorld(pressX, pressY, cameraX, cameraY, zoom);
+          const clicked = findClickedItem(world.x, world.y);
+
+          if (clicked) {
+            const isSameFocus =
+              focusTarget?.lane === clicked.lane &&
+              focusTarget.index === clicked.index;
+            if (isSameFocus) {
+              unfocusItem();
+            } else {
+              focusItem(clicked);
+            }
+          } else if (focusTarget) {
+            unfocusItem();
+          }
+        }
+
         dragLane = null;
       };
 
       p.mouseWheel = (event?: WheelEvent) => {
         if (event) {
-          cameraY += (event as WheelEvent & { delta: number }).delta / zoom;
+          const delta =
+            event.deltaY ?? (event as WheelEvent & { delta: number }).delta;
+          zoomViewAt(p.mouseX, p.mouseY, delta);
         }
         return false;
       };
