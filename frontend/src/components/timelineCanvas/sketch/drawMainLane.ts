@@ -53,6 +53,7 @@ export type MainLaneDrawContext = {
 
 export type MainLaneDrawResult = {
   hoveredMain: number;
+  mainConnectorHover: boolean;
   mainHighlighted: boolean;
 };
 
@@ -83,9 +84,7 @@ export function computeMainLaneHover(
         { x: bounds[index].right, y: bounds[index].centerY },
         { x: bounds[index + 1].left, y: bounds[index + 1].centerY }
       );
-      if (
-        distanceToPolyline(line, mouseWorld) <= CONNECTOR_HOVER_THRESHOLD
-      ) {
+      if (distanceToPolyline(line, mouseWorld) <= CONNECTOR_HOVER_THRESHOLD) {
         mainConnectorHover = true;
         break;
       }
@@ -94,6 +93,7 @@ export function computeMainLaneHover(
 
   return {
     hoveredMain,
+    mainConnectorHover,
     mainHighlighted: hoveredMain !== -1 || mainConnectorHover,
   };
 }
@@ -114,7 +114,7 @@ export function drawMainLaneConnectors(
       continue;
     }
 
-    if (hover.mainHighlighted && !ctx.isFocusActive) {
+    if (hover.mainConnectorHover && !ctx.isFocusActive) {
       mainCtx.shadowBlur = 16;
       mainCtx.shadowColor = hexToRgba(
         MAIN_GLOW_COLOUR,
@@ -174,16 +174,10 @@ export function drawMainLaneItems(
 
     if (ctx.isFocusActive && ctx.isFocusedTarget('main', index)) {
       mainCtx.shadowBlur = 22;
-      mainCtx.shadowColor = hexToRgba(
-        MAIN_GLOW_COLOUR,
-        0.45 * visibilityAlpha
-      );
-    } else if (hover.mainHighlighted) {
+      mainCtx.shadowColor = hexToRgba(MAIN_GLOW_COLOUR, 0.45 * visibilityAlpha);
+    } else if (hover.hoveredMain === index || hover.mainConnectorHover) {
       mainCtx.shadowBlur = 22;
-      mainCtx.shadowColor = hexToRgba(
-        MAIN_GLOW_COLOUR,
-        0.45 * visibilityAlpha
-      );
+      mainCtx.shadowColor = hexToRgba(MAIN_GLOW_COLOUR, 0.45 * visibilityAlpha);
     } else if (typeMatch && ctx.isTypeHighlightActive) {
       mainCtx.shadowBlur = TYPE_HIGHLIGHT_BLUR * ctx.typeHighlightStrength;
       mainCtx.shadowColor = hexToRgba(
@@ -257,7 +251,7 @@ export function drawMainLaneConnectorDots(
       continue;
     }
 
-    if (hover.mainHighlighted && !ctx.isFocusActive) {
+    if (hover.mainConnectorHover && !ctx.isFocusActive) {
       mainCtx.shadowBlur = 16;
       mainCtx.shadowColor = hexToRgba(
         MAIN_GLOW_COLOUR,
@@ -275,10 +269,7 @@ export function drawMainLaneConnectorDots(
   }
 }
 
-export function createMainLaneDrawHelpers(
-  deps: TimelineSketchDeps,
-  p: p5
-) {
+export function createMainLaneDrawHelpers(deps: TimelineSketchDeps, p: p5) {
   const { runtime } = deps;
 
   const isFocusedTarget = (lane: 'main' | 'collected', index: number) =>

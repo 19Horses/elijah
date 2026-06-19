@@ -5,7 +5,11 @@ import {
   type MainTimelineItem,
 } from '../../queries/mainTimeline';
 import { ITEM_WIDTH, IMAGE_HEIGHT } from './constants';
-import type { CollectedSource, ProcessedCollected, ProcessedItem } from './types';
+import type {
+  CollectedSource,
+  ProcessedCollected,
+  ProcessedItem,
+} from './types';
 
 function getItemAspectRatio(item: MainTimelineItem): number {
   if ('imageDimensions' in item && item.imageDimensions?.aspectRatio) {
@@ -14,7 +18,9 @@ function getItemAspectRatio(item: MainTimelineItem): number {
   return ITEM_WIDTH / IMAGE_HEIGHT;
 }
 
-export function buildProcessedItems(items: MainTimelineItem[]): ProcessedItem[] {
+export function buildProcessedItems(
+  items: MainTimelineItem[]
+): ProcessedItem[] {
   return items.map((item) => ({
     imageUrl: getMainTimelineImageUrl(item),
     slug: item.slug ?? null,

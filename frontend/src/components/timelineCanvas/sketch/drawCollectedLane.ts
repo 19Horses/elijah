@@ -70,9 +70,7 @@ export function computeCollectedLaneHover(
             item.sources.length
           );
         const line = getBranchPoints(fromPoint, toPoint);
-        if (
-          distanceToPolyline(line, mouseWorld) <= CONNECTOR_HOVER_THRESHOLD
-        ) {
+        if (distanceToPolyline(line, mouseWorld) <= CONNECTOR_HOVER_THRESHOLD) {
           hoveredCollected = index;
           break;
         }
@@ -99,7 +97,8 @@ export function drawCollectedLaneConnectors(
 
   deps.processedCollected.forEach((item, index) => {
     const itemBounds = collectedBounds[index];
-    const isHovered = hover.hoveredCollected === index;
+    const isConnectorHovered =
+      hover.hoveredCollected === index && !hover.hoveredCollectedIsImage;
     const connectorLoadAlpha =
       ctx.getCollectedConnectorLoadAlpha(index) * ctx.otherContentAlpha;
 
@@ -117,7 +116,7 @@ export function drawCollectedLaneConnectors(
           item.sources.length
         );
 
-      if (isHovered && !ctx.isFocusActive) {
+      if (isConnectorHovered && !ctx.isFocusActive) {
         collectedCtx.shadowBlur = 16;
         collectedCtx.shadowColor = hexToRgba(
           source.colour,
@@ -167,7 +166,8 @@ export function drawCollectedLaneItems(
       collectedBounds[index]
     );
     const img = loadedCollectedImages[index];
-    const isHovered = hover.hoveredCollected === index;
+    const isConnectorHovered =
+      hover.hoveredCollected === index && !hover.hoveredCollectedIsImage;
     const typeMatch = matchesHighlightedType(
       item.contentType,
       ctx.highlightedType
@@ -183,7 +183,7 @@ export function drawCollectedLaneItems(
         item.sources[0].colour,
         0.45 * visibilityAlpha
       );
-    } else if (isHovered) {
+    } else if (hover.hoveredCollected === index) {
       collectedCtx.shadowBlur = 22;
       collectedCtx.shadowColor = hexToRgba(
         item.sources[0].colour,
@@ -266,7 +266,8 @@ export function drawCollectedLaneConnectorDots(
 
   deps.processedCollected.forEach((item, index) => {
     const itemBounds = collectedBounds[index];
-    const isHovered = hover.hoveredCollected === index;
+    const isConnectorHovered =
+      hover.hoveredCollected === index && !hover.hoveredCollectedIsImage;
     const connectorLoadAlpha =
       ctx.getCollectedConnectorLoadAlpha(index) * ctx.otherContentAlpha;
 
@@ -283,7 +284,7 @@ export function drawCollectedLaneConnectorDots(
           sourceIndex,
           item.sources.length
         );
-      if (isHovered && !ctx.isFocusActive) {
+      if (isConnectorHovered && !ctx.isFocusActive) {
         collectedCtx.shadowBlur = 16;
         collectedCtx.shadowColor = hexToRgba(
           source.colour,

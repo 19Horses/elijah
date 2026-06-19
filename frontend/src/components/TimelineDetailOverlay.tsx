@@ -24,7 +24,10 @@ function TimelineDetailOverlay({ detail }: TimelineDetailOverlayProps) {
       event.stopImmediatePropagation();
     };
 
-    overlay.addEventListener('wheel', blockScroll, { passive: false, capture: true });
+    overlay.addEventListener('wheel', blockScroll, {
+      passive: false,
+      capture: true,
+    });
     return () =>
       overlay.removeEventListener('wheel', blockScroll, { capture: true });
   }, [detail]);

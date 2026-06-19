@@ -3,10 +3,7 @@ import { memo, useEffect, useRef } from 'react';
 import type { ContentType } from '../../types/content';
 import { DEFAULT_BACKGROUND } from './constants';
 import { createTimelineSketch } from './createTimelineSketch';
-import {
-  buildProcessedCollected,
-  buildProcessedItems,
-} from './processItems';
+import { buildProcessedCollected, buildProcessedItems } from './processItems';
 import P5CanvasHost from './P5CanvasHost';
 import { createTimelineRuntime } from './timelineRuntime';
 import type { TimelineCanvasProps } from './types';

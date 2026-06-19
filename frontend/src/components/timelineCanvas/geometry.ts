@@ -73,7 +73,10 @@ export function applyDetailLayoutTransform(
     leftAligned + (rightAligned - leftAligned) * DETAIL_SHIFT_LEFT_BLEND;
   const widthRatio =
     maxImageWidthScreen > 0
-      ? Math.min(1, scaledScreenWidth / maxImageWidthScreen + DETAIL_SHIFT_WIDTH_BOOST)
+      ? Math.min(
+          1,
+          scaledScreenWidth / maxImageWidthScreen + DETAIL_SHIFT_WIDTH_BOOST
+        )
       : 1;
   const targetScreenLeft =
     baseScreenLeft + (detailScreenLeft - baseScreenLeft) * widthRatio;

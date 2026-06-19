@@ -5,13 +5,15 @@ import { createDrawFrameHandler } from './sketch/drawFrame';
 import { createInputHandlers } from './sketch/input';
 import { createViewContext } from './sketch/view';
 
-export function createTimelineSketch(deps: TimelineSketchDeps): (p: p5) => void {
+export function createTimelineSketch(
+  deps: TimelineSketchDeps
+): (p: p5) => void {
   return (p: p5) => {
     const boundsCtx = createBoundsContext(deps);
     const view = createViewContext(p, deps, boundsCtx);
-    const loadedImages: (p5.Image | null)[] = new Array(deps.processed.length).fill(
-      null
-    );
+    const loadedImages: (p5.Image | null)[] = new Array(
+      deps.processed.length
+    ).fill(null);
     const loadedCollectedImages: (p5.Image | null)[] = new Array(
       deps.processedCollected.length
     ).fill(null);

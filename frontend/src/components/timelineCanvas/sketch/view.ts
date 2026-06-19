@@ -72,20 +72,15 @@ export function createViewContext(
     }
     return Math.max(
       0,
-      Math.min(
-        1,
-        (nextZoom - runtime.animationStartZoom) / zoomRange
-      )
+      Math.min(1, (nextZoom - runtime.animationStartZoom) / zoomRange)
     );
   };
 
   const beginViewAnimation = (worldX: number, worldY: number) => {
     runtime.animationWorldX = worldX;
     runtime.animationWorldY = worldY;
-    runtime.animationStartScreenX =
-      (worldX - runtime.cameraX) * runtime.zoom;
-    runtime.animationStartScreenY =
-      (worldY - runtime.cameraY) * runtime.zoom;
+    runtime.animationStartScreenX = (worldX - runtime.cameraX) * runtime.zoom;
+    runtime.animationStartScreenY = (worldY - runtime.cameraY) * runtime.zoom;
     runtime.animationStartZoom = runtime.zoom;
   };
 
@@ -254,11 +249,7 @@ export function createViewContext(
     }
 
     const collectedBounds = bounds.getCollectedBounds();
-    for (
-      let index = deps.processedCollected.length - 1;
-      index >= 0;
-      index--
-    ) {
+    for (let index = deps.processedCollected.length - 1; index >= 0; index--) {
       if (hitTest(collectedBounds[index], worldX, worldY)) {
         return { lane: 'collected', index };
       }

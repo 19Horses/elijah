@@ -134,7 +134,8 @@ export function createDrawFrameHandler(
       0,
       connectorBaseStart
     );
-    const isFocusActive = runtime.focusTarget !== null && !runtime.viewUnfocusing;
+    const isFocusActive =
+      runtime.focusTarget !== null && !runtime.viewUnfocusing;
     const isDetailLayoutActive = runtime.detailPhase !== 'none';
     const otherContentAlpha = 1 - runtime.focusContentFade;
     const contentAlphaFor = (

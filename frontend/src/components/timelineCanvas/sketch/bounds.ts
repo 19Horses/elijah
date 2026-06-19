@@ -36,8 +36,13 @@ export type BoundsContext = {
 };
 
 export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
-  const { items, processed, processedCollected, itemOffsets, collectedOffsets } =
-    deps;
+  const {
+    items,
+    processed,
+    processedCollected,
+    itemOffsets,
+    collectedOffsets,
+  } = deps;
 
   const getAllBounds = () =>
     processed.map((item, index) =>

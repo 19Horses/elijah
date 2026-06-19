@@ -97,7 +97,10 @@ export function drawMainConnector(
   }
 }
 
-export function getBranchPoints(from: ConnectorPoint, to: ConnectorPoint): BranchLine {
+export function getBranchPoints(
+  from: ConnectorPoint,
+  to: ConnectorPoint
+): BranchLine {
   const dirX = Math.sign(to.x - from.x) || 1;
   const dirY = Math.sign(to.y - from.y) || 1;
   const adx = Math.abs(to.x - from.x);
