@@ -26,9 +26,14 @@ function TimelineDetailOverlay({
     }
 
     const blockScroll = (event: WheelEvent) => {
-      const body = overlay.querySelector('.timeline-detail__body');
-      if (body instanceof HTMLElement && body.contains(event.target as Node)) {
-        const { scrollTop, scrollHeight, clientHeight } = body;
+      const scrollable = overlay.querySelector(
+        '.timeline-detail__body, .timeline-detail__description'
+      );
+      if (
+        scrollable instanceof HTMLElement &&
+        scrollable.contains(event.target as Node)
+      ) {
+        const { scrollTop, scrollHeight, clientHeight } = scrollable;
         const deltaY = event.deltaY;
         const canScrollUp = scrollTop > 0;
         const canScrollDown = scrollTop + clientHeight < scrollHeight - 1;

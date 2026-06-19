@@ -58,6 +58,28 @@ function TimelineCanvas({
       if (!interactionLockedRef.current) {
         return;
       }
+
+      const target = event.target;
+      if (target instanceof Node) {
+        const overlay = document.querySelector('.timeline-detail');
+        const scrollable = overlay?.querySelector(
+          '.timeline-detail__body, .timeline-detail__description'
+        );
+        if (
+          scrollable instanceof HTMLElement &&
+          scrollable.contains(target)
+        ) {
+          const { scrollTop, scrollHeight, clientHeight } = scrollable;
+          const deltaY = event.deltaY;
+          const canScrollUp = scrollTop > 0;
+          const canScrollDown = scrollTop + clientHeight < scrollHeight - 1;
+
+          if ((deltaY < 0 && canScrollUp) || (deltaY > 0 && canScrollDown)) {
+            return;
+          }
+        }
+      }
+
       event.preventDefault();
       event.stopImmediatePropagation();
     };
