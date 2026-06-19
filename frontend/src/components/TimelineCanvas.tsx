@@ -1184,7 +1184,8 @@ function TimelineCanvas({
         const highlightedType = activeHighlightType;
         const typeHighlightStrength = highlightStrength;
         const isTypeHighlightActive =
-          typeHighlightStrength > HIGHLIGHT_FADE_SNAP && highlightedType !== null;
+          typeHighlightStrength > HIGHLIGHT_FADE_SNAP &&
+          highlightedType !== null;
         const dimAlpha = getTypeDimAlpha(typeHighlightStrength);
         const elapsed = p.millis() - loadStartMs;
         const totalImages = processed.length + processedCollected.length;
@@ -1291,7 +1292,10 @@ function TimelineCanvas({
           }
 
           if (connectorDimmed) {
-            mainCtx.globalAlpha = getCombinedAlpha(connectorLoadAlpha, dimAlpha);
+            mainCtx.globalAlpha = getCombinedAlpha(
+              connectorLoadAlpha,
+              dimAlpha
+            );
           } else {
             mainCtx.globalAlpha = connectorLoadAlpha;
           }
@@ -1494,7 +1498,8 @@ function TimelineCanvas({
               0.45 * imageLoadAlpha
             );
           } else if (typeMatch && isTypeHighlightActive) {
-            collectedCtx.shadowBlur = TYPE_HIGHLIGHT_BLUR * typeHighlightStrength;
+            collectedCtx.shadowBlur =
+              TYPE_HIGHLIGHT_BLUR * typeHighlightStrength;
             collectedCtx.shadowColor = hexToRgba(
               getContentTypeColour(item.contentType),
               0.55 * typeHighlightStrength * imageLoadAlpha
@@ -1502,7 +1507,10 @@ function TimelineCanvas({
           }
 
           if (isTypeHighlightActive && !typeMatch) {
-            collectedCtx.globalAlpha = getCombinedAlpha(imageLoadAlpha, dimAlpha);
+            collectedCtx.globalAlpha = getCombinedAlpha(
+              imageLoadAlpha,
+              dimAlpha
+            );
           } else {
             collectedCtx.globalAlpha = imageLoadAlpha;
           }
@@ -1540,7 +1548,10 @@ function TimelineCanvas({
           p.noStroke();
           p.textAlign(p.CENTER, p.TOP);
           if (isTypeHighlightActive && !typeMatch) {
-            collectedCtx.globalAlpha = getCombinedAlpha(imageLoadAlpha, dimAlpha);
+            collectedCtx.globalAlpha = getCombinedAlpha(
+              imageLoadAlpha,
+              dimAlpha
+            );
           } else {
             collectedCtx.globalAlpha = imageLoadAlpha;
           }
@@ -1563,7 +1574,10 @@ function TimelineCanvas({
             );
           }
           if (isTypeHighlightActive) {
-            mainCtx.globalAlpha = getCombinedAlpha(connectorLoadAlpha, dimAlpha);
+            mainCtx.globalAlpha = getCombinedAlpha(
+              connectorLoadAlpha,
+              dimAlpha
+            );
           } else {
             mainCtx.globalAlpha = connectorLoadAlpha;
           }
