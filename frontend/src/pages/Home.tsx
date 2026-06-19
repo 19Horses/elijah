@@ -1,10 +1,20 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CollectionCountdown from '../components/CollectionCountdown';
 import CollectionViewer from '../components/CollectionViewer';
 import ContentLegend from '../components/ContentLegend';
-import TimelineCanvas from '../components/TimelineCanvas';
+import TimelineCanvas from '../components/timelineCanvas';
+import TimelineDetailOverlay, {
+  type TimelineDetailView,
+} from '../components/TimelineDetailOverlay';
 import UserCard from '../components/UserCard';
+import {
+  getContentDetailDateLabel,
+  getContentDetailDescription,
+  getContentDetailLink,
+  getContentDetailNewsletterContent,
+  useContentDetail,
+} from '../queries/contentDetail';
 import { useCollectedTimeline } from '../queries/collectedContent';
 import { useCollections } from '../queries/collection';
 import { useMainTimeline } from '../queries/mainTimeline';
@@ -25,6 +35,60 @@ function Home() {
   const [highlightedType, setHighlightedType] = useState<ContentType | null>(
     null
   );
+  const [focusSlug, setFocusSlug] = useState<string | null>(null);
+  const [detailReady, setDetailReady] = useState(false);
+  const [detailImageHeightPx, setDetailImageHeightPx] = useState<number | null>(
+    null
+  );
+  const userCardWrapRef = useRef<HTMLDivElement>(null);
+  const legendWrapRef = useRef<HTMLDivElement>(null);
+
+  const { data: contentDetail } = useContentDetail(focusSlug);
+
+  const handleFocusFadeChange = useCallback((fade: number) => {
+    const opacity = 1 - fade;
+    const pointerEvents = opacity < 0.5 ? 'none' : 'auto';
+    for (const ref of [userCardWrapRef, legendWrapRef]) {
+      if (ref.current) {
+        ref.current.style.opacity = String(opacity);
+        ref.current.style.pointerEvents = pointerEvents;
+      }
+    }
+  }, []);
+
+  const handleContentFocus = useCallback((slug: string) => {
+    setFocusSlug(slug);
+    setDetailReady(false);
+    setDetailImageHeightPx(null);
+  }, []);
+
+  const handleContentUnfocus = useCallback(() => {
+    setFocusSlug(null);
+    setDetailReady(false);
+    setDetailImageHeightPx(null);
+  }, []);
+
+  const handleDetailLayoutStart = useCallback(() => {
+    setDetailReady(true);
+  }, []);
+
+  const handleDetailImageHeight = useCallback((heightPx: number) => {
+    setDetailImageHeightPx(heightPx);
+  }, []);
+
+  const timelineDetail = useMemo((): TimelineDetailView | null => {
+    if (!focusSlug || !detailReady || !contentDetail) {
+      return null;
+    }
+
+    return {
+      title: contentDetail.title,
+      dateLabel: getContentDetailDateLabel(contentDetail),
+      description: getContentDetailDescription(contentDetail),
+      link: getContentDetailLink(contentDetail),
+      newsletterContent: getContentDetailNewsletterContent(contentDetail),
+    };
+  }, [contentDetail, detailReady, focusSlug]);
 
   const activeCollection = collections?.[0] ?? null;
 
@@ -80,6 +144,15 @@ function Home() {
         collectedRows={collectedRows}
         colour={timeline.colour}
         highlightedType={highlightedType}
+        onFocusFadeChange={handleFocusFadeChange}
+        onContentFocus={handleContentFocus}
+        onContentUnfocus={handleContentUnfocus}
+        onDetailLayoutStart={handleDetailLayoutStart}
+        onDetailImageHeight={handleDetailImageHeight}
+      />
+      <TimelineDetailOverlay
+        detail={timelineDetail}
+        imageHeightPx={detailImageHeightPx}
       />
       {statusChecked && activeCollection && !alreadyCollected && (
         <CollectionCountdown
@@ -94,11 +167,15 @@ function Home() {
           onCollected={handleCollected}
         />
       )}
-      <UserCard refreshSignal={collectedSignal} />
-      <ContentLegend
-        highlightedType={highlightedType}
-        onHighlight={setHighlightedType}
-      />
+      <div ref={userCardWrapRef}>
+        <UserCard refreshSignal={collectedSignal} />
+      </div>
+      <div ref={legendWrapRef}>
+        <ContentLegend
+          highlightedType={highlightedType}
+          onHighlight={setHighlightedType}
+        />
+      </div>
     </section>
   );
 }

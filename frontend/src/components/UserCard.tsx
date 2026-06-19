@@ -5,9 +5,10 @@ import { getCollectedItems } from '../services/collectItem';
 
 type UserCardProps = {
   refreshSignal?: number;
+  chromeOpacity?: number;
 };
 
-function UserCard({ refreshSignal = 0 }: UserCardProps) {
+function UserCard({ refreshSignal = 0, chromeOpacity = 1 }: UserCardProps) {
   const [user] = useState(() => getStoredUser());
   const [colour] = useState(() => getStoredColour() ?? DEFAULT_COLOUR);
   const [collectedCount, setCollectedCount] = useState(0);
@@ -36,7 +37,13 @@ function UserCard({ refreshSignal = 0 }: UserCardProps) {
   if (!user || !loaded) return null;
 
   return (
-    <div className="user-card">
+    <div
+      className="user-card"
+      style={{
+        opacity: chromeOpacity,
+        pointerEvents: chromeOpacity < 0.5 ? 'none' : undefined,
+      }}
+    >
       <div className="user-card__header">
         <span
           className="user-card__swatch"

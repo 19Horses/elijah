@@ -9,6 +9,7 @@ export type ImageDimensions = {
 export type Product = {
   _id: string;
   title: string;
+  slug: string | null;
   description: string | null;
   price: number | null;
   imageUrl: string | null;
@@ -19,6 +20,7 @@ export type Product = {
 const PRODUCTS_QUERY = `*[_type == "product"] | order(title asc) {
   _id,
   title,
+  "slug": slug.current,
   description,
   price,
   "imageUrl": image.asset->url,
