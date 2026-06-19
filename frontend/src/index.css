@@ -192,9 +192,61 @@ main.main--home {
   padding: 2rem;
 }
 
+.timeline-canvas-wrap {
+  height: 100%;
+  position: relative;
+  width: 100%;
+}
+
 .timeline-canvas {
   height: 100%;
   width: 100%;
+}
+
+.timeline-detail,
+.newsletter-detail {
+  color: #111827;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: none;
+  position: fixed;
+  z-index: 15;
+}
+
+.newsletter-detail {
+  height: min(80vh, 640px);
+  left: 52%;
+  max-width: 560px;
+  pointer-events: auto;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 42%;
+}
+
+.timeline-detail__title,
+.newsletter-detail__title {
+  flex-shrink: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 0 0 1rem;
+}
+
+.timeline-detail__body,
+.newsletter-detail__body {
+  flex: 1;
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  min-height: 0;
+  overflow-y: auto;
+  pointer-events: auto;
+  white-space: pre-wrap;
+}
+
+.timeline-canvas canvas {
+  cursor: grab;
+  display: block;
 }
 
 .collection-countdown {
@@ -250,11 +302,6 @@ main.main--home {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   letter-spacing: 0.04em;
-}
-
-.timeline-canvas canvas {
-  cursor: grab;
-  display: block;
 }
 
 /* ── Collection viewer ────────────────────────── */

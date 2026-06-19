@@ -1,5 +1,5 @@
 import p5 from 'p5';
-import { useEffect, useRef } from 'react';
+import { memo, useEffect, useRef, type RefObject } from 'react';
 import { getContentTypeColour } from '../constants/contentTypes';
 import type { CollectedUserRow } from '../queries/collectedContent';
 import {
@@ -57,6 +57,7 @@ type TimelineCanvasProps = {
   collectedRows?: CollectedUserRow[];
   colour?: string | null;
   highlightedType?: ContentType | null;
+  onFocusFadeChange?: (fade: number) => void;
 };
 
 type CollectedSource = {
@@ -67,10 +68,12 @@ type CollectedSource = {
 
 type ProcessedCollected = {
   contentId: string;
+  slug: string | null;
   imageUrl: string | null;
   dateLabel: string;
   contentType: ContentType;
   title: string;
+  bodyContent: string | null;
   aspectRatio: number;
   anchorTime: number;
   rowIndex: number;
@@ -79,9 +82,11 @@ type ProcessedCollected = {
 
 type ProcessedItem = {
   imageUrl: string | null;
+  slug: string | null;
   dateLabel: string;
   contentType: ContentType;
   title: string;
+  bodyContent: string | null;
   aspectRatio: number;
 };
 
@@ -110,6 +115,8 @@ type FocusTarget = {
   index: number;
 };
 
+export type { FocusTarget };
+
 function getItemAspectRatio(item: MainTimelineItem): number {
   if ('imageDimensions' in item && item.imageDimensions?.aspectRatio) {
     return item.imageDimensions.aspectRatio;
@@ -135,14 +142,16 @@ function getSlotX(index: number): number {
 function buildProcessedItems(items: MainTimelineItem[]): ProcessedItem[] {
   return items.map((item) => ({
     imageUrl: getMainTimelineImageUrl(item),
+    slug: item.slug ?? null,
     dateLabel: formatMainTimelineDate(item.date),
     contentType: item._type,
     title: item.title,
+    bodyContent: item._type === 'newsletter' ? item.content ?? null : null,
     aspectRatio: getItemAspectRatio(item),
   }));
 }
 
-function buildProcessedCollected(
+export function buildProcessedCollected(
   rows: CollectedUserRow[]
 ): ProcessedCollected[] {
   const byContentId = new Map<string, ProcessedCollected>();
@@ -168,10 +177,15 @@ function buildProcessedCollected(
 
       byContentId.set(contentId, {
         contentId,
+        slug: item.content.slug ?? null,
         imageUrl: getMainTimelineImageUrl(item.content),
         dateLabel: formatMainTimelineDate(item.content.date),
         contentType: item.content._type,
         title: item.content.title,
+        bodyContent:
+          item.content._type === 'newsletter'
+            ? item.content.content ?? null
+            : null,
         aspectRatio: getItemAspectRatio(item.content),
         anchorTime: Number.isNaN(contentTime) ? Date.now() : contentTime,
         rowIndex,
@@ -254,10 +268,7 @@ function getMainConnectorPoints(
   const dirY = Math.sign(to.y - from.y) || 1;
   const adx = Math.abs(to.x - from.x);
   const ady = Math.abs(to.y - from.y);
-  const diag = Math.max(
-    0,
-    Math.min(adx - MAIN_CONNECTOR_HORIZONTAL_STUB, ady)
-  );
+  const diag = Math.max(0, Math.min(adx - MAIN_CONNECTOR_HORIZONTAL_STUB, ady));
   const hStub = adx - diag;
   const elbowX = from.x + dirX * hStub;
   return [
@@ -624,19 +635,33 @@ function drawDot(p: p5, x: number, y: number, colour: string): void {
   ctx.shadowBlur = prevBlur;
 }
 
+const P5CanvasHost = memo(function P5CanvasHost({
+  containerRef,
+}: {
+  containerRef: RefObject<HTMLDivElement>;
+}) {
+  return <div className="timeline-canvas" ref={containerRef} />;
+});
+
 function TimelineCanvas({
   items,
   collectedRows = [],
   colour,
   highlightedType = null,
+  onFocusFadeChange,
 }: TimelineCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const p5InstanceRef = useRef<p5 | null>(null);
   const highlightedTypeRef = useRef<ContentType | null>(highlightedType);
+  const onFocusFadeChangeRef = useRef(onFocusFadeChange);
 
   useEffect(() => {
     highlightedTypeRef.current = highlightedType ?? null;
   }, [highlightedType]);
+
+  useEffect(() => {
+    onFocusFadeChangeRef.current = onFocusFadeChange;
+  }, [onFocusFadeChange]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -652,7 +677,7 @@ function TimelineCanvas({
       dx: 0,
       dy: 0,
     }));
-    let dragLane: 'main' | 'collected' | 'canvas' | null = null;
+    let dragLane: 'main' | 'collected' | 'canvas' | 'focus' | null = null;
     let dragIndex = 0;
     let dragPointerOffsetX = 0;
     let dragPointerOffsetY = 0;
@@ -676,6 +701,11 @@ function TimelineCanvas({
     let activeHighlightType: ContentType | null = null;
     let highlightStrength = 0;
     let loadStartMs = 0;
+    let focusContentFade = 0;
+
+    const notifyFocusFade = () => {
+      onFocusFadeChangeRef.current?.(focusContentFade);
+    };
 
     const updateHighlightFade = () => {
       const targetType = highlightedTypeRef.current;
@@ -985,6 +1015,11 @@ function TimelineCanvas({
 
       const animateView = () => {
         if (!viewAnimating) {
+          if (focusTarget && !viewUnfocusing) {
+            focusContentFade = 1;
+          } else if (!focusTarget && !viewUnfocusing) {
+            focusContentFade = 0;
+          }
           return;
         }
 
@@ -1010,10 +1045,23 @@ function TimelineCanvas({
             screenY,
             nextZoom
           );
+          if (focusTarget && !viewUnfocusing) {
+            focusContentFade = progress;
+          } else if (viewUnfocusing) {
+            focusContentFade = 1 - progress;
+          }
+          notifyFocusFade();
         } else {
           applyViewTargets();
+          const wasUnfocusing = viewUnfocusing;
           viewAnimating = false;
           viewUnfocusing = false;
+          if (focusTarget && !wasUnfocusing) {
+            focusContentFade = 1;
+          } else if (wasUnfocusing) {
+            focusContentFade = 0;
+          }
+          notifyFocusFade();
         }
       };
 
@@ -1039,6 +1087,8 @@ function TimelineCanvas({
       };
 
       const focusItem = (target: FocusTarget) => {
+        focusContentFade = 0;
+        notifyFocusFade();
         focusTarget = target;
         viewUnfocusing = false;
         const bounds = getFocusBounds(target);
@@ -1049,6 +1099,9 @@ function TimelineCanvas({
         );
         viewAnimating = true;
       };
+
+      const isViewInteractionLocked = () =>
+        focusTarget !== null || viewUnfocusing;
 
       const unfocusItem = () => {
         focusTarget = null;
@@ -1197,6 +1250,22 @@ function TimelineCanvas({
           0,
           connectorBaseStart
         );
+        const isFocusedTarget = (lane: 'main' | 'collected', index: number) =>
+          focusTarget?.lane === lane && focusTarget.index === index;
+        const otherContentAlpha = 1 - focusContentFade;
+        const contentAlphaFor = (
+          lane: 'main' | 'collected',
+          index: number,
+          base = 1
+        ) => {
+          if (
+            focusContentFade <= LOAD_ALPHA_SNAP ||
+            isFocusedTarget(lane, index)
+          ) {
+            return base;
+          }
+          return base * otherContentAlpha;
+        };
         p.background(backgroundColour);
 
         p.push();
@@ -1247,7 +1316,8 @@ function TimelineCanvas({
         const mainHighlighted = hoveredMain !== -1 || mainConnectorHover;
 
         for (let index = 0; index < processed.length - 1; index++) {
-          const connectorLoadAlpha = getMainConnectorLoadAlpha(index);
+          const connectorLoadAlpha =
+            getMainConnectorLoadAlpha(index) * otherContentAlpha;
           if (connectorLoadAlpha <= LOAD_ALPHA_SNAP) {
             continue;
           }
@@ -1284,11 +1354,16 @@ function TimelineCanvas({
 
         processed.forEach((item, index) => {
           const imageLoadAlpha = getImageLoadAlpha(index);
-          if (imageLoadAlpha <= LOAD_ALPHA_SNAP) {
+          const visibilityAlpha = contentAlphaFor(
+            'main',
+            index,
+            imageLoadAlpha
+          );
+          if (visibilityAlpha <= LOAD_ALPHA_SNAP) {
             return;
           }
 
-          const { left, top, width, height } = bounds[index];
+          let { left, top, width, height } = bounds[index];
           const img = loadedImages[index];
           const typeMatch = matchesHighlightedType(
             item.contentType,
@@ -1299,20 +1374,20 @@ function TimelineCanvas({
             mainCtx.shadowBlur = 22;
             mainCtx.shadowColor = hexToRgba(
               MAIN_GLOW_COLOUR,
-              0.45 * imageLoadAlpha
+              0.45 * visibilityAlpha
             );
           } else if (typeMatch && isTypeHighlightActive) {
             mainCtx.shadowBlur = TYPE_HIGHLIGHT_BLUR * typeHighlightStrength;
             mainCtx.shadowColor = hexToRgba(
               getContentTypeColour(item.contentType),
-              0.55 * typeHighlightStrength * imageLoadAlpha
+              0.55 * typeHighlightStrength * visibilityAlpha
             );
           }
 
           if (isTypeHighlightActive && !typeMatch) {
-            mainCtx.globalAlpha = getCombinedAlpha(imageLoadAlpha, dimAlpha);
+            mainCtx.globalAlpha = getCombinedAlpha(visibilityAlpha, dimAlpha);
           } else {
-            mainCtx.globalAlpha = imageLoadAlpha;
+            mainCtx.globalAlpha = visibilityAlpha;
           }
 
           if (img) {
@@ -1340,7 +1415,7 @@ function TimelineCanvas({
               top,
               width,
               height,
-              typeHighlightStrength * imageLoadAlpha
+              typeHighlightStrength * visibilityAlpha
             );
           }
 
@@ -1348,9 +1423,9 @@ function TimelineCanvas({
           p.noStroke();
           p.textAlign(p.CENTER, p.TOP);
           if (isTypeHighlightActive && !typeMatch) {
-            mainCtx.globalAlpha = getCombinedAlpha(imageLoadAlpha, dimAlpha);
+            mainCtx.globalAlpha = getCombinedAlpha(visibilityAlpha, dimAlpha);
           } else {
-            mainCtx.globalAlpha = imageLoadAlpha;
+            mainCtx.globalAlpha = visibilityAlpha;
           }
           p.text(item.dateLabel, left + width / 2, top + height + 12);
           resetCanvasEffects(mainCtx);
@@ -1410,7 +1485,8 @@ function TimelineCanvas({
         processedCollected.forEach((item, index) => {
           const itemBounds = collectedBounds[index];
           const isHovered = hoveredCollected === index;
-          const connectorLoadAlpha = getCollectedConnectorLoadAlpha(index);
+          const connectorLoadAlpha =
+            getCollectedConnectorLoadAlpha(index) * otherContentAlpha;
 
           if (connectorLoadAlpha <= LOAD_ALPHA_SNAP) {
             return;
@@ -1450,11 +1526,16 @@ function TimelineCanvas({
 
         processedCollected.forEach((item, index) => {
           const imageLoadAlpha = getImageLoadAlpha(processed.length + index);
-          if (imageLoadAlpha <= LOAD_ALPHA_SNAP) {
+          const visibilityAlpha = contentAlphaFor(
+            'collected',
+            index,
+            imageLoadAlpha
+          );
+          if (visibilityAlpha <= LOAD_ALPHA_SNAP) {
             return;
           }
 
-          const { left, top, width, height } = collectedBounds[index];
+          let { left, top, width, height } = collectedBounds[index];
           const img = loadedCollectedImages[index];
           const isHovered = hoveredCollected === index;
           const typeMatch = matchesHighlightedType(
@@ -1466,24 +1547,24 @@ function TimelineCanvas({
             collectedCtx.shadowBlur = 22;
             collectedCtx.shadowColor = hexToRgba(
               item.sources[0].colour,
-              0.45 * imageLoadAlpha
+              0.45 * visibilityAlpha
             );
           } else if (typeMatch && isTypeHighlightActive) {
             collectedCtx.shadowBlur =
               TYPE_HIGHLIGHT_BLUR * typeHighlightStrength;
             collectedCtx.shadowColor = hexToRgba(
               getContentTypeColour(item.contentType),
-              0.55 * typeHighlightStrength * imageLoadAlpha
+              0.55 * typeHighlightStrength * visibilityAlpha
             );
           }
 
           if (isTypeHighlightActive && !typeMatch) {
             collectedCtx.globalAlpha = getCombinedAlpha(
-              imageLoadAlpha,
+              visibilityAlpha,
               dimAlpha
             );
           } else {
-            collectedCtx.globalAlpha = imageLoadAlpha;
+            collectedCtx.globalAlpha = visibilityAlpha;
           }
 
           if (img) {
@@ -1511,7 +1592,7 @@ function TimelineCanvas({
               top,
               width,
               height,
-              typeHighlightStrength * imageLoadAlpha
+              typeHighlightStrength * visibilityAlpha
             );
           }
 
@@ -1520,11 +1601,11 @@ function TimelineCanvas({
           p.textAlign(p.CENTER, p.TOP);
           if (isTypeHighlightActive && !typeMatch) {
             collectedCtx.globalAlpha = getCombinedAlpha(
-              imageLoadAlpha,
+              visibilityAlpha,
               dimAlpha
             );
           } else {
-            collectedCtx.globalAlpha = imageLoadAlpha;
+            collectedCtx.globalAlpha = visibilityAlpha;
           }
           p.text(item.dateLabel, left + width / 2, top + height + 12);
           resetCanvasEffects(collectedCtx);
@@ -1532,7 +1613,8 @@ function TimelineCanvas({
 
         // Connector dots, drawn on top of every image so they stay visible.
         for (let index = 0; index < processed.length - 1; index++) {
-          const connectorLoadAlpha = getMainConnectorLoadAlpha(index);
+          const connectorLoadAlpha =
+            getMainConnectorLoadAlpha(index) * otherContentAlpha;
           if (connectorLoadAlpha <= LOAD_ALPHA_SNAP) {
             continue;
           }
@@ -1565,7 +1647,8 @@ function TimelineCanvas({
         processedCollected.forEach((item, index) => {
           const itemBounds = collectedBounds[index];
           const isHovered = hoveredCollected === index;
-          const connectorLoadAlpha = getCollectedConnectorLoadAlpha(index);
+          const connectorLoadAlpha =
+            getCollectedConnectorLoadAlpha(index) * otherContentAlpha;
 
           if (connectorLoadAlpha <= LOAD_ALPHA_SNAP) {
             return;
@@ -1603,9 +1686,9 @@ function TimelineCanvas({
 
         p.pop();
 
-        drawTodayLine(todayLineAlpha);
+        drawTodayLine(todayLineAlpha * otherContentAlpha);
 
-        if (hoveredCollected !== -1) {
+        if (focusContentFade <= LOAD_ALPHA_SNAP && hoveredCollected !== -1) {
           const hovered = processedCollected[hoveredCollected];
           drawCollectedSourcesLabel(
             p,
@@ -1614,7 +1697,7 @@ function TimelineCanvas({
             p.mouseY,
             hoveredCollectedIsImage ? hovered.title : undefined
           );
-        } else if (mainHighlighted) {
+        } else if (focusContentFade <= LOAD_ALPHA_SNAP && mainHighlighted) {
           drawUserLabel(
             p,
             MAIN_USERNAME,
@@ -1626,7 +1709,9 @@ function TimelineCanvas({
         }
 
         const hoveringContent = hoveredMain !== -1 || hoveredCollectedIsImage;
-        if (dragLane === 'canvas') {
+        if (isViewInteractionLocked()) {
+          p.cursor(hoveringContent ? 'pointer' : 'default');
+        } else if (dragLane === 'canvas') {
           p.cursor('grabbing');
         } else if (hoveringContent) {
           p.cursor('pointer');
@@ -1646,6 +1731,12 @@ function TimelineCanvas({
         }
         pressX = p.mouseX;
         pressY = p.mouseY;
+
+        if (isViewInteractionLocked()) {
+          dragLane = 'focus';
+          return;
+        }
+
         const world = screenToWorld(pressX, pressY, cameraX, cameraY, zoom);
         const bounds = getAllBounds();
 
@@ -1678,7 +1769,7 @@ function TimelineCanvas({
       };
 
       p.mouseDragged = () => {
-        if (dragLane === null) {
+        if (dragLane === null || isViewInteractionLocked()) {
           return;
         }
 
@@ -1757,6 +1848,9 @@ function TimelineCanvas({
       };
 
       p.mouseWheel = (event?: WheelEvent) => {
+        if (isViewInteractionLocked()) {
+          return false;
+        }
         if (event) {
           const delta =
             event.deltaY ?? (event as WheelEvent & { delta: number }).delta;
@@ -1769,12 +1863,17 @@ function TimelineCanvas({
     p5InstanceRef.current = new p5(sketch, container);
 
     return () => {
+      onFocusFadeChangeRef.current?.(0);
       p5InstanceRef.current?.remove();
       p5InstanceRef.current = null;
     };
   }, [items, collectedRows, colour]);
 
-  return <div className="timeline-canvas" ref={containerRef} />;
+  return (
+    <div className="timeline-canvas-wrap">
+      <P5CanvasHost containerRef={containerRef} />
+    </div>
+  );
 }
 
-export default TimelineCanvas;
+export default memo(TimelineCanvas);

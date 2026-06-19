@@ -11,6 +11,7 @@ const MEDIA_ASSETS_QUERY = `*[_type in ["imageAsset", "audioAsset"]] | order(_cr
   _id,
   _type,
   title,
+  "slug": slug.current,
   description,
   "created_at": _createdAt,
   "imageUrl": image.asset->url,

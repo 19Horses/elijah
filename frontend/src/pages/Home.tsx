@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import CollectionCountdown from '../components/CollectionCountdown';
 import CollectionViewer from '../components/CollectionViewer';
 import ContentLegend from '../components/ContentLegend';
@@ -25,6 +25,19 @@ function Home() {
   const [highlightedType, setHighlightedType] = useState<ContentType | null>(
     null
   );
+  const userCardWrapRef = useRef<HTMLDivElement>(null);
+  const legendWrapRef = useRef<HTMLDivElement>(null);
+
+  const handleFocusFadeChange = useCallback((fade: number) => {
+    const opacity = 1 - fade;
+    const pointerEvents = opacity < 0.5 ? 'none' : 'auto';
+    for (const ref of [userCardWrapRef, legendWrapRef]) {
+      if (ref.current) {
+        ref.current.style.opacity = String(opacity);
+        ref.current.style.pointerEvents = pointerEvents;
+      }
+    }
+  }, []);
 
   const activeCollection = collections?.[0] ?? null;
 
@@ -80,6 +93,7 @@ function Home() {
         collectedRows={collectedRows}
         colour={timeline.colour}
         highlightedType={highlightedType}
+        onFocusFadeChange={handleFocusFadeChange}
       />
       {statusChecked && activeCollection && !alreadyCollected && (
         <CollectionCountdown
@@ -94,11 +108,15 @@ function Home() {
           onCollected={handleCollected}
         />
       )}
-      <UserCard refreshSignal={collectedSignal} />
-      <ContentLegend
-        highlightedType={highlightedType}
-        onHighlight={setHighlightedType}
-      />
+      <div ref={userCardWrapRef}>
+        <UserCard refreshSignal={collectedSignal} />
+      </div>
+      <div ref={legendWrapRef}>
+        <ContentLegend
+          highlightedType={highlightedType}
+          onHighlight={setHighlightedType}
+        />
+      </div>
     </section>
   );
 }

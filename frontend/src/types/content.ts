@@ -6,6 +6,7 @@ export type ContentBase = {
   _id: string;
   _type: ContentType;
   title: string;
+  slug: string | null;
   created_at: string;
 };
 

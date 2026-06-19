@@ -11,6 +11,7 @@ export type { CollectionContent };
 export type Collection = {
   _id: string;
   name: string;
+  slug: string | null;
   description: string | null;
   expiresAt: string | null;
   unlockTime: string | null;
@@ -21,6 +22,7 @@ export type Collection = {
 const COLLECTIONS_QUERY = `*[_type == "collection" && expiresAt > now()] | order(_createdAt desc) {
   _id,
   name,
+  "slug": slug.current,
   description,
   expiresAt,
   unlockTime,
@@ -29,6 +31,7 @@ const COLLECTIONS_QUERY = `*[_type == "collection" && expiresAt > now()] | order
     _id,
     _type,
     "created_at": _createdAt,
+    "slug": slug.current,
     _type == "newsletter" => {
       title,
       content,
