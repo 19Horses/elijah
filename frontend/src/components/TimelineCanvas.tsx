@@ -35,6 +35,7 @@ const TYPE_DIM_OVERLAY = 0.3;
 const TYPE_HIGHLIGHT_BLUR = 22;
 const FOCUS_VIEWPORT_FILL = 0.65;
 const VIEW_ANIMATION_LERP = 0.08;
+const VIEW_UNFOCUS_ANIMATION_LERP = 0.15;
 const VIEW_SNAP_THRESHOLD = 0.001;
 const WHEEL_ZOOM_SENSITIVITY = 0.001;
 const MIN_ZOOM_FACTOR = 0.25;
@@ -703,6 +704,7 @@ function TimelineCanvas({
     let targetZoom = 1;
     let focusTarget: FocusTarget | null = null;
     let viewAnimating = false;
+    let viewUnfocusing = false;
     let fitZoomLevel = 1;
     let animationWorldX = 0;
     let animationWorldY = 0;
@@ -1016,6 +1018,7 @@ function TimelineCanvas({
         computeFitViewTargets();
         applyViewTargets();
         viewAnimating = false;
+        viewUnfocusing = false;
       };
 
       const animateView = () => {
@@ -1023,8 +1026,11 @@ function TimelineCanvas({
           return;
         }
 
+        const lerpFactor = viewUnfocusing
+          ? VIEW_UNFOCUS_ANIMATION_LERP
+          : VIEW_ANIMATION_LERP;
         const lerp = (current: number, target: number) =>
-          current + (target - current) * VIEW_ANIMATION_LERP;
+          current + (target - current) * lerpFactor;
 
         if (Math.abs(zoom - targetZoom) > VIEW_SNAP_THRESHOLD) {
           const nextZoom = lerp(zoom, targetZoom);
@@ -1045,6 +1051,7 @@ function TimelineCanvas({
         } else {
           applyViewTargets();
           viewAnimating = false;
+          viewUnfocusing = false;
         }
       };
 
@@ -1071,6 +1078,7 @@ function TimelineCanvas({
 
       const focusItem = (target: FocusTarget) => {
         focusTarget = target;
+        viewUnfocusing = false;
         const bounds = getFocusBounds(target);
         computeFocusViewTargets(bounds);
         beginViewAnimation(
@@ -1083,6 +1091,7 @@ function TimelineCanvas({
       const unfocusItem = () => {
         focusTarget = null;
         computeFitViewTargets();
+        viewUnfocusing = true;
         beginViewAnimation(
           targetCameraX + p.width / (2 * targetZoom),
           targetCameraY + p.height / (2 * targetZoom)
