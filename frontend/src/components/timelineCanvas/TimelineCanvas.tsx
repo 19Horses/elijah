@@ -3,6 +3,7 @@ import { memo, useEffect, useRef } from 'react';
 import type { ContentType } from '../../types/content';
 import { DEFAULT_BACKGROUND } from './constants';
 import { createTimelineSketch } from './createTimelineSketch';
+import { createAudioController } from './sketch/audioController';
 import { buildProcessedCollected, buildProcessedItems } from './processItems';
 import P5CanvasHost from './P5CanvasHost';
 import { createTimelineRuntime } from './timelineRuntime';
@@ -103,6 +104,7 @@ function TimelineCanvas({
     const itemOffsets = processed.map(() => ({ dx: 0, dy: 0 }));
     const collectedOffsets = processedCollected.map(() => ({ dx: 0, dy: 0 }));
     const runtime = createTimelineRuntime();
+    const audio = createAudioController();
 
     const sketch = createTimelineSketch({
       runtime,
@@ -112,6 +114,7 @@ function TimelineCanvas({
       itemOffsets,
       collectedOffsets,
       backgroundColour,
+      audio,
       refs: {
         highlightedTypeRef,
         interactionLockedRef,
@@ -127,6 +130,7 @@ function TimelineCanvas({
 
     return () => {
       interactionLockedRef.current = false;
+      audio.dispose();
       p5InstanceRef.current?.remove();
       p5InstanceRef.current = null;
     };

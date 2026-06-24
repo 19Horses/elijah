@@ -9,13 +9,15 @@ import { getFittedSize, getSlotX, hitTest, screenToWorld } from '../geometry';
 import { isFutureDatedItem } from '../timelineRuntime';
 import type { TimelineSketchDeps } from '../types';
 import type { BoundsContext } from './bounds';
+import type { GalleryController } from './galleryController';
 import type { ViewContext } from './view';
 
 export function createInputHandlers(
   p: p5,
   deps: TimelineSketchDeps,
   boundsCtx: BoundsContext,
-  view: ViewContext
+  view: ViewContext,
+  gallery: GalleryController
 ): {
   mousePressed: () => void;
   mouseDragged: () => void;
@@ -156,6 +158,34 @@ export function createInputHandlers(
         runtime.cameraY,
         runtime.zoom
       );
+
+      const audioButton = deps.audio.getButtonRegion();
+      if (
+        audioButton &&
+        Math.hypot(world.x - audioButton.cx, world.y - audioButton.cy) <=
+          audioButton.r
+      ) {
+        deps.audio.toggle(audioButton.src);
+        runtime.dragLane = null;
+        return;
+      }
+
+      const navHit = gallery
+        .getNavRegions()
+        .find(
+          (region) =>
+            Math.hypot(world.x - region.cx, world.y - region.cy) <= region.r
+        );
+      if (navHit && runtime.focusTarget) {
+        const focused =
+          runtime.focusTarget.lane === 'main'
+            ? processed[runtime.focusTarget.index]
+            : deps.processedCollected[runtime.focusTarget.index];
+        gallery.step(navHit.delta, focused?.galleryUrls.length ?? 0);
+        runtime.dragLane = null;
+        return;
+      }
+
       const clicked = view.findClickedItem(world.x, world.y);
 
       if (clicked) {

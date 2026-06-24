@@ -18,6 +18,19 @@ function getItemAspectRatio(item: MainTimelineItem): number {
   return ITEM_WIDTH / IMAGE_HEIGHT;
 }
 
+// All gallery image URLs for an image asset, cover first.
+function getGalleryUrls(item: MainTimelineItem): string[] {
+  if (item._type !== 'imageAsset' || !Array.isArray(item.images)) {
+    return [];
+  }
+  const withUrl = item.images.filter((image) => Boolean(image?.url));
+  const cover = withUrl.filter((image) => image.isCover);
+  const rest = withUrl.filter((image) => !image.isCover);
+  return [...cover, ...rest]
+    .map((image) => image.url)
+    .filter((url): url is string => url !== null);
+}
+
 export function buildProcessedItems(
   items: MainTimelineItem[]
 ): ProcessedItem[] {
@@ -29,6 +42,8 @@ export function buildProcessedItems(
     title: item.title,
     bodyContent: item._type === 'newsletter' ? item.content ?? null : null,
     aspectRatio: getItemAspectRatio(item),
+    audioUrl: item._type === 'audioAsset' ? item.audioUrl ?? null : null,
+    galleryUrls: getGalleryUrls(item),
   }));
 }
 
@@ -71,6 +86,11 @@ export function buildProcessedCollected(
         anchorTime: Number.isNaN(contentTime) ? Date.now() : contentTime,
         rowIndex,
         sources: [source],
+        audioUrl:
+          item.content._type === 'audioAsset'
+            ? item.content.audioUrl ?? null
+            : null,
+        galleryUrls: getGalleryUrls(item.content),
       });
     });
   });

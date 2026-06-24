@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { HashRouter, Route, Routes, useLocation } from 'react-router-dom';
+import DebugPanel from './components/DebugPanel';
 import Header from './components/Header';
+import LogoutButton from './components/LogoutButton';
 import ResetButton from './components/ResetButton';
 import Content from './pages/Content';
 import Home from './pages/Home';
@@ -33,6 +35,8 @@ const AppRoutes = () => {
         </Routes>
       </main>
       <ResetButton />
+      <LogoutButton />
+      <DebugPanel />
     </>
   );
 };
