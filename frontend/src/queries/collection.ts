@@ -38,7 +38,21 @@ const COLLECTIONS_QUERY = `*[_type == "collection" && expiresAt > now()] | order
       "imageUrl": image.asset->url,
       "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
     },
-    _type in ["imageAsset", "audioAsset"] => {
+    _type == "imageAsset" => {
+      title,
+      description,
+      ...coalesce(images[isCover == true][0], images[0], image){
+        "image": @,
+        "imageUrl": asset->url,
+        "imageDimensions": asset->metadata.dimensions{width, height, aspectRatio}
+      },
+      "images": images[]{
+        "url": asset->url,
+        "dimensions": asset->metadata.dimensions{width, height, aspectRatio},
+        isCover
+      }
+    },
+    _type == "audioAsset" => {
       title,
       description,
       "imageUrl": image.asset->url,

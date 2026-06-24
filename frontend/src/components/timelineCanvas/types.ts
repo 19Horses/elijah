@@ -2,6 +2,7 @@ import type { MutableRefObject, RefObject } from 'react';
 import type { MainTimelineItem } from '../../queries/mainTimeline';
 import type { ContentType } from '../../types/content';
 import type { CollectedUserRow } from '../../queries/collectedContent';
+import type { AudioController } from './sketch/audioController';
 
 export type TimelineCanvasProps = {
   items: MainTimelineItem[];
@@ -33,6 +34,8 @@ export type ProcessedCollected = {
   anchorTime: number;
   rowIndex: number;
   sources: CollectedSource[];
+  audioUrl: string | null;
+  galleryUrls: string[];
 };
 
 export type ProcessedItem = {
@@ -43,6 +46,8 @@ export type ProcessedItem = {
   title: string;
   bodyContent: string | null;
   aspectRatio: number;
+  audioUrl: string | null;
+  galleryUrls: string[];
 };
 
 export type ItemOffset = {
@@ -122,6 +127,7 @@ export type TimelineSketchDeps = {
   itemOffsets: ItemOffset[];
   collectedOffsets: ItemOffset[];
   backgroundColour: string;
+  audio: AudioController;
   refs: TimelineSketchRefs;
 };
 

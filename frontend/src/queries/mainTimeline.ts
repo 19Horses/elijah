@@ -48,9 +48,16 @@ export const CONTENT_PROJECTION = `_id,
   _type == "imageAsset" => {
     title,
     description,
-    image,
-    "imageUrl": image.asset->url,
-    "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
+    ...coalesce(images[isCover == true][0], images[0], image){
+      "image": @,
+      "imageUrl": asset->url,
+      "imageDimensions": asset->metadata.dimensions{width, height, aspectRatio}
+    },
+    "images": images[]{
+      "url": asset->url,
+      "dimensions": asset->metadata.dimensions{width, height, aspectRatio},
+      isCover
+    }
   },
   _type == "audioAsset" => {
     title,

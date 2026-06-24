@@ -19,6 +19,7 @@ import { useCollectedTimeline } from '../queries/collectedContent';
 import { useCollections } from '../queries/collection';
 import { useMainTimeline } from '../queries/mainTimeline';
 import { hasCollectedFrom } from '../services/collectItem';
+import { DEBUG_TIMERS_EVENT } from '../services/debugTimers';
 import { getStoredUser } from '../services/userStorage';
 import type { ContentType } from '../types/content';
 
@@ -124,6 +125,17 @@ function Home() {
       cancelled = true;
     };
   }, [activeCollection]);
+
+  // Resetting a collection timer via the debug panel should bring the
+  // countdown back even if it was already collected/dismissed.
+  useEffect(() => {
+    const onDebugChange = () => {
+      setAlreadyCollected(false);
+      setStatusChecked(true);
+    };
+    window.addEventListener(DEBUG_TIMERS_EVENT, onDebugChange);
+    return () => window.removeEventListener(DEBUG_TIMERS_EVENT, onDebugChange);
+  }, []);
 
   if (isLoading || isCollectedLoading) {
     return <p className="home-status">Loading timeline…</p>;

@@ -19,6 +19,13 @@ import {
   drawMainConnector,
   getMainConnectorPoints,
 } from '../connectors';
+import { drawAudioDisc } from './drawAudioDisc';
+import {
+  drawContainedImage,
+  drawGalleryControls,
+} from './drawGalleryControls';
+import type { GalleryController } from './galleryController';
+import { drawPlayPauseButton } from './drawPlayPauseButton';
 import { applyDetailLayoutTransform } from '../geometry';
 import { isFutureDatedItem } from '../timelineRuntime';
 import type { ContentType } from '../../../types/content';
@@ -145,7 +152,9 @@ export function drawMainLaneItems(
   deps: TimelineSketchDeps,
   loadedImages: (p5.Image | null)[],
   ctx: MainLaneDrawContext,
-  hover: MainLaneDrawResult
+  hover: MainLaneDrawResult,
+  cdImage: p5.Image | null,
+  gallery: GalleryController
 ): void {
   const mainCtx = p.drawingContext as CanvasRenderingContext2D;
   const { bounds } = ctx;
@@ -172,6 +181,43 @@ export function drawMainLaneItems(
       ctx.isDetailLayoutActive &&
       deps.runtime.detailLayout > 0;
 
+    // Selected audio track: slide the image left and the spinning CD right,
+    // like it's being pulled out of a sleeve. `detailLayout` drives the reveal.
+    const isAudioFocused =
+      item.contentType === 'audioAsset' &&
+      ctx.isFocusActive &&
+      ctx.isFocusedTarget('main', index);
+    const audioReveal = isAudioFocused ? deps.runtime.detailLayout : 0;
+    const imageLeft = left - audioReveal * height * 0.15;
+
+    // Selected image asset with multiple images: show the active gallery image.
+    const galleryActive =
+      item.contentType === 'imageAsset' &&
+      ctx.isFocusActive &&
+      ctx.isFocusedTarget('main', index) &&
+      item.galleryUrls.length > 1;
+    let galleryImg: p5.Image | null = null;
+    if (galleryActive) {
+      gallery.ensureLoaded(item.galleryUrls);
+      const activeIndex = Math.min(
+        gallery.getActiveIndex(),
+        item.galleryUrls.length - 1
+      );
+      galleryImg = gallery.getImage(item.galleryUrls[activeIndex]);
+    }
+
+    if (audioReveal > 0) {
+      drawAudioDisc(
+        p,
+        mainCtx,
+        { left, top, width, height },
+        deps.backgroundColour,
+        visibilityAlpha,
+        cdImage,
+        audioReveal
+      );
+    }
+
     if (ctx.isFocusActive && ctx.isFocusedTarget('main', index)) {
       mainCtx.shadowBlur = 22;
       mainCtx.shadowColor = hexToRgba(MAIN_GLOW_COLOUR, 0.45 * visibilityAlpha);
@@ -192,18 +238,25 @@ export function drawMainLaneItems(
       mainCtx.globalAlpha = visibilityAlpha;
     }
 
-    if (img) {
-      p.image(img, left, top, width, height);
+    if (galleryActive && galleryImg) {
+      drawContainedImage(p, galleryImg, {
+        left: imageLeft,
+        top,
+        width,
+        height,
+      });
+    } else if (img) {
+      p.image(img, imageLeft, top, width, height);
     } else {
       p.fill(245);
       p.stroke(220);
-      p.rect(left, top, width, height);
+      p.rect(imageLeft, top, width, height);
 
       if (!item.imageUrl) {
         p.fill(120);
         p.noStroke();
         p.textAlign(p.CENTER, p.CENTER);
-        p.text(item.title, left + width / 2, top + height / 2);
+        p.text(item.title, imageLeft + width / 2, top + height / 2);
       }
     }
 
@@ -213,7 +266,7 @@ export function drawMainLaneItems(
       drawDimOverlay(
         p,
         mainCtx,
-        left,
+        imageLeft,
         top,
         width,
         height,
@@ -230,8 +283,43 @@ export function drawMainLaneItems(
       } else {
         mainCtx.globalAlpha = visibilityAlpha;
       }
-      p.text(item.dateLabel, left + width / 2, top + height + 12);
+      p.text(item.dateLabel, imageLeft + width / 2, top + height + 12);
       resetCanvasEffects(mainCtx);
+    }
+
+    // Play/pause control on top of the selected audio track's image.
+    if (isAudioFocused && item.audioUrl) {
+      const buttonR = Math.min(width, height) * 0.13;
+      const buttonCx = imageLeft + width / 2;
+      const buttonCy = top + height / 2;
+      drawPlayPauseButton(
+        p,
+        mainCtx,
+        buttonCx,
+        buttonCy,
+        buttonR,
+        deps.audio.isPlaying(item.audioUrl),
+        visibilityAlpha
+      );
+      deps.audio.setButtonRegion({
+        cx: buttonCx,
+        cy: buttonCy,
+        r: buttonR,
+        src: item.audioUrl,
+      });
+    }
+
+    // Gallery navigation arrows + dots on the selected image.
+    if (galleryActive) {
+      const regions = drawGalleryControls(
+        p,
+        mainCtx,
+        { left: imageLeft, top, width, height },
+        gallery.getActiveIndex(),
+        item.galleryUrls.length,
+        visibilityAlpha
+      );
+      gallery.setNavRegions(regions);
     }
   });
 }

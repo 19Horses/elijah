@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { Collection } from '../queries/collection';
+import {
+  DEBUG_TIMERS_EVENT,
+  getEffectiveExpiresAt,
+} from '../services/debugTimers';
 import { DEFAULT_COLOUR, getStoredColour } from '../services/userColor';
 
 type CollectionCountdownProps = {
@@ -29,8 +33,9 @@ function CollectionCountdown({
   onClick,
 }: CollectionCountdownProps) {
   const [remaining, setRemaining] = useState<number>(() => {
-    if (!collection.expiresAt) return 0;
-    return Math.max(0, new Date(collection.expiresAt).getTime() - Date.now());
+    const expiresAt = getEffectiveExpiresAt(collection);
+    if (!expiresAt) return 0;
+    return Math.max(0, new Date(expiresAt).getTime() - Date.now());
   });
   const [isVisible, setIsVisible] = useState(false);
 
@@ -40,20 +45,34 @@ function CollectionCountdown({
   }, [collection._id]);
 
   useEffect(() => {
-    const expiresAt = collection.expiresAt;
-    if (!expiresAt) return;
-
     const tick = () => {
-      const ms = Math.max(0, new Date(expiresAt).getTime() - Date.now());
+      const expiresAt = getEffectiveExpiresAt(collection);
+      const ms = expiresAt
+        ? Math.max(0, new Date(expiresAt).getTime() - Date.now())
+        : 0;
       setRemaining(ms);
+    };
+
+    // When the timer is reset via the debug panel, replay the entrance
+    // animation so the box visibly pops up again.
+    const onDebugChange = () => {
+      tick();
+      setIsVisible(false);
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => setIsVisible(true))
+      );
     };
 
     tick();
     const id = window.setInterval(tick, 1000);
-    return () => window.clearInterval(id);
-  }, [collection.expiresAt]);
+    window.addEventListener(DEBUG_TIMERS_EVENT, onDebugChange);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener(DEBUG_TIMERS_EVENT, onDebugChange);
+    };
+  }, [collection]);
 
-  if (!collection.expiresAt || remaining <= 0) return null;
+  if (remaining <= 0) return null;
 
   const colour = getStoredColour() ?? DEFAULT_COLOUR;
 

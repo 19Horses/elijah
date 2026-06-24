@@ -28,6 +28,7 @@ import {
 } from '../timelineRuntime';
 import type { TimelineSketchDeps } from '../types';
 import type { BoundsContext } from './bounds';
+import type { GalleryController } from './galleryController';
 import {
   computeCollectedLaneHover,
   drawCollectedLaneConnectorDots,
@@ -50,7 +51,9 @@ export function createDrawFrameHandler(
   boundsCtx: BoundsContext,
   view: ViewContext,
   loadedImages: (p5.Image | null)[],
-  loadedCollectedImages: (p5.Image | null)[]
+  loadedCollectedImages: (p5.Image | null)[],
+  cdImageRef: { current: p5.Image | null },
+  gallery: GalleryController
 ): () => void {
   const { runtime } = deps;
   const { isFocusedTarget, getDetailDrawBounds } = createMainLaneDrawHelpers(
@@ -194,8 +197,21 @@ export function createDrawFrameHandler(
       contentAlphaFor,
     };
 
+    const cdImage = cdImageRef.current;
+
+    // Reset the active gallery index whenever the focused item changes.
+    gallery.syncFocus(
+      runtime.focusTarget
+        ? `${runtime.focusTarget.lane}:${runtime.focusTarget.index}`
+        : null
+    );
+
+    // Cleared each frame; focused items re-set them while drawing.
+    deps.audio.setButtonRegion(null);
+    gallery.setNavRegions([]);
+
     drawMainLaneConnectors(p, deps, drawCtx, mainHover);
-    drawMainLaneItems(p, deps, loadedImages, drawCtx, mainHover);
+    drawMainLaneItems(p, deps, loadedImages, drawCtx, mainHover, cdImage, gallery);
 
     const collectedBounds = boundsCtx.getCollectedBounds();
 
@@ -237,7 +253,9 @@ export function createDrawFrameHandler(
       loadedCollectedImages,
       collectedBounds,
       drawCtx,
-      collectedHover
+      collectedHover,
+      cdImage,
+      gallery
     );
     drawMainLaneConnectorDots(p, drawCtx, mainHover);
     drawCollectedLaneConnectorDots(
@@ -259,13 +277,31 @@ export function createDrawFrameHandler(
       collectedHover.hoveredCollected !== -1
     ) {
       const hovered = deps.processedCollected[collectedHover.hoveredCollected];
-      drawCollectedSourcesLabel(
-        p,
-        hovered.sources,
-        p.mouseX,
-        p.mouseY,
-        collectedHover.hoveredCollectedIsImage ? hovered.title : undefined
-      );
+      const hoveredUserSource =
+        collectedHover.hoveredUserRow !== null
+          ? hovered.sources.find(
+              (source) => source.rowIndex === collectedHover.hoveredUserRow
+            )
+          : undefined;
+
+      if (!collectedHover.hoveredCollectedIsImage && hoveredUserSource) {
+        // Hovering a single user's line: show just that user.
+        drawUserLabel(
+          p,
+          hoveredUserSource.username,
+          hoveredUserSource.colour,
+          p.mouseX,
+          p.mouseY
+        );
+      } else {
+        drawCollectedSourcesLabel(
+          p,
+          hovered.sources,
+          p.mouseX,
+          p.mouseY,
+          collectedHover.hoveredCollectedIsImage ? hovered.title : undefined
+        );
+      }
     } else if (
       runtime.focusContentFade <= LOAD_ALPHA_SNAP &&
       mainHover.mainHighlighted
@@ -282,9 +318,26 @@ export function createDrawFrameHandler(
       );
     }
 
+    const audioButton = deps.audio.getButtonRegion();
+    const overAudioButton = audioButton
+      ? Math.hypot(
+          mouseWorld.x - audioButton.cx,
+          mouseWorld.y - audioButton.cy
+        ) <= audioButton.r
+      : false;
+    const overGalleryArrow = gallery
+      .getNavRegions()
+      .some(
+        (region) =>
+          Math.hypot(mouseWorld.x - region.cx, mouseWorld.y - region.cy) <=
+          region.r
+      );
+
     const hoveringContent =
       mainHover.hoveredMain !== -1 || collectedHover.hoveredCollectedIsImage;
-    if (view.isViewInteractionLocked()) {
+    if (overAudioButton || overGalleryArrow) {
+      p.cursor('pointer');
+    } else if (view.isViewInteractionLocked()) {
       p.cursor(hoveringContent ? 'pointer' : 'default');
     } else if (runtime.dragLane === 'canvas') {
       p.cursor('grabbing');

@@ -19,11 +19,18 @@ export type WithOptionalImage = {
   imageDimensions: ImageDimensions | null;
 };
 
+export type GalleryImage = {
+  url: string | null;
+  dimensions: ImageDimensions | null;
+  isCover: boolean | null;
+};
+
 export type ImageAsset = ContentBase &
   WithOptionalDate &
   WithOptionalImage & {
     _type: 'imageAsset';
     description: string | null;
+    images?: GalleryImage[] | null;
   };
 
 export type AudioAsset = ContentBase &

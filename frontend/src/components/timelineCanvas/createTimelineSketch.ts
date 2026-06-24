@@ -1,7 +1,9 @@
 import type p5 from 'p5';
+import blankCdUrl from '../../Blank_cd.png';
 import type { TimelineSketchDeps } from './types';
 import { createBoundsContext } from './sketch/bounds';
 import { createDrawFrameHandler } from './sketch/drawFrame';
+import { createGalleryController } from './sketch/galleryController';
 import { createInputHandlers } from './sketch/input';
 import { createViewContext } from './sketch/view';
 
@@ -17,15 +19,19 @@ export function createTimelineSketch(
     const loadedCollectedImages: (p5.Image | null)[] = new Array(
       deps.processedCollected.length
     ).fill(null);
+    const cdImageRef: { current: p5.Image | null } = { current: null };
+    const gallery = createGalleryController(p);
 
-    const input = createInputHandlers(p, deps, boundsCtx, view);
+    const input = createInputHandlers(p, deps, boundsCtx, view, gallery);
     const drawFrame = createDrawFrameHandler(
       p,
       deps,
       boundsCtx,
       view,
       loadedImages,
-      loadedCollectedImages
+      loadedCollectedImages,
+      cdImageRef,
+      gallery
     );
 
     p.setup = () => {
@@ -34,6 +40,16 @@ export function createTimelineSketch(
       p.textSize(12);
       view.fitView();
       deps.runtime.loadStartMs = p.millis();
+
+      p.loadImage(
+        blankCdUrl,
+        (img) => {
+          cdImageRef.current = img;
+        },
+        () => {
+          cdImageRef.current = null;
+        }
+      );
 
       deps.processed.forEach((item, index) => {
         if (!item.imageUrl) {

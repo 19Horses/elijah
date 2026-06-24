@@ -14,8 +14,10 @@ const MEDIA_ASSETS_QUERY = `*[_type in ["imageAsset", "audioAsset"]] | order(_cr
   "slug": slug.current,
   description,
   "created_at": _createdAt,
-  "imageUrl": image.asset->url,
-  "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio},
+  ...coalesce(images[isCover == true][0], images[0], image){
+    "imageUrl": asset->url,
+    "imageDimensions": asset->metadata.dimensions{width, height, aspectRatio}
+  },
   "audioUrl": audio.asset->url
 }`;
 
