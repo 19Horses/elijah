@@ -5,9 +5,11 @@ import {
   getCombinedAlpha,
   hexToRgba,
   matchesHighlightedType,
+  mixHex,
   resetCanvasEffects,
 } from '../canvasEffects';
 import {
+  BRANCH_DIM_COLOUR,
   CONNECTOR_HOVER_THRESHOLD,
   LOAD_ALPHA_SNAP,
   TYPE_HIGHLIGHT_BLUR,
@@ -17,13 +19,21 @@ import {
   drawBranchConnector,
   drawDot,
   getBranchPoints,
+  getSteppedBranchPoints,
 } from '../connectors';
-import type { ContentBounds, TimelineSketchDeps } from '../types';
+import type {
+  CollectedSource,
+  ContentBounds,
+  TimelineRuntime,
+  TimelineSketchDeps,
+} from '../types';
 import type { BoundsContext } from './bounds';
 import { drawAudioDisc } from './drawAudioDisc';
 import {
   drawContainedImage,
   drawGalleryControls,
+  drawGalleryStrip,
+  galleryFocusWidth,
 } from './drawGalleryControls';
 import type { GalleryController } from './galleryController';
 import { drawPlayPauseButton } from './drawPlayPauseButton';
@@ -34,6 +44,16 @@ export type CollectedLaneDrawResult = {
   hoveredCollectedIsImage: boolean;
   hoveredUserRow: number | null;
 };
+
+// A source's branch colour, eased toward grey while another branch is hovered.
+function branchSourceColour(
+  runtime: TimelineRuntime,
+  source: CollectedSource
+): string {
+  const t =
+    source.rowIndex === runtime.branchDimRow ? 0 : runtime.branchDimStrength;
+  return t > 0 ? mixHex(source.colour, BRANCH_DIM_COLOUR, t) : source.colour;
+}
 
 export function computeCollectedLaneHover(
   deps: TimelineSketchDeps,
@@ -64,22 +84,24 @@ export function computeCollectedLaneHover(
   if (hoveredCollected === -1 && !isFocusActive) {
     for (let index = deps.processedCollected.length - 1; index >= 0; index--) {
       const item = deps.processedCollected[index];
-      const itemBounds = collectedBounds[index];
       for (
         let sourceIndex = 0;
         sourceIndex < item.sources.length;
         sourceIndex++
       ) {
-        const { from: fromPoint, to: toPoint } =
-          boundsCtx.getBranchEndpointsForSource(
-            item.anchorTime,
-            itemBounds,
-            mainBounds,
-            sourceIndex,
-            item.sources.length
-          );
-        const line = getBranchPoints(fromPoint, toPoint);
-        if (distanceToPolyline(line, mouseWorld) <= CONNECTOR_HOVER_THRESHOLD) {
+        const segments = boundsCtx.getSourceBranchSegments(
+          index,
+          sourceIndex,
+          mainBounds,
+          collectedBounds
+        );
+        const hit = segments.some(({ from, to, stepped }) => {
+          const points = stepped
+            ? getSteppedBranchPoints(from, to)
+            : getBranchPoints(from, to);
+          return distanceToPolyline(points, mouseWorld) <= CONNECTOR_HOVER_THRESHOLD;
+        });
+        if (hit) {
           hoveredCollected = index;
           hoveredUserRow = item.sources[sourceIndex].rowIndex;
           break;
@@ -106,27 +128,27 @@ export function drawCollectedLaneConnectors(
   const collectedCtx = p.drawingContext as CanvasRenderingContext2D;
 
   deps.processedCollected.forEach((item, index) => {
-    const itemBounds = collectedBounds[index];
-    const connectorLoadAlpha =
-      ctx.getCollectedConnectorLoadAlpha(index) * ctx.otherContentAlpha;
+    // Branching lines stay visible during focus, so they ignore the focus fade.
+    const connectorLoadAlpha = ctx.getCollectedConnectorLoadAlpha(index);
 
     if (connectorLoadAlpha <= LOAD_ALPHA_SNAP) {
       return;
     }
 
+    // While one collector's branch is hovered, the others ease to grey.
+    const hoveringBranch =
+      hover.hoveredUserRow !== null && !hover.hoveredCollectedIsImage;
+
     item.sources.forEach((source, sourceIndex) => {
       const isUserHovered =
-        hover.hoveredUserRow !== null &&
-        source.rowIndex === hover.hoveredUserRow &&
-        !hover.hoveredCollectedIsImage;
-      const { from: fromPoint, to: toPoint } =
-        boundsCtx.getBranchEndpointsForSource(
-          item.anchorTime,
-          itemBounds,
-          mainBounds,
-          sourceIndex,
-          item.sources.length
-        );
+        hoveringBranch && source.rowIndex === hover.hoveredUserRow;
+      const branchColour = branchSourceColour(deps.runtime, source);
+      const segments = boundsCtx.getSourceBranchSegments(
+        index,
+        sourceIndex,
+        mainBounds,
+        collectedBounds
+      );
 
       if (isUserHovered && !ctx.isFocusActive) {
         collectedCtx.shadowBlur = 16;
@@ -145,7 +167,9 @@ export function drawCollectedLaneConnectors(
         collectedCtx.globalAlpha = connectorLoadAlpha;
       }
 
-      drawBranchConnector(p, fromPoint, toPoint, source.colour);
+      segments.forEach(({ from, to, stepped }) =>
+        drawBranchConnector(p, from, to, branchColour, stepped)
+      );
       resetCanvasEffects(collectedCtx);
     });
   });
@@ -205,20 +229,17 @@ export function drawCollectedLaneItems(
     const audioReveal = isAudioFocused ? deps.runtime.detailLayout : 0;
     const imageLeft = left - audioReveal * height * 0.15;
 
-    // Selected image asset with multiple images: show the active gallery image.
+    // Selected image asset with multiple images: show every image in a strip
+    // the arrows slide through.
     const galleryActive =
       item.contentType === 'imageAsset' &&
       ctx.isFocusActive &&
       ctx.isFocusedTarget('collected', index) &&
       item.galleryUrls.length > 1;
-    let galleryImg: p5.Image | null = null;
+    let galleryImages: (p5.Image | null)[] | null = null;
     if (galleryActive) {
       gallery.ensureLoaded(item.galleryUrls);
-      const activeIndex = Math.min(
-        gallery.getActiveIndex(),
-        item.galleryUrls.length - 1
-      );
-      galleryImg = gallery.getImage(item.galleryUrls[activeIndex]);
+      galleryImages = item.galleryUrls.map((url) => gallery.getImage(url));
     }
 
     if (audioReveal > 0) {
@@ -234,11 +255,7 @@ export function drawCollectedLaneItems(
     }
 
     if (ctx.isFocusActive && ctx.isFocusedTarget('collected', index)) {
-      collectedCtx.shadowBlur = 22;
-      collectedCtx.shadowColor = hexToRgba(
-        item.sources[0].colour,
-        0.45 * visibilityAlpha
-      );
+      // Selected image: no glow.
     } else if (hover.hoveredCollected === index) {
       collectedCtx.shadowBlur = 22;
       collectedCtx.shadowColor = hexToRgba(
@@ -268,15 +285,17 @@ export function drawCollectedLaneItems(
       collectedCtx.globalAlpha = visibilityAlpha;
     }
 
-    if (galleryActive && galleryImg) {
-      drawContainedImage(p, galleryImg, {
-        left: imageLeft,
-        top,
-        width,
-        height,
-      });
+    if (galleryActive && galleryImages) {
+      drawGalleryStrip(
+        p,
+        { left: imageLeft, top, width, height },
+        galleryImages,
+        gallery.getDisplayIndex()
+      );
     } else if (img) {
-      p.image(img, imageLeft, top, width, height);
+      // Contain (not fill) so the full image shows without cropping when its
+      // true aspect ratio differs from the slot's.
+      drawContainedImage(p, img, { left: imageLeft, top, width, height });
     } else {
       p.fill(245);
       p.stroke(220);
@@ -305,7 +324,7 @@ export function drawCollectedLaneItems(
     }
 
     if (!hideDateLabel) {
-      p.fill(17);
+      p.fill(255);
       p.noStroke();
       p.textAlign(p.CENTER, p.TOP);
       if (ctx.isTypeHighlightActive && !typeMatch) {
@@ -342,12 +361,18 @@ export function drawCollectedLaneItems(
       });
     }
 
-    // Gallery navigation arrows + dots on the selected image.
-    if (galleryActive) {
+    // Gallery navigation arrows + dots, spanning the focused image's width.
+    if (galleryActive && galleryImages) {
+      const arrowWidth = galleryFocusWidth(
+        galleryImages,
+        gallery.getDisplayIndex(),
+        width,
+        height
+      );
       const regions = drawGalleryControls(
         p,
         collectedCtx,
-        { left: imageLeft, top, width, height },
+        { left: imageLeft, top, width: arrowWidth, height },
         gallery.getActiveIndex(),
         item.galleryUrls.length,
         visibilityAlpha
@@ -369,9 +394,8 @@ export function drawCollectedLaneConnectorDots(
   const collectedCtx = p.drawingContext as CanvasRenderingContext2D;
 
   deps.processedCollected.forEach((item, index) => {
-    const itemBounds = collectedBounds[index];
-    const connectorLoadAlpha =
-      ctx.getCollectedConnectorLoadAlpha(index) * ctx.otherContentAlpha;
+    // Branching lines stay visible during focus, so they ignore the focus fade.
+    const connectorLoadAlpha = ctx.getCollectedConnectorLoadAlpha(index);
 
     if (connectorLoadAlpha <= LOAD_ALPHA_SNAP) {
       return;
@@ -380,16 +404,15 @@ export function drawCollectedLaneConnectorDots(
     item.sources.forEach((source, sourceIndex) => {
       const isUserHovered =
         hover.hoveredUserRow !== null &&
-        source.rowIndex === hover.hoveredUserRow &&
-        !hover.hoveredCollectedIsImage;
-      const { from: fromPoint, to: toPoint } =
-        boundsCtx.getBranchEndpointsForSource(
-          item.anchorTime,
-          itemBounds,
-          mainBounds,
-          sourceIndex,
-          item.sources.length
-        );
+        !hover.hoveredCollectedIsImage &&
+        source.rowIndex === hover.hoveredUserRow;
+      const branchColour = branchSourceColour(deps.runtime, source);
+      const segments = boundsCtx.getSourceBranchSegments(
+        index,
+        sourceIndex,
+        mainBounds,
+        collectedBounds
+      );
       if (isUserHovered && !ctx.isFocusActive) {
         collectedCtx.shadowBlur = 16;
         collectedCtx.shadowColor = hexToRgba(
@@ -405,8 +428,10 @@ export function drawCollectedLaneConnectorDots(
       } else {
         collectedCtx.globalAlpha = connectorLoadAlpha;
       }
-      drawDot(p, fromPoint.x, fromPoint.y, source.colour);
-      drawDot(p, toPoint.x, toPoint.y, source.colour);
+      segments.forEach(({ from, to }) => {
+        drawDot(p, from.x, from.y, branchColour);
+        drawDot(p, to.x, to.y, branchColour);
+      });
       resetCanvasEffects(collectedCtx);
     });
   });

@@ -6,6 +6,7 @@ import {
   resetCanvasEffects,
 } from '../canvasEffects';
 import {
+  BRANCH_DIM_LERP,
   HIGHLIGHT_FADE_SNAP,
   LOAD_ALPHA_SNAP,
   LOAD_CONNECTOR_DELAY_MS,
@@ -19,7 +20,7 @@ import {
   TODAY_LABEL_BOTTOM_OFFSET,
   TODAY_LABEL_GAP,
 } from '../constants';
-import { getDetailImageScreenHeight, screenToWorld } from '../geometry';
+import { screenToWorld } from '../geometry';
 import { drawCollectedSourcesLabel, drawUserLabel } from '../labels';
 import {
   animateDetailReveal,
@@ -41,6 +42,7 @@ import {
   drawMainLaneConnectorDots,
   drawMainLaneConnectors,
   drawMainLaneItems,
+  drawMainTimelineGlow,
   type MainLaneDrawContext,
 } from './drawMainLane';
 import type { ViewContext } from './view';
@@ -56,10 +58,8 @@ export function createDrawFrameHandler(
   gallery: GalleryController
 ): () => void {
   const { runtime } = deps;
-  const { isFocusedTarget, getDetailDrawBounds } = createMainLaneDrawHelpers(
-    deps,
-    p
-  );
+  const { isFocusedTarget, getDetailDrawBounds } =
+    createMainLaneDrawHelpers(deps);
 
   const drawTodayLine = (alpha = 1) => {
     if (alpha <= LOAD_ALPHA_SNAP) {
@@ -79,7 +79,7 @@ export function createDrawFrameHandler(
     const labelY = p.height - TODAY_LABEL_BOTTOM_OFFSET;
 
     p.noStroke();
-    p.fill(17);
+    p.fill(255);
     p.textAlign(p.RIGHT, p.BOTTOM);
     p.text(date, lineX - TODAY_LABEL_GAP, labelY);
     p.textAlign(p.LEFT, p.BOTTOM);
@@ -89,6 +89,7 @@ export function createDrawFrameHandler(
 
   return () => {
     view.animateView();
+    view.animateScrollSnap();
     animateDetailReveal(runtime);
     updateHighlightFade(runtime, deps);
     syncInteractionLock(deps);
@@ -205,12 +206,13 @@ export function createDrawFrameHandler(
         ? `${runtime.focusTarget.lane}:${runtime.focusTarget.index}`
         : null
     );
+    // Advance the strip's slide animation.
+    gallery.animate();
 
     // Cleared each frame; focused items re-set them while drawing.
     deps.audio.setButtonRegion(null);
     gallery.setNavRegions([]);
 
-    drawMainLaneConnectors(p, deps, drawCtx, mainHover);
     drawMainLaneItems(p, deps, loadedImages, drawCtx, mainHover, cdImage, gallery);
 
     const collectedBounds = boundsCtx.getCollectedBounds();
@@ -219,14 +221,14 @@ export function createDrawFrameHandler(
       const { lane, index } = runtime.focusTarget;
       const laneBounds =
         lane === 'main' ? bounds[index] : collectedBounds[index];
-      const imageHeightPx = getDetailImageScreenHeight(
-        laneBounds,
-        runtime.detailLayout,
-        runtime.zoom,
-        p.width,
-        runtime.cameraX
-      );
-      deps.refs.onDetailImageHeightRef.current?.(imageHeightPx);
+      // The focused image stays at its world bounds; report its on-screen
+      // rect so the detail text can be placed around it.
+      deps.refs.onDetailImageRectRef.current?.({
+        left: (laneBounds.left - runtime.cameraX) * runtime.zoom,
+        top: (laneBounds.top - runtime.cameraY) * runtime.zoom,
+        width: laneBounds.width * runtime.zoom,
+        height: laneBounds.height * runtime.zoom,
+      });
     }
 
     const collectedHover = computeCollectedLaneHover(
@@ -238,15 +240,23 @@ export function createDrawFrameHandler(
       isFocusActive
     );
 
-    drawCollectedLaneConnectors(
-      p,
-      deps,
-      boundsCtx,
-      collectedBounds,
-      bounds,
-      drawCtx,
-      collectedHover
-    );
+    // Ease the branch grey-out: 1 while a branch is hovered, back to 0 on
+    // leave, keeping the hovered row's colour until the fade finishes.
+    const branchHovered =
+      collectedHover.hoveredUserRow !== null &&
+      !collectedHover.hoveredCollectedIsImage;
+    if (branchHovered) {
+      runtime.branchDimRow = collectedHover.hoveredUserRow;
+    }
+    runtime.branchDimStrength +=
+      ((branchHovered ? 1 : 0) - runtime.branchDimStrength) * BRANCH_DIM_LERP;
+    if (runtime.branchDimStrength < HIGHLIGHT_FADE_SNAP) {
+      runtime.branchDimStrength = 0;
+      runtime.branchDimRow = null;
+    } else if (runtime.branchDimStrength > 1 - HIGHLIGHT_FADE_SNAP) {
+      runtime.branchDimStrength = 1;
+    }
+
     drawCollectedLaneItems(
       p,
       deps,
@@ -256,6 +266,19 @@ export function createDrawFrameHandler(
       collectedHover,
       cdImage,
       gallery
+    );
+
+    // Connectors render above the images so the lines (like the nodes) sit
+    // over the focused image rather than disappearing behind it.
+    drawMainLaneConnectors(p, deps, drawCtx, mainHover);
+    drawCollectedLaneConnectors(
+      p,
+      deps,
+      boundsCtx,
+      collectedBounds,
+      bounds,
+      drawCtx,
+      collectedHover
     );
     drawMainLaneConnectorDots(p, drawCtx, mainHover);
     drawCollectedLaneConnectorDots(
@@ -267,6 +290,7 @@ export function createDrawFrameHandler(
       drawCtx,
       collectedHover
     );
+    drawMainTimelineGlow(p, deps, boundsCtx, bounds, collectedBounds);
 
     p.pop();
 

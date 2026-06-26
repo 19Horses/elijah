@@ -37,6 +37,7 @@ export function createTimelineSketch(
     p.setup = () => {
       p.createCanvas(window.innerWidth, window.innerHeight);
       p.cursor('crosshair');
+      p.textFont('Times New Roman');
       p.textSize(12);
       view.fitView();
       deps.runtime.loadStartMs = p.millis();

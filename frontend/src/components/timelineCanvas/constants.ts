@@ -5,7 +5,7 @@ export const PADDING_X = 48;
 export const PADDING_Y = 48;
 export const DATE_OFFSET = 24;
 export const DOT_RADIUS = 3;
-export const DEFAULT_BACKGROUND = '#ffffff';
+export const DEFAULT_BACKGROUND = '#000000';
 export const DRAG_THRESHOLD = 5;
 export const FIT_VIEW_PADDING = 80;
 export const FIT_ZOOM_SCALAR = 0.85;
@@ -18,6 +18,17 @@ export const COLLECTED_ROW_HEIGHT = IMAGE_HEIGHT + 30;
 export const CONNECTOR_HOVER_THRESHOLD = 6;
 export const MAIN_USERNAME = 'dialE';
 export const MAIN_GLOW_COLOUR = '#ff0000';
+// A colour pulse that travels along the timeline like data through a wire.
+export const MAIN_GLOW_TRAVEL_MS = 5000;
+export const MAIN_GLOW_TRAVEL_BLUR = 12;
+// Matches the timeline line thickness.
+export const MAIN_GLOW_STRIP_WIDTH = 1;
+export const MAIN_GLOW_STRIP_LENGTH = 140;
+// How far the strip's centre lightens toward white (0 = none, 1 = white).
+export const MAIN_GLOW_CENTER_LIGHTEN = 0.65;
+// Colour the other collectors' branches fade to while one is hovered.
+export const BRANCH_DIM_COLOUR = '#555555';
+export const BRANCH_DIM_LERP = 0.16;
 export const TYPE_DIM_ALPHA = 0.4;
 export const TYPE_DIM_OVERLAY = 0.3;
 export const TYPE_HIGHLIGHT_BLUR = 22;
@@ -26,6 +37,12 @@ export const VIEW_ANIMATION_LERP = 0.12;
 export const VIEW_UNFOCUS_ANIMATION_LERP = 0.15;
 export const VIEW_SNAP_THRESHOLD = 0.001;
 export const WHEEL_ZOOM_SENSITIVITY = 0.001;
+export const SCROLL_STEP_MIN_DELTA = 1;
+export const SCROLL_GESTURE_GAP_MS = 80;
+export const SCROLL_STEP_COOLDOWN_MS = 260;
+export const SCROLL_ON_STOP_PX = 4;
+export const SCROLL_SNAP_LERP = 0.18;
+export const SCROLL_SNAP_THRESHOLD_PX = 0.5;
 export const MIN_ZOOM_FACTOR = 0.25;
 export const MAX_ZOOM_FACTOR = 4;
 export const MAX_VISIBLE_COLLECTOR_LABELS = 3;
@@ -36,6 +53,12 @@ export const DETAIL_LAYOUT_LERP = 0.08;
 export const DETAIL_TEXT_VIEWPORT_LEFT = 0.52;
 export const DETAIL_TEXT_GAP_PX = 48;
 export const DETAIL_IMAGE_PADDING_PX = 18;
+// Focused image is pinned to the bottom-left of the viewport at this height
+// (fraction of viewport height = 50vh), padded from the screen edges.
+export const DETAIL_IMAGE_HEIGHT_VH = 0.6;
+export const DETAIL_IMAGE_EDGE_PADDING_PX = 48;
+// How far from the left edge the focused image sits (larger = further right).
+export const DETAIL_IMAGE_LEFT_PX = 140;
 export const DETAIL_SHIFT_LEFT_BLEND = 0.35;
 export const DETAIL_SHIFT_WIDTH_BOOST = 0.12;
 export const DETAIL_LAYOUT_SCALE = 0.82;

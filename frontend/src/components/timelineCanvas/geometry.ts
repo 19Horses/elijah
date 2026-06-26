@@ -1,12 +1,5 @@
 import {
   DATE_OFFSET,
-  DETAIL_IMAGE_PADDING_PX,
-  DETAIL_LAYOUT_SCALE,
-  DETAIL_MIN_SCALE,
-  DETAIL_SHIFT_LEFT_BLEND,
-  DETAIL_SHIFT_WIDTH_BOOST,
-  DETAIL_TEXT_GAP_PX,
-  DETAIL_TEXT_VIEWPORT_LEFT,
   IMAGE_HEIGHT,
   ITEM_GAP,
   ITEM_WIDTH,
@@ -16,7 +9,6 @@ import {
 import type {
   ConnectorPoint,
   ContentBounds,
-  DrawRect,
   ItemOffset,
   ProcessedItem,
 } from './types';
@@ -36,89 +28,12 @@ export function getSlotX(index: number): number {
   return PADDING_X + index * (ITEM_WIDTH + ITEM_GAP);
 }
 
-export function applyDetailLayoutTransform(
-  bounds: DrawRect,
-  detailLayout: number,
-  zoom: number,
-  viewportWidth: number,
-  cameraX: number
-): DrawRect {
-  if (detailLayout <= 0) {
-    return bounds;
-  }
-
-  const textLeftScreen = viewportWidth * DETAIL_TEXT_VIEWPORT_LEFT;
-  const maxImageRightScreen = textLeftScreen - DETAIL_TEXT_GAP_PX;
-  const minImageLeftScreen = DETAIL_IMAGE_PADDING_PX;
-  const baseScreenLeft = (bounds.left - cameraX) * zoom;
-  const baseScreenWidth = bounds.width * zoom;
-  const maxImageWidthScreen = maxImageRightScreen - minImageLeftScreen;
-
-  let fitScale = 1;
-  if (baseScreenWidth > maxImageWidthScreen && maxImageWidthScreen > 0) {
-    fitScale = maxImageWidthScreen / baseScreenWidth;
-  }
-  const targetScale = Math.max(
-    DETAIL_MIN_SCALE,
-    Math.min(DETAIL_LAYOUT_SCALE, fitScale)
-  );
-
-  const scaledScreenWidth = baseScreenWidth * targetScale;
-  const leftAligned = minImageLeftScreen;
-  const rightAligned = Math.max(
-    minImageLeftScreen,
-    maxImageRightScreen - scaledScreenWidth
-  );
-  const detailScreenLeft =
-    leftAligned + (rightAligned - leftAligned) * DETAIL_SHIFT_LEFT_BLEND;
-  const widthRatio =
-    maxImageWidthScreen > 0
-      ? Math.min(
-          1,
-          scaledScreenWidth / maxImageWidthScreen + DETAIL_SHIFT_WIDTH_BOOST
-        )
-      : 1;
-  const targetScreenLeft =
-    baseScreenLeft + (detailScreenLeft - baseScreenLeft) * widthRatio;
-  const targetShiftScreen = baseScreenLeft - targetScreenLeft;
-  const scale = 1 - detailLayout * (1 - targetScale);
-  const shiftWorld = (detailLayout * targetShiftScreen) / zoom;
-  const width = bounds.width * scale;
-  const height = bounds.height * scale;
-  const scaleOffsetX = (bounds.width - width) / 2;
-  const scaleOffsetY = (bounds.height - height) / 2;
-
-  return {
-    left: bounds.left - shiftWorld + scaleOffsetX,
-    top: bounds.top + scaleOffsetY,
-    width,
-    height,
-  };
-}
-
-export function getDetailImageScreenHeight(
-  bounds: DrawRect,
-  detailLayout: number,
-  zoom: number,
-  viewportWidth: number,
-  cameraX: number
-): number {
-  const transformed = applyDetailLayoutTransform(
-    bounds,
-    detailLayout,
-    zoom,
-    viewportWidth,
-    cameraX
-  );
-  return transformed.height * zoom;
-}
-
 export function getContentBounds(
   index: number,
   item: ProcessedItem,
-  offset: ItemOffset
+  offset: ItemOffset,
+  slotX: number = getSlotX(index)
 ): ContentBounds {
-  const slotX = getSlotX(index);
   const { width, height } = getFittedSize(
     item.aspectRatio,
     ITEM_WIDTH,

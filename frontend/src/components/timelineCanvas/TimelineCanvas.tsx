@@ -13,12 +13,13 @@ function TimelineCanvas({
   items,
   collectedRows = [],
   colour,
+  currentUsername = null,
   highlightedType = null,
   onFocusFadeChange,
   onContentFocus,
   onContentUnfocus,
   onDetailLayoutStart,
-  onDetailImageHeight,
+  onDetailImageRect,
 }: TimelineCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const interactionLockedRef = useRef(false);
@@ -28,7 +29,7 @@ function TimelineCanvas({
   const onContentFocusRef = useRef(onContentFocus);
   const onContentUnfocusRef = useRef(onContentUnfocus);
   const onDetailLayoutStartRef = useRef(onDetailLayoutStart);
-  const onDetailImageHeightRef = useRef(onDetailImageHeight);
+  const onDetailImageRectRef = useRef(onDetailImageRect);
 
   useEffect(() => {
     highlightedTypeRef.current = highlightedType ?? null;
@@ -51,35 +52,38 @@ function TimelineCanvas({
   }, [onDetailLayoutStart]);
 
   useEffect(() => {
-    onDetailImageHeightRef.current = onDetailImageHeight;
-  }, [onDetailImageHeight]);
+    onDetailImageRectRef.current = onDetailImageRect;
+  }, [onDetailImageRect]);
 
   useEffect(() => {
     const preventScrollWhileFocused = (event: WheelEvent) => {
-      if (!interactionLockedRef.current) {
+      const overlay = document.querySelector('.timeline-detail');
+
+      // A detail is open: the wheel scrolls its text (wherever the cursor is,
+      // since the image fills much of the screen) and never zooms the canvas.
+      if (overlay) {
+        const step = event.deltaMode === 1 ? 16 : 1;
+        // Nudge every text container; only the one that overflows actually
+        // moves, so we don't need to know which is the scroll element.
+        overlay
+          .querySelectorAll(
+            '.timeline-detail__side, .timeline-detail__below, .timeline-detail__body, .timeline-detail__description'
+          )
+          .forEach((el) => {
+            if (el instanceof HTMLElement) {
+              el.scrollTop += event.deltaY * step;
+            }
+          });
+        event.preventDefault();
+        event.stopImmediatePropagation();
         return;
       }
 
-      const target = event.target;
-      if (target instanceof Node) {
-        const overlay = document.querySelector('.timeline-detail');
-        const scrollable = overlay?.querySelector(
-          '.timeline-detail__body, .timeline-detail__description'
-        );
-        if (scrollable instanceof HTMLElement && scrollable.contains(target)) {
-          const { scrollTop, scrollHeight, clientHeight } = scrollable;
-          const deltaY = event.deltaY;
-          const canScrollUp = scrollTop > 0;
-          const canScrollDown = scrollTop + clientHeight < scrollHeight - 1;
-
-          if ((deltaY < 0 && canScrollUp) || (deltaY > 0 && canScrollDown)) {
-            return;
-          }
-        }
+      // Focused but no overlay yet (e.g. mid zoom-in): just block the canvas.
+      if (interactionLockedRef.current) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
       }
-
-      event.preventDefault();
-      event.stopImmediatePropagation();
     };
 
     const options: AddEventListenerOptions = { passive: false, capture: true };
@@ -114,6 +118,7 @@ function TimelineCanvas({
       itemOffsets,
       collectedOffsets,
       backgroundColour,
+      currentUsername,
       audio,
       refs: {
         highlightedTypeRef,
@@ -122,7 +127,7 @@ function TimelineCanvas({
         onContentFocusRef,
         onContentUnfocusRef,
         onDetailLayoutStartRef,
-        onDetailImageHeightRef,
+        onDetailImageRectRef,
       },
     });
 
@@ -134,7 +139,7 @@ function TimelineCanvas({
       p5InstanceRef.current?.remove();
       p5InstanceRef.current = null;
     };
-  }, [items, collectedRows, colour]);
+  }, [items, collectedRows, colour, currentUsername]);
 
   return (
     <div className="timeline-canvas-wrap">

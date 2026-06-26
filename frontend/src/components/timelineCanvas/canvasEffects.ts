@@ -17,6 +17,20 @@ export function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+// Blend two 6-digit hex colours; t=0 → from, t=1 → to.
+export function mixHex(from: string, to: string, t: number): string {
+  const a = from.replace('#', '');
+  const b = to.replace('#', '');
+  if (a.length !== 6 || b.length !== 6) {
+    return from;
+  }
+  const lerp = (start: number, end: number) => Math.round(start + (end - start) * t);
+  const r = lerp(Number.parseInt(a.slice(0, 2), 16), Number.parseInt(b.slice(0, 2), 16));
+  const g = lerp(Number.parseInt(a.slice(2, 4), 16), Number.parseInt(b.slice(2, 4), 16));
+  const c = lerp(Number.parseInt(a.slice(4, 6), 16), Number.parseInt(b.slice(4, 6), 16));
+  return `rgb(${r}, ${g}, ${c})`;
+}
+
 export function matchesHighlightedType(
   contentType: ContentType,
   highlightedType: ContentType | null | undefined

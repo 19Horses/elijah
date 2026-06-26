@@ -4,6 +4,7 @@ import CollectionCountdown from '../components/CollectionCountdown';
 import CollectionViewer from '../components/CollectionViewer';
 import ContentLegend from '../components/ContentLegend';
 import TimelineCanvas from '../components/timelineCanvas';
+import type { DetailImageRect } from '../components/timelineCanvas/types';
 import TimelineDetailOverlay, {
   type TimelineDetailView,
 } from '../components/TimelineDetailOverlay';
@@ -38,9 +39,8 @@ function Home() {
   );
   const [focusSlug, setFocusSlug] = useState<string | null>(null);
   const [detailReady, setDetailReady] = useState(false);
-  const [detailImageHeightPx, setDetailImageHeightPx] = useState<number | null>(
-    null
-  );
+  const [detailImageRect, setDetailImageRect] =
+    useState<DetailImageRect | null>(null);
   const userCardWrapRef = useRef<HTMLDivElement>(null);
   const legendWrapRef = useRef<HTMLDivElement>(null);
 
@@ -60,21 +60,21 @@ function Home() {
   const handleContentFocus = useCallback((slug: string) => {
     setFocusSlug(slug);
     setDetailReady(false);
-    setDetailImageHeightPx(null);
+    setDetailImageRect(null);
   }, []);
 
   const handleContentUnfocus = useCallback(() => {
     setFocusSlug(null);
     setDetailReady(false);
-    setDetailImageHeightPx(null);
+    setDetailImageRect(null);
   }, []);
 
   const handleDetailLayoutStart = useCallback(() => {
     setDetailReady(true);
   }, []);
 
-  const handleDetailImageHeight = useCallback((heightPx: number) => {
-    setDetailImageHeightPx(heightPx);
+  const handleDetailImageRect = useCallback((rect: DetailImageRect) => {
+    setDetailImageRect(rect);
   }, []);
 
   const timelineDetail = useMemo((): TimelineDetailView | null => {
@@ -92,6 +92,7 @@ function Home() {
   }, [contentDetail, detailReady, focusSlug]);
 
   const activeCollection = collections?.[0] ?? null;
+  const currentUsername = useMemo(() => getStoredUser()?.username ?? null, []);
 
   const handleCollected = () => {
     setAlreadyCollected(true);
@@ -155,16 +156,17 @@ function Home() {
         items={timeline.items}
         collectedRows={collectedRows}
         colour={timeline.colour}
+        currentUsername={currentUsername}
         highlightedType={highlightedType}
         onFocusFadeChange={handleFocusFadeChange}
         onContentFocus={handleContentFocus}
         onContentUnfocus={handleContentUnfocus}
         onDetailLayoutStart={handleDetailLayoutStart}
-        onDetailImageHeight={handleDetailImageHeight}
+        onDetailImageRect={handleDetailImageRect}
       />
       <TimelineDetailOverlay
         detail={timelineDetail}
-        imageHeightPx={detailImageHeightPx}
+        imageRect={detailImageRect}
       />
       {statusChecked && activeCollection && !alreadyCollected && (
         <CollectionCountdown

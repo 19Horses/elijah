@@ -1,11 +1,20 @@
 import type p5 from 'p5';
 import {
+  DETAIL_IMAGE_HEIGHT_VH,
+  DETAIL_IMAGE_LEFT_PX,
+  DETAIL_TEXT_GAP_PX,
+  DETAIL_TEXT_VIEWPORT_LEFT,
   FIT_VIEW_PADDING,
   FIT_ZOOM_SCALAR,
-  FOCUS_VIEWPORT_FILL,
   MAIN_LINE_Y,
   MAX_ZOOM_FACTOR,
   MIN_ZOOM_FACTOR,
+  SCROLL_GESTURE_GAP_MS,
+  SCROLL_ON_STOP_PX,
+  SCROLL_SNAP_LERP,
+  SCROLL_SNAP_THRESHOLD_PX,
+  SCROLL_STEP_COOLDOWN_MS,
+  SCROLL_STEP_MIN_DELTA,
   VIEW_ANIMATION_LERP,
   VIEW_SNAP_THRESHOLD,
   VIEW_UNFOCUS_ANIMATION_LERP,
@@ -38,8 +47,10 @@ export type ViewContext = {
   syncViewTargets: () => void;
   panView: (deltaScreenX: number, deltaScreenY: number) => void;
   zoomViewAt: (screenX: number, screenY: number, delta: number) => void;
+  scrollView: (deltaX: number, deltaY: number) => void;
   fitView: () => void;
   animateView: () => void;
+  animateScrollSnap: () => void;
   findClickedItem: (worldX: number, worldY: number) => FocusTarget | null;
   focusItem: (target: FocusTarget) => void;
   unfocusItem: () => void;
@@ -115,13 +126,22 @@ export function createViewContext(
   };
 
   const computeFocusViewTargets = (focusBounds: ContentBounds) => {
-    const zoomW = (p.width * FOCUS_VIEWPORT_FILL) / focusBounds.width;
-    const zoomH = (p.height * FOCUS_VIEWPORT_FILL) / focusBounds.height;
-    runtime.targetZoom = Math.min(zoomW, zoomH);
-    const centerX = (focusBounds.left + focusBounds.right) / 2;
-    const centerY = focusBounds.top + focusBounds.height / 2;
-    runtime.targetCameraX = centerX - p.width / (2 * runtime.targetZoom);
-    runtime.targetCameraY = centerY - p.height / (2 * runtime.targetZoom);
+    // Frame the item directly at its detail position — left-aligned, vertically
+    // centred, 60vh tall — so the focus is a single zoom with no extra slide.
+    const maxWidthScreen =
+      p.width * DETAIL_TEXT_VIEWPORT_LEFT -
+      DETAIL_TEXT_GAP_PX -
+      DETAIL_IMAGE_LEFT_PX;
+    let zoom = (p.height * DETAIL_IMAGE_HEIGHT_VH) / focusBounds.height;
+    if (focusBounds.width * zoom > maxWidthScreen && maxWidthScreen > 0) {
+      zoom = maxWidthScreen / focusBounds.width;
+    }
+    const itemScreenHeight = focusBounds.height * zoom;
+    const targetLeftScreen = DETAIL_IMAGE_LEFT_PX;
+    const targetTopScreen = (p.height - itemScreenHeight) / 2;
+    runtime.targetZoom = zoom;
+    runtime.targetCameraX = focusBounds.left - targetLeftScreen / zoom;
+    runtime.targetCameraY = focusBounds.top - targetTopScreen / zoom;
   };
 
   const getFocusBounds = (target: FocusTarget): ContentBounds => {
@@ -147,6 +167,103 @@ export function createViewContext(
   const panView = (deltaScreenX: number, deltaScreenY: number) => {
     runtime.cameraX -= deltaScreenX / runtime.zoom;
     runtime.cameraY -= deltaScreenY / runtime.zoom;
+    runtime.snapping = false;
+    syncViewTargets();
+  };
+
+  // Ordered list of discrete snap stops (one per item, sorted along the
+  // timeline) that scrolling steps between.
+  const getSnapStops = (): { x: number; y: number }[] =>
+    [...bounds.getAllBounds(), ...bounds.getCollectedBounds()]
+      .map((b) => ({ x: (b.left + b.right) / 2, y: b.top + b.height / 2 }))
+      .sort((a, b) => a.x - b.x || a.y - b.y);
+
+  const setSnapTarget = (stop: { x: number; y: number }) => {
+    runtime.snapTargetCameraX = stop.x - p.width / (2 * runtime.zoom);
+    runtime.snapTargetCameraY = stop.y - p.height / (2 * runtime.zoom);
+    runtime.snapping = true;
+  };
+
+  // Discrete navigation: each scroll gesture steps to the next/previous snap
+  // stop rather than panning freely. Axis is locked to the dominant wheel
+  // delta so movement is never diagonal.
+  const scrollView = (deltaX: number, deltaY: number) => {
+    if (isViewInteractionLocked(runtime)) {
+      return;
+    }
+
+    const delta =
+      Math.abs(deltaX) >= Math.abs(deltaY) ? deltaX : deltaY;
+    if (Math.abs(delta) < SCROLL_STEP_MIN_DELTA) {
+      return;
+    }
+
+    const now = p.millis();
+    const newGesture = now - runtime.lastWheelMs > SCROLL_GESTURE_GAP_MS;
+    runtime.lastWheelMs = now;
+    // Within one continuous gesture, only advance once per cooldown so a
+    // trackpad fling doesn't blow through every stop at once.
+    if (!newGesture && now < runtime.snapStepReadyMs) {
+      return;
+    }
+
+    const stops = getSnapStops();
+    if (stops.length === 0) {
+      return;
+    }
+
+    const viewCenterX = runtime.cameraX + p.width / (2 * runtime.zoom);
+    const viewCenterY = runtime.cameraY + p.height / (2 * runtime.zoom);
+    let nearest = 0;
+    let bestDistance = Infinity;
+    stops.forEach((stop, index) => {
+      const distance = Math.hypot(stop.x - viewCenterX, stop.y - viewCenterY);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        nearest = index;
+      }
+    });
+
+    const direction = delta > 0 ? 1 : -1;
+    // If we aren't already parked on a stop, the first scroll just snaps onto
+    // the nearest one; otherwise it steps to the neighbour.
+    const onStop = bestDistance * runtime.zoom <= SCROLL_ON_STOP_PX;
+    const targetIndex = onStop
+      ? Math.max(0, Math.min(stops.length - 1, nearest + direction))
+      : nearest;
+
+    resetCanvasFocus(runtime);
+    setSnapTarget(stops[targetIndex]);
+    syncViewTargets();
+    runtime.snapStepReadyMs = now + SCROLL_STEP_COOLDOWN_MS;
+  };
+
+  const animateScrollSnap = () => {
+    if (!runtime.snapping) {
+      return;
+    }
+
+    const nextX =
+      runtime.cameraX +
+      (runtime.snapTargetCameraX - runtime.cameraX) * SCROLL_SNAP_LERP;
+    const nextY =
+      runtime.cameraY +
+      (runtime.snapTargetCameraY - runtime.cameraY) * SCROLL_SNAP_LERP;
+
+    const settled =
+      Math.abs(runtime.snapTargetCameraX - nextX) * runtime.zoom <
+        SCROLL_SNAP_THRESHOLD_PX &&
+      Math.abs(runtime.snapTargetCameraY - nextY) * runtime.zoom <
+        SCROLL_SNAP_THRESHOLD_PX;
+
+    if (settled) {
+      runtime.cameraX = runtime.snapTargetCameraX;
+      runtime.cameraY = runtime.snapTargetCameraY;
+      runtime.snapping = false;
+    } else {
+      runtime.cameraX = nextX;
+      runtime.cameraY = nextY;
+    }
     syncViewTargets();
   };
 
@@ -172,6 +289,8 @@ export function createViewContext(
   };
 
   const fitView = () => {
+    runtime.snapping = false;
+    runtime.snapStepReadyMs = 0;
     resetCanvasFocus(runtime);
     computeFitViewTargets();
     applyViewTargets();
@@ -201,12 +320,19 @@ export function createViewContext(
     if (Math.abs(runtime.zoom - runtime.targetZoom) > VIEW_SNAP_THRESHOLD) {
       const nextZoom = lerp(runtime.zoom, runtime.targetZoom);
       const progress = getAnimationProgress(nextZoom);
+      // Where the anchor world point lands on screen under the final target —
+      // not necessarily the viewport centre, so off-centre framings animate
+      // smoothly instead of jumping at the end.
+      const finalScreenX =
+        (runtime.animationWorldX - runtime.targetCameraX) * runtime.targetZoom;
+      const finalScreenY =
+        (runtime.animationWorldY - runtime.targetCameraY) * runtime.targetZoom;
       const screenX =
         runtime.animationStartScreenX +
-        (p.width / 2 - runtime.animationStartScreenX) * progress;
+        (finalScreenX - runtime.animationStartScreenX) * progress;
       const screenY =
         runtime.animationStartScreenY +
-        (p.height / 2 - runtime.animationStartScreenY) * progress;
+        (finalScreenY - runtime.animationStartScreenY) * progress;
       setCameraFromScreenAnchor(
         runtime.animationWorldX,
         runtime.animationWorldY,
@@ -259,6 +385,8 @@ export function createViewContext(
   };
 
   const focusItem = (target: FocusTarget) => {
+    runtime.snapping = false;
+    runtime.snapStepReadyMs = 0;
     runtime.detailPhase = 'none';
     runtime.detailLayout = 0;
     runtime.focusContentFade = 0;
@@ -277,6 +405,10 @@ export function createViewContext(
       focusBounds.top + focusBounds.height / 2
     );
     runtime.viewAnimating = true;
+    // Start the detail reveal immediately so the image slides into its
+    // bottom-left position as it zooms in — a single motion rather than a
+    // centred zoom followed by a separate slide.
+    startDetailReveal(runtime, target, deps);
   };
 
   const unfocusItem = () => {
@@ -301,8 +433,10 @@ export function createViewContext(
     syncViewTargets,
     panView,
     zoomViewAt,
+    scrollView,
     fitView,
     animateView,
+    animateScrollSnap,
     findClickedItem,
     focusItem,
     unfocusItem,

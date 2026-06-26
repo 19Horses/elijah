@@ -5,7 +5,7 @@ import {
   ITEM_WIDTH,
   PADDING_Y,
 } from '../constants';
-import { getFittedSize, getSlotX, hitTest, screenToWorld } from '../geometry';
+import { getFittedSize, hitTest, screenToWorld } from '../geometry';
 import { isFutureDatedItem } from '../timelineRuntime';
 import type { TimelineSketchDeps } from '../types';
 import type { BoundsContext } from './bounds';
@@ -119,7 +119,7 @@ export function createInputHandlers(
     }
 
     const item = processed[runtime.dragIndex];
-    const slotX = getSlotX(runtime.dragIndex);
+    const slotX = boundsCtx.slotLeft(runtime.dragIndex);
     const { width, height } = getFittedSize(
       item.aspectRatio,
       ITEM_WIDTH,
@@ -212,9 +212,10 @@ export function createInputHandlers(
     }
     if (event) {
       event.preventDefault();
-      const delta =
-        event.deltaY ?? (event as WheelEvent & { delta: number }).delta;
-      view.zoomViewAt(p.mouseX, p.mouseY, delta);
+      const deltaX = event.deltaX ?? 0;
+      const deltaY =
+        (event.deltaY ?? (event as WheelEvent & { delta: number }).delta) ?? 0;
+      view.scrollView(deltaX, deltaY);
     }
     return false;
   };

@@ -5,12 +5,20 @@ import {
   getCombinedAlpha,
   hexToRgba,
   matchesHighlightedType,
+  mixHex,
   resetCanvasEffects,
 } from '../canvasEffects';
 import {
   CONNECTOR_HOVER_THRESHOLD,
   LOAD_ALPHA_SNAP,
+  MAIN_GLOW_CENTER_LIGHTEN,
   MAIN_GLOW_COLOUR,
+  MAIN_GLOW_STRIP_LENGTH,
+  MAIN_GLOW_STRIP_WIDTH,
+  MAIN_GLOW_TRAVEL_BLUR,
+  MAIN_GLOW_TRAVEL_MS,
+  MAIN_LINE_Y,
+  MAIN_USERNAME,
   TYPE_HIGHLIGHT_BLUR,
 } from '../constants';
 import {
@@ -23,13 +31,19 @@ import { drawAudioDisc } from './drawAudioDisc';
 import {
   drawContainedImage,
   drawGalleryControls,
+  drawGalleryStrip,
+  galleryFocusWidth,
 } from './drawGalleryControls';
 import type { GalleryController } from './galleryController';
 import { drawPlayPauseButton } from './drawPlayPauseButton';
-import { applyDetailLayoutTransform } from '../geometry';
 import { isFutureDatedItem } from '../timelineRuntime';
 import type { ContentType } from '../../../types/content';
-import type { ContentBounds, TimelineSketchDeps } from '../types';
+import type {
+  ConnectorPoint,
+  ContentBounds,
+  TimelineSketchDeps,
+} from '../types';
+import type { BoundsContext } from './bounds';
 
 export type MainLaneDrawContext = {
   bounds: ContentBounds[];
@@ -105,6 +119,144 @@ export function computeMainLaneHover(
   };
 }
 
+function polylineLength(points: ConnectorPoint[]): number {
+  let length = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    length += Math.hypot(points[i + 1].x - points[i].x, points[i + 1].y - points[i].y);
+  }
+  return length;
+}
+
+// The portion of the polyline between two arc-length distances, with the
+// endpoints interpolated so the strip has exact, smooth ends.
+function extractSubPath(
+  points: ConnectorPoint[],
+  fromDist: number,
+  toDist: number
+): ConnectorPoint[] {
+  const result: ConnectorPoint[] = [];
+  let acc = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    const seg = Math.hypot(b.x - a.x, b.y - a.y);
+    if (seg <= 0) {
+      continue;
+    }
+    const segStart = acc;
+    const segEnd = acc + seg;
+    acc = segEnd;
+    if (segEnd < fromDist || segStart > toDist) {
+      continue;
+    }
+    const t0 = Math.max(0, (fromDist - segStart) / seg);
+    const t1 = Math.min(1, (toDist - segStart) / seg);
+    if (result.length === 0) {
+      result.push({ x: a.x + (b.x - a.x) * t0, y: a.y + (b.y - a.y) * t0 });
+    }
+    result.push({ x: a.x + (b.x - a.x) * t1, y: a.y + (b.y - a.y) * t1 });
+  }
+  return result;
+}
+
+// A glow that continuously travels along the logged-in viewer's own branch
+// (or the main lane if they don't have one), looping from start to end.
+export function drawMainTimelineGlow(
+  p: p5,
+  deps: TimelineSketchDeps,
+  boundsCtx: BoundsContext,
+  mainBounds: ContentBounds[],
+  collectedBounds: ContentBounds[]
+): void {
+  const { processedCollected, currentUsername, runtime } = deps;
+
+  let path: ConnectorPoint[] | null = null;
+  let glowColour = MAIN_GLOW_COLOUR;
+
+  // Trace the hovered branch if one is active, otherwise the logged-in
+  // viewer's own branch. Only ever one strip.
+  let rowIndex = runtime.branchDimRow ?? -1;
+  if (rowIndex < 0 && currentUsername && currentUsername !== MAIN_USERNAME) {
+    for (const item of processedCollected) {
+      const source = item.sources.find((s) => s.username === currentUsername);
+      if (source) {
+        rowIndex = source.rowIndex;
+        break;
+      }
+    }
+  }
+
+  if (rowIndex >= 0) {
+    for (const item of processedCollected) {
+      const source = item.sources.find((s) => s.rowIndex === rowIndex);
+      if (source) {
+        glowColour = source.colour;
+        break;
+      }
+    }
+    const rowPath = boundsCtx.getUserTimelinePath(
+      rowIndex,
+      mainBounds,
+      collectedBounds
+    );
+    if (rowPath.length >= 2) {
+      path = rowPath;
+    }
+  }
+
+  // Fallback: trace the main lane horizontally.
+  if (!path) {
+    glowColour = MAIN_GLOW_COLOUR;
+    if (mainBounds.length === 0) {
+      return;
+    }
+    const startX = mainBounds[0].left;
+    const endX = mainBounds[mainBounds.length - 1].right;
+    if (endX <= startX) {
+      return;
+    }
+    path = [
+      { x: startX, y: MAIN_LINE_Y },
+      { x: endX, y: MAIN_LINE_Y },
+    ];
+  }
+
+  const total = polylineLength(path);
+  if (total <= 0) {
+    return;
+  }
+  const t = (p.millis() % MAIN_GLOW_TRAVEL_MS) / MAIN_GLOW_TRAVEL_MS;
+  // A bright strip of the line travels along the path, like a pulse in a wire.
+  // The head runs from before the start to past the end so it eases in and out.
+  const headDist =
+    t * (total + 2 * MAIN_GLOW_STRIP_LENGTH) - MAIN_GLOW_STRIP_LENGTH;
+  const strip = extractSubPath(
+    path,
+    Math.max(0, headDist - MAIN_GLOW_STRIP_LENGTH),
+    Math.min(total, headDist)
+  );
+  if (strip.length < 2) {
+    return;
+  }
+
+  const ctx = p.drawingContext as CanvasRenderingContext2D;
+  ctx.save();
+  ctx.shadowBlur = MAIN_GLOW_TRAVEL_BLUR;
+  ctx.shadowColor = glowColour;
+  p.noFill();
+  p.strokeWeight(MAIN_GLOW_STRIP_WIDTH);
+  p.strokeCap(p.ROUND);
+  // Gradient along the strip: base colour at the ends, lightened in the centre.
+  const segments = strip.length - 1;
+  for (let i = 0; i < segments; i++) {
+    const frac = (i + 0.5) / segments;
+    const centre = 1 - Math.abs(frac - 0.5) * 2;
+    p.stroke(mixHex(glowColour, '#ffffff', centre * MAIN_GLOW_CENTER_LIGHTEN));
+    p.line(strip[i].x, strip[i].y, strip[i + 1].x, strip[i + 1].y);
+  }
+  ctx.restore();
+}
+
 export function drawMainLaneConnectors(
   p: p5,
   deps: TimelineSketchDeps,
@@ -112,11 +264,11 @@ export function drawMainLaneConnectors(
   hover: MainLaneDrawResult
 ): void {
   const mainCtx = p.drawingContext as CanvasRenderingContext2D;
-  const { bounds, lineWorldX } = ctx;
+  const { bounds } = ctx;
 
   for (let index = 0; index < deps.processed.length - 1; index++) {
-    const connectorLoadAlpha =
-      ctx.getMainConnectorLoadAlpha(index) * ctx.otherContentAlpha;
+    // Timeline lines stay visible during focus, so they ignore the focus fade.
+    const connectorLoadAlpha = ctx.getMainConnectorLoadAlpha(index);
     if (connectorLoadAlpha <= LOAD_ALPHA_SNAP) {
       continue;
     }
@@ -135,13 +287,15 @@ export function drawMainLaneConnectors(
       mainCtx.globalAlpha = connectorLoadAlpha;
     }
 
+    // Focused item's endpoint follows its image to the detail position.
+    const fromBounds = ctx.getDetailDrawBounds('main', index, bounds[index]);
+    const toBounds = ctx.getDetailDrawBounds('main', index + 1, bounds[index + 1]);
     drawMainConnector(
       p,
-      { x: bounds[index].right, y: bounds[index].centerY },
-      { x: bounds[index + 1].left, y: bounds[index + 1].centerY },
+      { x: fromBounds.right, y: fromBounds.centerY },
+      { x: toBounds.left, y: toBounds.centerY },
       isFutureDatedItem(deps.items[index]),
-      isFutureDatedItem(deps.items[index + 1]),
-      lineWorldX
+      isFutureDatedItem(deps.items[index + 1])
     );
     resetCanvasEffects(mainCtx);
   }
@@ -190,20 +344,17 @@ export function drawMainLaneItems(
     const audioReveal = isAudioFocused ? deps.runtime.detailLayout : 0;
     const imageLeft = left - audioReveal * height * 0.15;
 
-    // Selected image asset with multiple images: show the active gallery image.
+    // Selected image asset with multiple images: show every image in a strip
+    // the arrows slide through.
     const galleryActive =
       item.contentType === 'imageAsset' &&
       ctx.isFocusActive &&
       ctx.isFocusedTarget('main', index) &&
       item.galleryUrls.length > 1;
-    let galleryImg: p5.Image | null = null;
+    let galleryImages: (p5.Image | null)[] | null = null;
     if (galleryActive) {
       gallery.ensureLoaded(item.galleryUrls);
-      const activeIndex = Math.min(
-        gallery.getActiveIndex(),
-        item.galleryUrls.length - 1
-      );
-      galleryImg = gallery.getImage(item.galleryUrls[activeIndex]);
+      galleryImages = item.galleryUrls.map((url) => gallery.getImage(url));
     }
 
     if (audioReveal > 0) {
@@ -219,8 +370,7 @@ export function drawMainLaneItems(
     }
 
     if (ctx.isFocusActive && ctx.isFocusedTarget('main', index)) {
-      mainCtx.shadowBlur = 22;
-      mainCtx.shadowColor = hexToRgba(MAIN_GLOW_COLOUR, 0.45 * visibilityAlpha);
+      // Selected image: no glow.
     } else if (hover.hoveredMain === index || hover.mainConnectorHover) {
       mainCtx.shadowBlur = 22;
       mainCtx.shadowColor = hexToRgba(MAIN_GLOW_COLOUR, 0.45 * visibilityAlpha);
@@ -238,15 +388,17 @@ export function drawMainLaneItems(
       mainCtx.globalAlpha = visibilityAlpha;
     }
 
-    if (galleryActive && galleryImg) {
-      drawContainedImage(p, galleryImg, {
-        left: imageLeft,
-        top,
-        width,
-        height,
-      });
+    if (galleryActive && galleryImages) {
+      drawGalleryStrip(
+        p,
+        { left: imageLeft, top, width, height },
+        galleryImages,
+        gallery.getDisplayIndex()
+      );
     } else if (img) {
-      p.image(img, imageLeft, top, width, height);
+      // Contain (not fill) so the full image shows without cropping when its
+      // true aspect ratio differs from the slot's.
+      drawContainedImage(p, img, { left: imageLeft, top, width, height });
     } else {
       p.fill(245);
       p.stroke(220);
@@ -275,7 +427,7 @@ export function drawMainLaneItems(
     }
 
     if (!hideDateLabel) {
-      p.fill(17);
+      p.fill(255);
       p.noStroke();
       p.textAlign(p.CENTER, p.TOP);
       if (ctx.isTypeHighlightActive && !typeMatch) {
@@ -309,12 +461,18 @@ export function drawMainLaneItems(
       });
     }
 
-    // Gallery navigation arrows + dots on the selected image.
-    if (galleryActive) {
+    // Gallery navigation arrows + dots, spanning the focused image's width.
+    if (galleryActive && galleryImages) {
+      const arrowWidth = galleryFocusWidth(
+        galleryImages,
+        gallery.getDisplayIndex(),
+        width,
+        height
+      );
       const regions = drawGalleryControls(
         p,
         mainCtx,
-        { left: imageLeft, top, width, height },
+        { left: imageLeft, top, width: arrowWidth, height },
         gallery.getActiveIndex(),
         item.galleryUrls.length,
         visibilityAlpha
@@ -333,8 +491,8 @@ export function drawMainLaneConnectorDots(
   const { bounds } = ctx;
 
   for (let index = 0; index < bounds.length - 1; index++) {
-    const connectorLoadAlpha =
-      ctx.getMainConnectorLoadAlpha(index) * ctx.otherContentAlpha;
+    // Timeline dots stay visible during focus, so they ignore the focus fade.
+    const connectorLoadAlpha = ctx.getMainConnectorLoadAlpha(index);
     if (connectorLoadAlpha <= LOAD_ALPHA_SNAP) {
       continue;
     }
@@ -351,37 +509,27 @@ export function drawMainLaneConnectorDots(
     } else {
       mainCtx.globalAlpha = connectorLoadAlpha;
     }
-    drawDot(p, bounds[index].right, bounds[index].centerY, '#111111');
-    drawDot(p, bounds[index + 1].left, bounds[index + 1].centerY, '#111111');
+    const fromBounds = ctx.getDetailDrawBounds('main', index, bounds[index]);
+    const toBounds = ctx.getDetailDrawBounds('main', index + 1, bounds[index + 1]);
+    drawDot(p, fromBounds.right, fromBounds.centerY, '#ffffff');
+    drawDot(p, toBounds.left, toBounds.centerY, '#ffffff');
     resetCanvasEffects(mainCtx);
   }
 }
 
-export function createMainLaneDrawHelpers(deps: TimelineSketchDeps, p: p5) {
+export function createMainLaneDrawHelpers(deps: TimelineSketchDeps) {
   const { runtime } = deps;
 
   const isFocusedTarget = (lane: 'main' | 'collected', index: number) =>
     runtime.focusTarget?.lane === lane && runtime.focusTarget.index === index;
 
+  // The focused image stays at its world bounds — the camera frames it at the
+  // detail position — so the draw bounds are just the item's own bounds.
   const getDetailDrawBounds = (
     lane: 'main' | 'collected',
     index: number,
     itemBounds: ContentBounds
-  ) => {
-    if (!isFocusedTarget(lane, index) || runtime.detailLayout <= 0) {
-      return itemBounds;
-    }
-    return {
-      ...itemBounds,
-      ...applyDetailLayoutTransform(
-        itemBounds,
-        runtime.detailLayout,
-        runtime.zoom,
-        p.width,
-        runtime.cameraX
-      ),
-    };
-  };
+  ) => itemBounds;
 
   return { isFocusedTarget, getDetailDrawBounds };
 }
