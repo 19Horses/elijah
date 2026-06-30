@@ -1,5 +1,5 @@
 import p5 from 'p5';
-import { memo, useEffect, useRef } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import type { ContentType } from '../../types/content';
 import { DEFAULT_BACKGROUND } from './constants';
 import { createTimelineSketch } from './createTimelineSketch';
@@ -7,7 +7,7 @@ import { createAudioController } from './sketch/audioController';
 import { buildProcessedCollected, buildProcessedItems } from './processItems';
 import P5CanvasHost from './P5CanvasHost';
 import { createTimelineRuntime } from './timelineRuntime';
-import type { TimelineCanvasProps } from './types';
+import type { BranchFocusInfo, TimelineCanvasProps } from './types';
 
 function TimelineCanvas({
   items,
@@ -30,6 +30,10 @@ function TimelineCanvas({
   const onContentUnfocusRef = useRef(onContentUnfocus);
   const onDetailLayoutStartRef = useRef(onDetailLayoutStart);
   const onDetailImageRectRef = useRef(onDetailImageRect);
+  const [branchFocus, setBranchFocus] = useState<BranchFocusInfo | null>(null);
+  const onBranchFocusRef =
+    useRef<((info: BranchFocusInfo | null) => void) | undefined>(setBranchFocus);
+  const resetViewRef = useRef<(() => void) | undefined>(undefined);
 
   useEffect(() => {
     highlightedTypeRef.current = highlightedType ?? null;
@@ -102,6 +106,9 @@ function TimelineCanvas({
       return undefined;
     }
 
+    // A fresh sketch starts at the default fit view, so drop any stale bar.
+    setBranchFocus(null);
+
     const processed = buildProcessedItems(items);
     const processedCollected = buildProcessedCollected(collectedRows);
     const backgroundColour = colour || DEFAULT_BACKGROUND;
@@ -128,6 +135,8 @@ function TimelineCanvas({
         onContentUnfocusRef,
         onDetailLayoutStartRef,
         onDetailImageRectRef,
+        onBranchFocusRef,
+        resetViewRef,
       },
     });
 
@@ -143,6 +152,24 @@ function TimelineCanvas({
 
   return (
     <div className="timeline-canvas-wrap">
+      {branchFocus && (
+        <div className="timeline-branch-bar">
+          <span className="timeline-branch-bar__label">
+            <span
+              className="timeline-branch-bar__dot"
+              style={{ backgroundColor: branchFocus.colour }}
+            />
+            {branchFocus.username}
+          </span>
+          <button
+            type="button"
+            className="timeline-branch-bar__cancel"
+            onClick={() => resetViewRef.current?.()}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
       <P5CanvasHost containerRef={containerRef} />
     </div>
   );

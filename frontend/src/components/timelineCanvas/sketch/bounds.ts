@@ -1,4 +1,5 @@
 import {
+  BRANCH_NODE_GAP,
   COLLECTED_LANE_TOP,
   COLLECTED_ROW_HEIGHT,
   DATE_OFFSET,
@@ -47,6 +48,10 @@ export type BoundsContext = {
     mainBounds: ContentBounds[],
     collectedBounds: ContentBounds[]
   ) => ConnectorPoint[];
+  // Main-connector indices a branch detours below (has collected items in that
+  // gap). The rest of the main line — before, after, and gaps it skips over —
+  // is left untouched.
+  getBranchDetouredGaps: (rowIndex: number) => Set<number>;
   getCollectedBounds: () => ContentBounds[];
 };
 
@@ -292,6 +297,223 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     };
   };
 
+  // Which main item, if any, a branch attaches to (its underside): the item it
+  // springs out from, or — for a chain's tail — the next item it rejoins.
+  const getBranchMainIndex = (
+    index: number,
+    sourceIndex: number,
+    mainBounds: ContentBounds[],
+    collectedBounds: ContentBounds[]
+  ): number => {
+    const item = processedCollected[index];
+    const source = item.sources[sourceIndex];
+    const gapIndex = getPreviousMainIndex(item.anchorTime);
+    const chainFrom = getCollectorChainBounds(
+      index,
+      source.rowIndex,
+      collectedBounds
+    );
+    if (chainFrom) {
+      // Tail rejoin into the next main item (only if this is the chain's tail).
+      if (mainBounds[gapIndex + 1] && !hasChainSuccessor(index, source.rowIndex)) {
+        return gapIndex + 1;
+      }
+      return -1;
+    }
+    // Branches straight out from the previous main item.
+    return mainBounds.length > 0 ? Math.max(0, gapIndex) : -1;
+  };
+
+  // Every branch that meets a main item's underside gets an evenly spaced node
+  // across that item's width, ordered left-to-right by the branch's target, so
+  // the nodes never pile up at the centre. Keyed by `${index}:${sourceIndex}`.
+  // Cached per frame by the bounds array references it was built from.
+  let branchNodeXCache: {
+    main: ContentBounds[];
+    collected: ContentBounds[];
+    map: Map<string, number>;
+  } | null = null;
+  const getBranchNodeXMap = (
+    mainBounds: ContentBounds[],
+    collectedBounds: ContentBounds[]
+  ): Map<string, number> => {
+    if (
+      branchNodeXCache &&
+      branchNodeXCache.main === mainBounds &&
+      branchNodeXCache.collected === collectedBounds
+    ) {
+      return branchNodeXCache.map;
+    }
+
+    const perMain = new Map<
+      number,
+      { key: string; targetX: number; sourceIndex: number }[]
+    >();
+    processedCollected.forEach((item, index) => {
+      const itemBounds = collectedBounds[index];
+      if (!itemBounds) {
+        return;
+      }
+      const targetX = (itemBounds.left + itemBounds.right) / 2;
+      item.sources.forEach((_source, sourceIndex) => {
+        const mainIndex = getBranchMainIndex(
+          index,
+          sourceIndex,
+          mainBounds,
+          collectedBounds
+        );
+        if (mainIndex < 0) {
+          return;
+        }
+        const entry = { key: `${index}:${sourceIndex}`, targetX, sourceIndex };
+        const list = perMain.get(mainIndex);
+        if (list) {
+          list.push(entry);
+        } else {
+          perMain.set(mainIndex, [entry]);
+        }
+      });
+    });
+
+    const map = new Map<string, number>();
+    perMain.forEach((list, mainIndex) => {
+      const mb = mainBounds[mainIndex];
+      // Left-to-right by target so the branches fan out without crossing each
+      // other (like metro lines leaving a station).
+      list.sort((a, b) => a.targetX - b.targetX || a.sourceIndex - b.sourceIndex);
+      const n = list.length;
+      const center = mb.left + mb.width / 2;
+      // Tight, fixed, equal spacing centred on the item. A fixed gap (rather
+      // than one scaled to the item width) keeps the nodes clearly separated
+      // even on the first main item, which collects many branches; the bundle
+      // is allowed to extend past a narrow item rather than collapsing.
+      list.forEach((entry, k) => {
+        map.set(entry.key, center + (k - (n - 1) / 2) * BRANCH_NODE_GAP);
+      });
+    });
+
+    branchNodeXCache = { main: mainBounds, collected: collectedBounds, map };
+    return map;
+  };
+
+  // Which side of a collected item a branch coming from `fromX` attaches to.
+  const branchEdgeSide = (
+    fromX: number,
+    itemBounds: ContentBounds
+  ): 'left' | 'right' =>
+    fromX <= (itemBounds.left + itemBounds.right) / 2 ? 'left' : 'right';
+
+  // Mirror of getBranchNodeXMap for the collected-item side: every branch
+  // endpoint that meets an item's edge gets an evenly spaced y along that edge,
+  // grouped by (item, side), so multiple lines into/out of one item don't
+  // collapse onto a single node. Keyed `${role}:${index}:${sourceIndex}`,
+  // value is the resolved {x, y}. Cached per frame by the bounds references.
+  let itemAttachCache: {
+    main: ContentBounds[];
+    collected: ContentBounds[];
+    map: Map<string, { x: number; y: number }>;
+  } | null = null;
+  const getItemAttachMap = (
+    mainBounds: ContentBounds[],
+    collectedBounds: ContentBounds[]
+  ): Map<string, { x: number; y: number }> => {
+    if (
+      itemAttachCache &&
+      itemAttachCache.main === mainBounds &&
+      itemAttachCache.collected === collectedBounds
+    ) {
+      return itemAttachCache.map;
+    }
+
+    const nodeXMap = getBranchNodeXMap(mainBounds, collectedBounds);
+    // group key `${itemIndex}:${side}` -> attachments, each with an order key
+    // (the y it arrives from, so lines stack in arrival order) and edge x.
+    const groups = new Map<
+      string,
+      { key: string; orderY: number; x: number }[]
+    >();
+    const add = (
+      itemIndex: number,
+      side: 'left' | 'right',
+      key: string,
+      orderY: number
+    ) => {
+      const ib = collectedBounds[itemIndex];
+      if (!ib) {
+        return;
+      }
+      const x = side === 'left' ? ib.left : ib.right;
+      const groupKey = `${itemIndex}:${side}`;
+      const entry = { key, orderY, x };
+      const list = groups.get(groupKey);
+      if (list) {
+        list.push(entry);
+      } else {
+        groups.set(groupKey, [entry]);
+      }
+    };
+
+    processedCollected.forEach((item, index) => {
+      const itemBounds = collectedBounds[index];
+      if (!itemBounds) {
+        return;
+      }
+      const gapIndex = getPreviousMainIndex(item.anchorTime);
+      item.sources.forEach((source, sourceIndex) => {
+        const predecessor = findChainPredecessor(index, (other) =>
+          other.sources.some((s) => s.rowIndex === source.rowIndex)
+        );
+        if (predecessor >= 0 && collectedBounds[predecessor]) {
+          const pb = collectedBounds[predecessor];
+          // Chain link: predecessor's right edge -> this item's left edge.
+          add(predecessor, 'right', `chainFrom:${index}:${sourceIndex}`, itemBounds.centerY);
+          add(index, 'left', `chainTo:${index}:${sourceIndex}`, pb.centerY);
+          // Tail rejoin up to the next main item.
+          const nextMain = mainBounds[gapIndex + 1];
+          if (nextMain && !hasChainSuccessor(index, source.rowIndex)) {
+            const nodeX =
+              nodeXMap.get(`${index}:${sourceIndex}`) ??
+              (itemBounds.left + itemBounds.right) / 2;
+            add(
+              index,
+              branchEdgeSide(nodeX, itemBounds),
+              `rejoinTo:${index}:${sourceIndex}`,
+              nodeX
+            );
+          }
+        } else {
+          // Branch straight out from a main item.
+          const nodeX =
+            nodeXMap.get(`${index}:${sourceIndex}`) ??
+            (itemBounds.left + itemBounds.right) / 2;
+          add(
+            index,
+            branchEdgeSide(nodeX, itemBounds),
+            `branchTo:${index}:${sourceIndex}`,
+            nodeX
+          );
+        }
+      });
+    });
+
+    const map = new Map<string, { x: number; y: number }>();
+    groups.forEach((list, groupKey) => {
+      const itemIndex = Number(groupKey.slice(0, groupKey.indexOf(':')));
+      const centerY = collectedBounds[itemIndex].centerY;
+      list.sort((a, b) => a.orderY - b.orderY || a.key.localeCompare(b.key));
+      const n = list.length;
+      list.forEach((entry, k) => {
+        map.set(entry.key, {
+          x: entry.x,
+          y: centerY + (k - (n - 1) / 2) * BRANCH_NODE_GAP,
+        });
+      });
+    });
+
+    itemAttachCache = { main: mainBounds, collected: collectedBounds, map };
+    return map;
+  };
+
   // All connector segments for one collector's branch through a collected item:
   // the backward link (to its predecessor or the main line) and, for a chain's
   // tail, a forward link back up to the next main-timeline item.
@@ -307,6 +529,11 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     const source = item.sources[sourceIndex];
     const segments: BranchSegment[] = [];
 
+    const nodeX = getBranchNodeXMap(mainBounds, collectedBounds).get(
+      `${index}:${sourceIndex}`
+    );
+    const attach = getItemAttachMap(mainBounds, collectedBounds);
+
     const chainFrom = getCollectorChainBounds(
       index,
       source.rowIndex,
@@ -315,46 +542,64 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
 
     if (chainFrom) {
       // Chained items sit side by side, so link the predecessor's right edge
-      // to this item's left edge rather than branching off the main line.
-      segments.push(
-        applySpread(
-          {
-            from: { x: chainFrom.right, y: chainFrom.centerY },
-            to: { x: itemBounds.left, y: itemBounds.centerY },
-          },
-          sourceIndex,
-          sourceCount,
-          itemBounds.width
-        )
-      );
+      // to this item's left edge rather than branching off the main line. Both
+      // ends use spaced edge nodes so several chains never pile on one point.
+      const chainFromPt = attach.get(`chainFrom:${index}:${sourceIndex}`) ?? {
+        x: chainFrom.right,
+        y: chainFrom.centerY,
+      };
+      const chainToPt = attach.get(`chainTo:${index}:${sourceIndex}`) ?? {
+        x: itemBounds.left,
+        y: itemBounds.centerY,
+      };
+      segments.push({ from: chainFromPt, to: chainToPt });
 
       // The tail of the chain rejoins the main timeline at the next item.
       const gapIndex = getPreviousMainIndex(item.anchorTime);
       const nextMain = mainBounds[gapIndex + 1];
       if (nextMain && !hasChainSuccessor(index, source.rowIndex)) {
-        segments.push(
-          applySpread(
-            branchToMain(nextMain, itemBounds),
-            sourceIndex,
-            sourceCount,
-            itemBounds.width
-          )
-        );
+        const rejoinTo = attach.get(`rejoinTo:${index}:${sourceIndex}`);
+        if (nodeX !== undefined && rejoinTo) {
+          segments.push({
+            from: { x: nodeX, y: nextMain.top + nextMain.height },
+            to: rejoinTo,
+          });
+        } else {
+          segments.push(
+            applySpread(
+              branchToMain(nextMain, itemBounds),
+              sourceIndex,
+              sourceCount,
+              itemBounds.width
+            )
+          );
+        }
       }
     } else {
       // Branch straight from the main line. If this item is also reached by
       // another collector's chain, route it as a stepped 5-point line so the
       // long jump from the main item reads clearly.
       const stepped = getChainPredecessorIndex(index) >= 0;
-      segments.push({
-        ...applySpread(
-          getBranchEndpoints(item.anchorTime, itemBounds, mainBounds),
-          sourceIndex,
-          sourceCount,
-          itemBounds.width
-        ),
-        stepped,
-      });
+      const prevIndex = getPreviousMainIndex(item.anchorTime);
+      const branchTo = attach.get(`branchTo:${index}:${sourceIndex}`);
+      if (nodeX !== undefined && mainBounds.length > 0 && branchTo) {
+        const main = mainBounds[prevIndex >= 0 ? prevIndex : 0];
+        segments.push({
+          from: { x: nodeX, y: main.top + main.height },
+          to: branchTo,
+          stepped,
+        });
+      } else {
+        segments.push({
+          ...applySpread(
+            getBranchEndpoints(item.anchorTime, itemBounds, mainBounds),
+            sourceIndex,
+            sourceCount,
+            itemBounds.width
+          ),
+          stepped,
+        });
+      }
     }
 
     return segments;
@@ -400,6 +645,19 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       path.push(...poly);
     }
     return path;
+  };
+
+  // Gaps a branch detours below the main line for (has collected items in). The
+  // matching main connector is the diverted part of the timeline; the rest of
+  // the main line stays as-is.
+  const getBranchDetouredGaps = (rowIndex: number): Set<number> => {
+    const gaps = new Set<number>();
+    processedCollected.forEach((item) => {
+      if (item.sources.some((s) => s.rowIndex === rowIndex)) {
+        gaps.add(getPreviousMainIndex(item.anchorTime));
+      }
+    });
+    return gaps;
   };
 
   const getCollectedBounds = (): ContentBounds[] => {
@@ -483,6 +741,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     getBranchEndpoints,
     getSourceBranchSegments,
     getUserTimelinePath,
+    getBranchDetouredGaps,
     getCollectedBounds,
   };
 }

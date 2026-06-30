@@ -24,6 +24,13 @@ export type DetailImageRect = {
   height: number;
 };
 
+// Which collector's timeline the view is currently zoomed into, for the
+// top-bar label. Null when not zoomed into any branch.
+export type BranchFocusInfo = {
+  username: string;
+  colour: string;
+};
+
 export type CollectedSource = {
   rowIndex: number;
   colour: string;
@@ -106,6 +113,8 @@ export type TimelineRuntime = {
   lastWheelMs: number;
   snapStepReadyMs: number;
   focusTarget: FocusTarget | null;
+  // Collector row the view is zoomed into via a branch click, or null.
+  focusedBranchRow: number | null;
   viewAnimating: boolean;
   viewUnfocusing: boolean;
   fitZoomLevel: number;
@@ -136,6 +145,12 @@ export type TimelineSketchRefs = {
   onDetailImageRectRef: RefObject<
     ((rect: DetailImageRect) => void) | undefined
   >;
+  // Sketch → React: reports which branch timeline is zoomed into (or null).
+  onBranchFocusRef: RefObject<
+    ((info: BranchFocusInfo | null) => void) | undefined
+  >;
+  // React → sketch: cancel button calls this to animate back to default fit.
+  resetViewRef: MutableRefObject<(() => void) | undefined>;
 };
 
 export type TimelineSketchDeps = {

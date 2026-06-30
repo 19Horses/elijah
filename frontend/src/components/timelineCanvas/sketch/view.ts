@@ -29,8 +29,14 @@ import {
   startDetailReveal,
   syncInteractionLock,
 } from '../timelineRuntime';
-import type { ContentBounds, FocusTarget, TimelineSketchDeps } from '../types';
+import type {
+  BranchFocusInfo,
+  ContentBounds,
+  FocusTarget,
+  TimelineSketchDeps,
+} from '../types';
 import type { BoundsContext } from './bounds';
+import { computeCollectedLaneHover } from './drawCollectedLane';
 
 export type ViewContext = {
   setCameraFromScreenAnchor: (
@@ -52,7 +58,9 @@ export type ViewContext = {
   animateView: () => void;
   animateScrollSnap: () => void;
   findClickedItem: (worldX: number, worldY: number) => FocusTarget | null;
+  findClickedBranch: (worldX: number, worldY: number) => number | null;
   focusItem: (target: FocusTarget) => void;
+  focusBranch: (rowIndex: number) => void;
   unfocusItem: () => void;
   isViewInteractionLocked: () => boolean;
 };
@@ -95,29 +103,45 @@ export function createViewContext(
     runtime.animationStartZoom = runtime.zoom;
   };
 
-  const computeFitViewTargets = () => {
+  // Frame an arbitrary set of item bounds: set the target zoom/camera so the
+  // whole set fits with padding, centred. Returns the framed centre (for the
+  // zoom animation anchor), or null when the set is empty/degenerate.
+  const computeFitTargetsForBounds = (
+    list: ContentBounds[]
+  ): { centerX: number; centerY: number } | null => {
     let minX = Infinity;
     let maxX = -Infinity;
     let minY = Infinity;
     let maxY = -Infinity;
-    [...bounds.getAllBounds(), ...bounds.getCollectedBounds()].forEach((b) => {
+    list.forEach((b) => {
       minX = Math.min(minX, b.left);
       maxX = Math.max(maxX, b.right);
       minY = Math.min(minY, b.top);
       maxY = Math.max(maxY, b.dateBottom);
     });
 
-    if (Number.isFinite(minX) && maxX > minX && maxY > minY) {
-      const paddedWidth = maxX - minX + FIT_VIEW_PADDING * 2;
-      const paddedHeight = maxY - minY + FIT_VIEW_PADDING * 2;
-      const zoomX = p.width / paddedWidth;
-      const zoomY = p.height / paddedHeight;
-      runtime.targetZoom = Math.min(zoomX, zoomY) * FIT_ZOOM_SCALAR;
-      const centerX = (minX + maxX) / 2;
-      const centerY = (minY + maxY) / 2;
-      runtime.targetCameraX = centerX - p.width / (2 * runtime.targetZoom);
-      runtime.targetCameraY = centerY - p.height / (2 * runtime.targetZoom);
-    } else {
+    if (!(Number.isFinite(minX) && maxX > minX && maxY > minY)) {
+      return null;
+    }
+
+    const paddedWidth = maxX - minX + FIT_VIEW_PADDING * 2;
+    const paddedHeight = maxY - minY + FIT_VIEW_PADDING * 2;
+    const zoomX = p.width / paddedWidth;
+    const zoomY = p.height / paddedHeight;
+    runtime.targetZoom = Math.min(zoomX, zoomY) * FIT_ZOOM_SCALAR;
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    runtime.targetCameraX = centerX - p.width / (2 * runtime.targetZoom);
+    runtime.targetCameraY = centerY - p.height / (2 * runtime.targetZoom);
+    return { centerX, centerY };
+  };
+
+  const computeFitViewTargets = () => {
+    const center = computeFitTargetsForBounds([
+      ...bounds.getAllBounds(),
+      ...bounds.getCollectedBounds(),
+    ]);
+    if (!center) {
       runtime.targetZoom = 1;
       runtime.targetCameraX = 0;
       runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
@@ -289,6 +313,7 @@ export function createViewContext(
   };
 
   const fitView = () => {
+    clearBranchFocus();
     runtime.snapping = false;
     runtime.snapStepReadyMs = 0;
     resetCanvasFocus(runtime);
@@ -384,7 +409,103 @@ export function createViewContext(
     return null;
   };
 
+  // Record which branch the view is zoomed into and tell React, so it can show
+  // (or hide) the top-bar label. Passing null clears it.
+  const setBranchFocus = (rowIndex: number | null) => {
+    runtime.focusedBranchRow = rowIndex;
+    if (rowIndex === null) {
+      deps.refs.onBranchFocusRef.current?.(null);
+      return;
+    }
+    let info: BranchFocusInfo | null = null;
+    for (const item of deps.processedCollected) {
+      const source = item.sources.find((s) => s.rowIndex === rowIndex);
+      if (source) {
+        info = { username: source.username, colour: source.colour };
+        break;
+      }
+    }
+    deps.refs.onBranchFocusRef.current?.(info);
+  };
+
+  const clearBranchFocus = () => {
+    if (runtime.focusedBranchRow !== null) {
+      setBranchFocus(null);
+    }
+  };
+
+  // A click landing on a collector's branch line (not an item) returns that
+  // collector's row index, so the view can frame just their timeline.
+  const findClickedBranch = (worldX: number, worldY: number): number | null => {
+    const hover = computeCollectedLaneHover(
+      deps,
+      bounds,
+      bounds.getCollectedBounds(),
+      bounds.getAllBounds(),
+      { x: worldX, y: worldY },
+      false
+    );
+    return hover.hoveredCollectedIsImage ? null : hover.hoveredUserRow;
+  };
+
+  // Zoom/pan so the items collected on one branch (rowIndex) fill the screen.
+  // This is a camera move only — no item focus / detail panel.
+  const focusBranch = (rowIndex: number) => {
+    const collectedBounds = bounds.getCollectedBounds();
+    const mainBounds = bounds.getAllBounds();
+    const branchItems = deps.processedCollected
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => item.sources.some((s) => s.rowIndex === rowIndex));
+    if (branchItems.length === 0) {
+      return;
+    }
+
+    const branchBounds = branchItems.map(({ index }) => collectedBounds[index]);
+
+    // Also frame the main-line items the branch springs from / rejoins (the
+    // item before each pick and the one after it), so the branch's origin on
+    // the main timeline is visible too.
+    const mainIndices = new Set<number>();
+    for (const { item } of branchItems) {
+      const prev = Math.max(0, bounds.getPreviousMainIndex(item.anchorTime));
+      mainIndices.add(prev);
+      if (prev + 1 < mainBounds.length) {
+        mainIndices.add(prev + 1);
+      }
+    }
+    for (const index of mainIndices) {
+      branchBounds.push(mainBounds[index]);
+    }
+
+    resetCanvasFocus(runtime);
+    deps.refs.onContentUnfocusRef.current?.();
+    runtime.focusContentFade = 0;
+    notifyFocusFade(deps);
+    runtime.snapping = false;
+    runtime.snapStepReadyMs = 0;
+    runtime.viewUnfocusing = false;
+    syncInteractionLock(deps);
+
+    const center = computeFitTargetsForBounds(branchBounds);
+    if (!center) {
+      return;
+    }
+    // Don't zoom past the manual zoom ceiling for a tiny branch; keep the
+    // framed centre.
+    const maxZoom = runtime.fitZoomLevel * MAX_ZOOM_FACTOR;
+    if (runtime.targetZoom > maxZoom) {
+      runtime.targetZoom = maxZoom;
+      runtime.targetCameraX = center.centerX - p.width / (2 * runtime.targetZoom);
+      runtime.targetCameraY = center.centerY - p.height / (2 * runtime.targetZoom);
+    }
+
+    setBranchFocus(rowIndex);
+    beginViewAnimation(center.centerX, center.centerY);
+    runtime.viewAnimating = true;
+  };
+
   const focusItem = (target: FocusTarget) => {
+    clearBranchFocus();
     runtime.snapping = false;
     runtime.snapStepReadyMs = 0;
     runtime.detailPhase = 'none';
@@ -412,6 +533,7 @@ export function createViewContext(
   };
 
   const unfocusItem = () => {
+    clearBranchFocus();
     resetCanvasFocus(runtime);
     deps.refs.onContentUnfocusRef.current?.();
     computeFitViewTargets();
@@ -438,7 +560,9 @@ export function createViewContext(
     animateView,
     animateScrollSnap,
     findClickedItem,
+    findClickedBranch,
     focusItem,
+    focusBranch,
     unfocusItem,
     isViewInteractionLocked: () => isViewInteractionLocked(runtime),
   };

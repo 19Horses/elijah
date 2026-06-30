@@ -13,6 +13,8 @@ export function createTimelineSketch(
   return (p: p5) => {
     const boundsCtx = createBoundsContext(deps);
     const view = createViewContext(p, deps, boundsCtx);
+    // Cancel button (top bar) → animate back to the default fit view.
+    deps.refs.resetViewRef.current = () => view.unfocusItem();
     const loadedImages: (p5.Image | null)[] = new Array(
       deps.processed.length
     ).fill(null);

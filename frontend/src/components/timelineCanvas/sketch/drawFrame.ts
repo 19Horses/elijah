@@ -15,6 +15,7 @@ import {
   LOAD_IMAGE_FADE_MS,
   LOAD_IMAGE_STAGGER_MS,
   LOAD_INITIAL_DELAY_MS,
+  MAIN_CONNECTOR_DIM_ALPHA,
   MAIN_GLOW_COLOUR,
   MAIN_USERNAME,
   TODAY_LABEL_BOTTOM_OFFSET,
@@ -196,6 +197,18 @@ export function createDrawFrameHandler(
       isFocusedTarget,
       getDetailDrawBounds,
       contentAlphaFor,
+      // Grey only the main connectors the active branch detours below; the rest
+      // of the main line (before, after, and skipped gaps) stays lit.
+      mainConnectorTravelAlpha: (connectorIndex: number) => {
+        const row = runtime.branchDimRow;
+        if (row === null || runtime.branchDimStrength <= 0) {
+          return 1;
+        }
+        if (!boundsCtx.getBranchDetouredGaps(row).has(connectorIndex)) {
+          return 1;
+        }
+        return 1 - runtime.branchDimStrength * (1 - MAIN_CONNECTOR_DIM_ALPHA);
+      },
     };
 
     const cdImage = cdImageRef.current;
@@ -240,16 +253,25 @@ export function createDrawFrameHandler(
       isFocusActive
     );
 
-    // Ease the branch grey-out: 1 while a branch is hovered, back to 0 on
-    // leave, keeping the hovered row's colour until the fade finishes.
+    // Ease the branch grey-out: 1 while a branch is hovered — or zoomed into
+    // via a click — back to 0 on leave, keeping the active row's colour until
+    // the fade finishes. A clicked (focused) branch takes precedence and holds
+    // the grey-out while zoomed in; the travelling strip follows the same row.
     const branchHovered =
       collectedHover.hoveredUserRow !== null &&
       !collectedHover.hoveredCollectedIsImage;
-    if (branchHovered) {
-      runtime.branchDimRow = collectedHover.hoveredUserRow;
+    const activeBranchRow =
+      runtime.focusedBranchRow !== null
+        ? runtime.focusedBranchRow
+        : branchHovered
+          ? collectedHover.hoveredUserRow
+          : null;
+    if (activeBranchRow !== null) {
+      runtime.branchDimRow = activeBranchRow;
     }
     runtime.branchDimStrength +=
-      ((branchHovered ? 1 : 0) - runtime.branchDimStrength) * BRANCH_DIM_LERP;
+      ((activeBranchRow !== null ? 1 : 0) - runtime.branchDimStrength) *
+      BRANCH_DIM_LERP;
     if (runtime.branchDimStrength < HIGHLIGHT_FADE_SNAP) {
       runtime.branchDimStrength = 0;
       runtime.branchDimRow = null;

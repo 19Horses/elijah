@@ -95,7 +95,25 @@ export function buildProcessedCollected(
     });
   });
 
-  return Array.from(byContentId.values()).sort((a, b) => {
+  const collected = Array.from(byContentId.values());
+
+  // Compress collector lanes: only rows that actually collected something get a
+  // vertical slot, so empty source rows don't leave big gaps (an item from a
+  // deep source row would otherwise sink far below the timeline). Remap each
+  // used row index to its dense rank, preserving order. Monotonic, so each
+  // item's `rowIndex` (the min of its sources) maps consistently.
+  const usedRows = Array.from(
+    new Set(collected.flatMap((item) => item.sources.map((s) => s.rowIndex)))
+  ).sort((a, b) => a - b);
+  const rowRank = new Map(usedRows.map((row, rank) => [row, rank]));
+  collected.forEach((item) => {
+    item.sources.forEach((source) => {
+      source.rowIndex = rowRank.get(source.rowIndex) ?? source.rowIndex;
+    });
+    item.rowIndex = rowRank.get(item.rowIndex) ?? item.rowIndex;
+  });
+
+  return collected.sort((a, b) => {
     if (a.rowIndex !== b.rowIndex) {
       return a.rowIndex - b.rowIndex;
     }

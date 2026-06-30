@@ -19,14 +19,23 @@ export function createInputHandlers(
   view: ViewContext,
   gallery: GalleryController
 ): {
-  mousePressed: () => void;
+  mousePressed: (event?: Event) => void;
   mouseDragged: () => void;
-  mouseReleased: () => void;
+  mouseReleased: (event?: Event) => void;
   mouseWheel: (event?: WheelEvent) => boolean;
 } {
   const { runtime, items, processed, itemOffsets, collectedOffsets } = deps;
 
-  const mousePressed = () => {
+  // p5 v2 binds pointer events on `window`, so clicks on DOM UI layered over
+  // the canvas (e.g. the branch top-bar) also reach these handlers. Ignore any
+  // pointer event whose target isn't the canvas itself.
+  const isCanvasEvent = (event?: Event) =>
+    !event || event.target instanceof HTMLCanvasElement;
+
+  const mousePressed = (event?: Event) => {
+    if (!isCanvasEvent(event)) {
+      return;
+    }
     if (
       p.mouseX < 0 ||
       p.mouseX > p.width ||
@@ -146,7 +155,13 @@ export function createInputHandlers(
     };
   };
 
-  const mouseReleased = () => {
+  const mouseReleased = (event?: Event) => {
+    // A release on overlaid DOM UI (e.g. the cancel button) shouldn't count as a
+    // canvas click; just clear any in-progress drag.
+    if (!isCanvasEvent(event)) {
+      runtime.dragLane = null;
+      return;
+    }
     if (
       p.dist(runtime.pressX, runtime.pressY, p.mouseX, p.mouseY) <=
       DRAG_THRESHOLD
@@ -197,8 +212,14 @@ export function createInputHandlers(
         } else {
           view.focusItem(clicked);
         }
-      } else if (runtime.focusTarget) {
-        view.unfocusItem();
+      } else {
+        // Clicking a collector's branch line frames just their timeline.
+        const branchRow = view.findClickedBranch(world.x, world.y);
+        if (branchRow !== null) {
+          view.focusBranch(branchRow);
+        } else if (runtime.focusTarget) {
+          view.unfocusItem();
+        }
       }
     }
 

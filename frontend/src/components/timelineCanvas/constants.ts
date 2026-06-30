@@ -5,10 +5,14 @@ export const PADDING_X = 48;
 export const PADDING_Y = 48;
 export const DATE_OFFSET = 24;
 export const DOT_RADIUS = 3;
+// Spacing between adjacent branch nodes on a main item's underside.
+export const BRANCH_NODE_GAP = 9;
+// Alpha for main-timeline connectors a focused/hovered branch doesn't travel.
+export const MAIN_CONNECTOR_DIM_ALPHA = 0.2;
 export const DEFAULT_BACKGROUND = '#000000';
 export const DRAG_THRESHOLD = 5;
 export const FIT_VIEW_PADDING = 80;
-export const FIT_ZOOM_SCALAR = 0.85;
+export const FIT_ZOOM_SCALAR = 1.0;
 export const TODAY_LABEL_BOTTOM_OFFSET = 24;
 export const TODAY_LABEL_GAP = 8;
 export const LANE_GAP = 50;

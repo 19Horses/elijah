@@ -59,6 +59,8 @@ export type MainLaneDrawContext = {
   getImageLoadAlpha: (imageIndex: number) => number;
   getMainConnectorLoadAlpha: (connectorIndex: number) => number;
   getCollectedConnectorLoadAlpha: (connectorIndex: number) => number;
+  // Alpha multiplier dimming main connectors the active branch doesn't travel.
+  mainConnectorTravelAlpha: (connectorIndex: number) => number;
   isFocusedTarget: (lane: 'main' | 'collected', index: number) => boolean;
   getDetailDrawBounds: (
     lane: 'main' | 'collected',
@@ -241,6 +243,16 @@ export function drawMainTimelineGlow(
 
   const ctx = p.drawingContext as CanvasRenderingContext2D;
   ctx.save();
+  // Clip the travelling strip (and its glow) out of every item image, so the
+  // pulse only shows in the gaps between items and is hidden behind the images
+  // rather than drawn on top of them. Even-odd: a huge outer rect minus a hole
+  // per image. Rects are in world coords, matching the active camera transform.
+  ctx.beginPath();
+  ctx.rect(-1e6, -1e6, 2e6, 2e6);
+  for (const b of [...mainBounds, ...collectedBounds]) {
+    ctx.rect(b.left, b.top, b.width, b.height);
+  }
+  ctx.clip('evenodd');
   ctx.shadowBlur = MAIN_GLOW_TRAVEL_BLUR;
   ctx.shadowColor = glowColour;
   p.noFill();
@@ -281,10 +293,12 @@ export function drawMainLaneConnectors(
       );
     }
 
+    const travelAlpha = ctx.mainConnectorTravelAlpha(index);
     if (ctx.isTypeHighlightActive) {
-      mainCtx.globalAlpha = getCombinedAlpha(connectorLoadAlpha, ctx.dimAlpha);
+      mainCtx.globalAlpha =
+        getCombinedAlpha(connectorLoadAlpha, ctx.dimAlpha) * travelAlpha;
     } else {
-      mainCtx.globalAlpha = connectorLoadAlpha;
+      mainCtx.globalAlpha = connectorLoadAlpha * travelAlpha;
     }
 
     // Focused item's endpoint follows its image to the detail position.
@@ -504,10 +518,12 @@ export function drawMainLaneConnectorDots(
         0.55 * connectorLoadAlpha
       );
     }
+    const travelAlpha = ctx.mainConnectorTravelAlpha(index);
     if (ctx.isTypeHighlightActive) {
-      mainCtx.globalAlpha = getCombinedAlpha(connectorLoadAlpha, ctx.dimAlpha);
+      mainCtx.globalAlpha =
+        getCombinedAlpha(connectorLoadAlpha, ctx.dimAlpha) * travelAlpha;
     } else {
-      mainCtx.globalAlpha = connectorLoadAlpha;
+      mainCtx.globalAlpha = connectorLoadAlpha * travelAlpha;
     }
     const fromBounds = ctx.getDetailDrawBounds('main', index, bounds[index]);
     const toBounds = ctx.getDetailDrawBounds('main', index + 1, bounds[index + 1]);

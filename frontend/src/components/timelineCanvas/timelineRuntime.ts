@@ -30,6 +30,7 @@ export function createTimelineRuntime(): TimelineRuntime {
     lastWheelMs: 0,
     snapStepReadyMs: 0,
     focusTarget: null,
+    focusedBranchRow: null,
     viewAnimating: false,
     viewUnfocusing: false,
     fitZoomLevel: 1,
