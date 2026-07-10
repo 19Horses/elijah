@@ -23,6 +23,7 @@ import {
 import { hitTest } from '../geometry';
 import {
   getFocusedSlug,
+  isFutureDatedItem,
   isViewInteractionLocked,
   notifyFocusFade,
   resetCanvasFocus,
@@ -100,6 +101,8 @@ export function createViewContext(
     runtime.animationWorldY = worldY;
     runtime.animationStartScreenX = (worldX - runtime.cameraX) * runtime.zoom;
     runtime.animationStartScreenY = (worldY - runtime.cameraY) * runtime.zoom;
+    runtime.animationStartCameraX = runtime.cameraX;
+    runtime.animationStartCameraY = runtime.cameraY;
     runtime.animationStartZoom = runtime.zoom;
   };
 
@@ -137,11 +140,32 @@ export function createViewContext(
   };
 
   const computeFitViewTargets = () => {
-    const center = computeFitTargetsForBounds([
-      ...bounds.getAllBounds(),
-      ...bounds.getCollectedBounds(),
-    ]);
-    if (!center) {
+    const list = [...bounds.getAllBounds(), ...bounds.getCollectedBounds()];
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    list.forEach((b) => {
+      minX = Math.min(minX, b.left);
+      maxX = Math.max(maxX, b.right);
+      minY = Math.min(minY, b.top);
+      maxY = Math.max(maxY, b.dateBottom);
+    });
+
+    if (Number.isFinite(minX) && maxX > minX && maxY > minY) {
+      // Keep the main line exactly vertically centred: size the vertical fit
+      // from the taller half (above vs below the main line) so both sides fit
+      // symmetrically around it, then centre the camera on the main line.
+      const halfV = Math.max(MAIN_LINE_Y - minY, maxY - MAIN_LINE_Y);
+      const paddedWidth = maxX - minX + FIT_VIEW_PADDING * 2;
+      const paddedHeight = 2 * halfV + FIT_VIEW_PADDING * 2;
+      const zoomX = p.width / paddedWidth;
+      const zoomY = p.height / paddedHeight;
+      runtime.targetZoom = Math.min(zoomX, zoomY) * FIT_ZOOM_SCALAR;
+      const centerX = (minX + maxX) / 2;
+      runtime.targetCameraX = centerX - p.width / (2 * runtime.targetZoom);
+      runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
+    } else {
       runtime.targetZoom = 1;
       runtime.targetCameraX = 0;
       runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
@@ -371,6 +395,37 @@ export function createViewContext(
         runtime.focusContentFade = 1 - progress;
       }
       notifyFocusFade(deps);
+    } else if (
+      Math.hypot(
+        runtime.targetCameraX - runtime.cameraX,
+        runtime.targetCameraY - runtime.cameraY
+      ) *
+        runtime.targetZoom >
+      SCROLL_SNAP_THRESHOLD_PX
+    ) {
+      // Zoom has settled but the camera hasn't: ease it straight to the target.
+      // This is the path when switching between two items framed at the same
+      // zoom (e.g. clicking a node) — otherwise the view would cut, since the
+      // zoom-driven progress above completes instantly with no pan.
+      runtime.zoom = runtime.targetZoom;
+      runtime.cameraX = lerp(runtime.cameraX, runtime.targetCameraX);
+      runtime.cameraY = lerp(runtime.cameraY, runtime.targetCameraY);
+      const totalPan = Math.hypot(
+        runtime.targetCameraX - runtime.animationStartCameraX,
+        runtime.targetCameraY - runtime.animationStartCameraY
+      );
+      const remainingPan = Math.hypot(
+        runtime.targetCameraX - runtime.cameraX,
+        runtime.targetCameraY - runtime.cameraY
+      );
+      const progress =
+        totalPan > 0 ? Math.max(0, Math.min(1, 1 - remainingPan / totalPan)) : 1;
+      if (runtime.focusTarget && !runtime.viewUnfocusing) {
+        runtime.focusContentFade = progress;
+      } else if (runtime.viewUnfocusing) {
+        runtime.focusContentFade = 1 - progress;
+      }
+      notifyFocusFade(deps);
     } else {
       applyViewTargets();
       const wasUnfocusing = runtime.viewUnfocusing;
@@ -513,6 +568,10 @@ export function createViewContext(
     runtime.focusContentFade = 0;
     notifyFocusFade(deps);
     runtime.focusTarget = target;
+    runtime.focusedItemIsFuture =
+      target.lane === 'main'
+        ? isFutureDatedItem(deps.items[target.index])
+        : (deps.processedCollected[target.index]?.anchorTime ?? 0) > Date.now();
     runtime.viewUnfocusing = false;
     syncInteractionLock(deps);
     const slug = getFocusedSlug(target, deps.items, deps.processedCollected);

@@ -15,9 +15,17 @@ export const FIT_VIEW_PADDING = 80;
 export const FIT_ZOOM_SCALAR = 1.0;
 export const TODAY_LABEL_BOTTOM_OFFSET = 24;
 export const TODAY_LABEL_GAP = 8;
+// Half-width (screen px) of the today background gradient's transition. The
+// crossover is centred on the today line, so the fade spans this far to each
+// side before clamping to transparent (past) / white (future).
+export const TODAY_GRADIENT_HALF_PX = 70;
 export const LANE_GAP = 50;
 export const MAIN_LINE_Y = PADDING_Y + IMAGE_HEIGHT / 2;
 export const COLLECTED_LANE_TOP = PADDING_Y + IMAGE_HEIGHT + LANE_GAP;
+// First branch row above the main line, mirrored around it: its bottom sits
+// LANE_GAP above the main item's top, matching the first row below.
+export const COLLECTED_LANE_ABOVE_FIRST_ROW_TOP =
+  PADDING_Y - LANE_GAP - IMAGE_HEIGHT;
 export const COLLECTED_ROW_HEIGHT = IMAGE_HEIGHT + 30;
 export const CONNECTOR_HOVER_THRESHOLD = 6;
 export const MAIN_USERNAME = 'dialE';

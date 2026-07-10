@@ -88,6 +88,9 @@ function Home() {
       description: getContentDetailDescription(contentDetail),
       link: getContentDetailLink(contentDetail),
       newsletterContent: getContentDetailNewsletterContent(contentDetail),
+      isFuture: contentDetail.date
+        ? new Date(contentDetail.date).getTime() > Date.now()
+        : false,
     };
   }, [contentDetail, detailReady, focusSlug]);
 

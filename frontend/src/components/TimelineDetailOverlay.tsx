@@ -6,6 +6,8 @@ export type TimelineDetailView = {
   description: string;
   link: string | null;
   newsletterContent: string | null;
+  // Dated after today: the detail view inverts to black text on white.
+  isFuture: boolean;
 };
 
 type TimelineDetailOverlayProps = {
@@ -58,7 +60,9 @@ function TimelineDetailOverlay({
 
   return (
     <aside
-      className="timeline-detail timeline-detail--visible"
+      className={`timeline-detail timeline-detail--visible${
+        detail.isFuture ? ' timeline-detail--light' : ''
+      }`}
       aria-label={detail.title}
       style={{
         left: `${imageRect.left}px`,

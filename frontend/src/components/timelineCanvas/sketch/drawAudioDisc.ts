@@ -9,7 +9,7 @@ type DiscBounds = {
 };
 
 // Radians per millisecond — a slow spin (~one revolution every 12.5s).
-const SPIN_SPEED = 0.0005;
+export const AUDIO_DISC_SPIN_SPEED = 0.0005;
 
 /**
  * Draws a blank CD sliding out from behind an item's image, like it's being
@@ -29,7 +29,8 @@ export function drawAudioDisc(
   backgroundColour: string,
   alpha: number,
   cdImage: p5.Image | null,
-  reveal: number
+  reveal: number,
+  spin: number
 ): void {
   if (alpha <= 0) {
     return;
@@ -46,7 +47,7 @@ export function drawAudioDisc(
   // to the right.
   const t = Math.max(0, Math.min(1, reveal));
   const hiddenCx = left + width - radius;
-  const outCx = left + width + radius * 0.55;
+  const outCx = left + width + radius * 0.1;
   const cx = hiddenCx + (outCx - hiddenCx) * t;
   const cy = top + height / 2;
 
@@ -60,7 +61,7 @@ export function drawAudioDisc(
     p.push();
     p.imageMode(p.CENTER);
     p.translate(cx, cy);
-    p.rotate(p.millis() * SPIN_SPEED);
+    p.rotate(spin);
     p.image(cdImage, 0, 0, diameter, diameter);
     p.pop();
 

@@ -85,6 +85,22 @@ export type ConnectorPoint = {
   y: number;
 };
 
+// A hoverable connector dot registered while drawing. Used, when an item is
+// focused, to label the node with the timeline it belongs to and the item it
+// connects to at the far end of its line.
+export type NodeHoverRegion = {
+  // World position of the dot.
+  x: number;
+  y: number;
+  // Title of the item at the opposite end of this node's connector.
+  title: string;
+  // Timeline the node belongs to (a collector's username, or the main line).
+  timeline: string;
+  colour: string;
+  // The item at the opposite end — focused when the node is clicked.
+  target: FocusTarget;
+};
+
 export type FocusTarget = {
   lane: 'main' | 'collected';
   index: number;
@@ -122,6 +138,8 @@ export type TimelineRuntime = {
   animationWorldY: number;
   animationStartScreenX: number;
   animationStartScreenY: number;
+  animationStartCameraX: number;
+  animationStartCameraY: number;
   animationStartZoom: number;
   activeHighlightType: ContentType | null;
   highlightStrength: number;
@@ -131,8 +149,17 @@ export type TimelineRuntime = {
   branchDimRow: number | null;
   loadStartMs: number;
   focusContentFade: number;
+  // Whether the currently/last focused item is dated after today, so the detail
+  // view can invert to a white background. Retained through the unfocus fade.
+  focusedItemIsFuture: boolean;
   detailPhase: DetailPhase;
   detailLayout: number;
+  // Accumulated rotation (radians) of the focused audio track's CD. Only
+  // advances while that track is playing, so it holds still when paused.
+  audioDiscAngle: number;
+  // Connector dots drawn on the most recent frame while an item is focused, so
+  // the input handler can hit-test them for hover labels and click-to-focus.
+  nodeRegions: NodeHoverRegion[];
 };
 
 export type TimelineSketchRefs = {

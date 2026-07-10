@@ -1,9 +1,9 @@
 import type p5 from 'p5';
-import { formatMainTimelineNow } from '../../../queries/mainTimeline';
 import {
   getStaggeredLoadAlpha,
   getTypeDimAlpha,
-  resetCanvasEffects,
+  hexToRgba,
+  mixHex,
 } from '../canvasEffects';
 import {
   BRANCH_DIM_LERP,
@@ -15,11 +15,11 @@ import {
   LOAD_IMAGE_FADE_MS,
   LOAD_IMAGE_STAGGER_MS,
   LOAD_INITIAL_DELAY_MS,
+  DOT_RADIUS,
   MAIN_CONNECTOR_DIM_ALPHA,
   MAIN_GLOW_COLOUR,
   MAIN_USERNAME,
-  TODAY_LABEL_BOTTOM_OFFSET,
-  TODAY_LABEL_GAP,
+  TODAY_GRADIENT_HALF_PX,
 } from '../constants';
 import { screenToWorld } from '../geometry';
 import { drawCollectedSourcesLabel, drawUserLabel } from '../labels';
@@ -28,7 +28,7 @@ import {
   syncInteractionLock,
   updateHighlightFade,
 } from '../timelineRuntime';
-import type { TimelineSketchDeps } from '../types';
+import type { NodeHoverRegion, TimelineSketchDeps } from '../types';
 import type { BoundsContext } from './bounds';
 import type { GalleryController } from './galleryController';
 import {
@@ -62,30 +62,39 @@ export function createDrawFrameHandler(
   const { isFocusedTarget, getDetailDrawBounds } =
     createMainLaneDrawHelpers(deps);
 
-  const drawTodayLine = (alpha = 1) => {
+  // A gradient marks "now": the background eases from its normal colour to
+  // white across the future. A tight crossover is centred on the today line (so
+  // the ~50% point sits on the red line), then it settles gently to full white
+  // across the rest of the screen — no hard seam where the fade meets white.
+  const drawTodayGradient = (alpha = 1) => {
     if (alpha <= LOAD_ALPHA_SNAP) {
       return;
     }
 
     const lineX = (boundsCtx.getNowWorldX() - runtime.cameraX) * runtime.zoom;
+    const half = TODAY_GRADIENT_HALF_PX;
+    const start = lineX - half;
+    // Nothing to fade if the whole transition sits past the right edge.
+    if (start >= p.width) {
+      return;
+    }
+
     const ctx = p.drawingContext as CanvasRenderingContext2D;
+    const span = p.width - start;
+    // Proportional position of the today line within the gradient span; the
+    // crossover stop lands there so the red line reads as the ~50% point.
+    const crossover = span > 0 ? Math.min(0.999, half / span) : 0.999;
+    const gradient = ctx.createLinearGradient(start, 0, p.width, 0);
+    gradient.addColorStop(0, hexToRgba(deps.backgroundColour, 0));
+    gradient.addColorStop(crossover, hexToRgba('#ffffff', 0.5));
+    gradient.addColorStop(1, hexToRgba('#ffffff', 1));
 
+    const fillLeft = Math.max(0, start);
+    ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.setLineDash([]);
-    p.stroke(210);
-    p.strokeWeight(0.75);
-    p.line(lineX, 0, lineX, p.height);
-
-    const { date, time } = formatMainTimelineNow();
-    const labelY = p.height - TODAY_LABEL_BOTTOM_OFFSET;
-
-    p.noStroke();
-    p.fill(255);
-    p.textAlign(p.RIGHT, p.BOTTOM);
-    p.text(date, lineX - TODAY_LABEL_GAP, labelY);
-    p.textAlign(p.LEFT, p.BOTTOM);
-    p.text(time, lineX + TODAY_LABEL_GAP, labelY);
-    resetCanvasEffects(ctx);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(fillLeft, 0, p.width - fillLeft, p.height);
+    ctx.restore();
   };
 
   return () => {
@@ -157,7 +166,16 @@ export function createDrawFrameHandler(
       return base * otherContentAlpha;
     };
 
-    p.background(deps.backgroundColour);
+    // Focusing an item dated after today inverts the view to a white
+    // background, eased in/out by the focus fade.
+    const bgWhiteMix = runtime.focusedItemIsFuture ? runtime.focusContentFade : 0;
+    p.background(
+      bgWhiteMix > 0
+        ? mixHex(deps.backgroundColour, '#ffffff', bgWhiteMix)
+        : deps.backgroundColour
+    );
+    // Behind the content: the future half of the canvas fades to white.
+    drawTodayGradient(todayLineAlpha * otherContentAlpha);
 
     p.push();
     p.scale(runtime.zoom);
@@ -180,9 +198,14 @@ export function createDrawFrameHandler(
       isFocusActive
     );
 
+    // Rebuilt each frame and shared with the input handler for click-to-focus.
+    const nodeRegions: NodeHoverRegion[] = [];
+    runtime.nodeRegions = nodeRegions;
+
     const drawCtx: MainLaneDrawContext = {
       bounds,
       lineWorldX,
+      nodeRegions,
       mouseWorld,
       highlightedType,
       typeHighlightStrength,
@@ -302,7 +325,7 @@ export function createDrawFrameHandler(
       drawCtx,
       collectedHover
     );
-    drawMainLaneConnectorDots(p, drawCtx, mainHover);
+    drawMainLaneConnectorDots(p, deps, drawCtx, mainHover);
     drawCollectedLaneConnectorDots(
       p,
       deps,
@@ -315,8 +338,6 @@ export function createDrawFrameHandler(
     drawMainTimelineGlow(p, deps, boundsCtx, bounds, collectedBounds);
 
     p.pop();
-
-    drawTodayLine(todayLineAlpha * otherContentAlpha);
 
     if (
       runtime.focusContentFade <= LOAD_ALPHA_SNAP &&
@@ -362,6 +383,40 @@ export function createDrawFrameHandler(
           ? deps.processed[mainHover.hoveredMain].title
           : undefined
       );
+    }
+
+    // While an item is focused, hovering one of its connector dots labels the
+    // node with the timeline it belongs to and the item it links to at the far
+    // end of the line.
+    if (isFocusActive && nodeRegions.length > 0) {
+      let hoveredNode: NodeHoverRegion | null = null;
+      let bestDist = DOT_RADIUS * runtime.zoom + 8;
+      for (const region of nodeRegions) {
+        const sx = (region.x - runtime.cameraX) * runtime.zoom;
+        const sy = (region.y - runtime.cameraY) * runtime.zoom;
+        const dist = Math.hypot(sx - p.mouseX, sy - p.mouseY);
+        if (dist <= bestDist) {
+          bestDist = dist;
+          hoveredNode = region;
+        }
+      }
+      if (hoveredNode) {
+        const sx = (hoveredNode.x - runtime.cameraX) * runtime.zoom;
+        const sy = (hoveredNode.y - runtime.cameraY) * runtime.zoom;
+        // Ring the hovered node so it reads as the source of the label.
+        p.noFill();
+        p.stroke(hoveredNode.colour);
+        p.strokeWeight(1.5);
+        p.circle(sx, sy, DOT_RADIUS * 2 * runtime.zoom + 8);
+        drawUserLabel(
+          p,
+          hoveredNode.timeline,
+          hoveredNode.colour,
+          sx,
+          sy,
+          hoveredNode.title
+        );
+      }
     }
 
     const audioButton = deps.audio.getButtonRegion();

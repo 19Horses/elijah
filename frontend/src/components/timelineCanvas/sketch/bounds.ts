@@ -1,5 +1,6 @@
 import {
   BRANCH_NODE_GAP,
+  COLLECTED_LANE_ABOVE_FIRST_ROW_TOP,
   COLLECTED_LANE_TOP,
   COLLECTED_ROW_HEIGHT,
   DATE_OFFSET,
@@ -14,6 +15,7 @@ import { getContentBounds, getFittedSize } from '../geometry';
 import type {
   ConnectorPoint,
   ContentBounds,
+  FocusTarget,
   ProcessedCollected,
   TimelineSketchDeps,
 } from '../types';
@@ -23,6 +25,12 @@ export type BranchSegment = {
   to: ConnectorPoint;
   // Draw as a stepped 5-point line instead of the default branch shape.
   stepped?: boolean;
+  // Titles of the items at each end, for labelling the endpoint nodes.
+  fromItemTitle?: string;
+  toItemTitle?: string;
+  // The items at each end, for focusing when an endpoint node is clicked.
+  fromItemTarget?: FocusTarget;
+  toItemTarget?: FocusTarget;
 };
 
 export type BoundsContext = {
@@ -54,6 +62,25 @@ export type BoundsContext = {
   getBranchDetouredGaps: (rowIndex: number) => Set<number>;
   getCollectedBounds: () => ContentBounds[];
 };
+
+// The edge of a main item a branch springs from: the top when the collected
+// item sits above the main line, otherwise the underside.
+function mainBranchEdgeY(
+  main: ContentBounds,
+  itemBounds: ContentBounds
+): number {
+  return itemBounds.centerY < main.centerY ? main.top : main.top + main.height;
+}
+
+// Branch rows alternate sides of the main line: even rows stack downward below
+// it, odd rows stack upward above it, so the main timeline sits in the middle.
+function rowTopForRowIndex(rowIndex: number): number {
+  const sideSlot = Math.floor(rowIndex / 2);
+  if (rowIndex % 2 === 1) {
+    return COLLECTED_LANE_ABOVE_FIRST_ROW_TOP - sideSlot * COLLECTED_ROW_HEIGHT;
+  }
+  return COLLECTED_LANE_TOP + sideSlot * COLLECTED_ROW_HEIGHT;
+}
 
 export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
   const {
@@ -176,7 +203,8 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     return prevIndex;
   };
 
-  // A branch line from a main item's underside to the nearest edge of a
+  // A branch line from a main item's near edge (its underside for branches
+  // below the main line, its top for branches above) to the nearest edge of a
   // collected item.
   const branchToMain = (
     main: ContentBounds,
@@ -188,7 +216,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       fromX <= itemCenterX
         ? { x: itemBounds.left, y: itemBounds.centerY }
         : { x: itemBounds.right, y: itemBounds.centerY };
-    return { from: { x: fromX, y: main.top + main.height }, to };
+    return { from: { x: fromX, y: mainBranchEdgeY(main, itemBounds) }, to };
   };
 
   const getBranchEndpoints = (
@@ -534,11 +562,15 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     );
     const attach = getItemAttachMap(mainBounds, collectedBounds);
 
-    const chainFrom = getCollectorChainBounds(
-      index,
-      source.rowIndex,
-      collectedBounds
+    // The `to` end of every segment sits on this collected item; label its
+    // node with whichever item lives at the far (`from`) end.
+    const thisTitle = item.title;
+    const thisTarget: FocusTarget = { lane: 'collected', index };
+
+    const predIndex = findChainPredecessor(index, (other) =>
+      other.sources.some((s) => s.rowIndex === source.rowIndex)
     );
+    const chainFrom = predIndex >= 0 ? collectedBounds[predIndex] : null;
 
     if (chainFrom) {
       // Chained items sit side by side, so link the predecessor's right edge
@@ -552,27 +584,44 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
         x: itemBounds.left,
         y: itemBounds.centerY,
       };
-      segments.push({ from: chainFromPt, to: chainToPt });
+      segments.push({
+        from: chainFromPt,
+        to: chainToPt,
+        fromItemTitle: processedCollected[predIndex]?.title,
+        toItemTitle: thisTitle,
+        fromItemTarget: { lane: 'collected', index: predIndex },
+        toItemTarget: thisTarget,
+      });
 
       // The tail of the chain rejoins the main timeline at the next item.
       const gapIndex = getPreviousMainIndex(item.anchorTime);
       const nextMain = mainBounds[gapIndex + 1];
       if (nextMain && !hasChainSuccessor(index, source.rowIndex)) {
+        const rejoinTitle = processed[gapIndex + 1]?.title;
+        const rejoinTarget: FocusTarget = { lane: 'main', index: gapIndex + 1 };
         const rejoinTo = attach.get(`rejoinTo:${index}:${sourceIndex}`);
         if (nodeX !== undefined && rejoinTo) {
           segments.push({
-            from: { x: nodeX, y: nextMain.top + nextMain.height },
+            from: { x: nodeX, y: mainBranchEdgeY(nextMain, itemBounds) },
             to: rejoinTo,
+            fromItemTitle: rejoinTitle,
+            toItemTitle: thisTitle,
+            fromItemTarget: rejoinTarget,
+            toItemTarget: thisTarget,
           });
         } else {
-          segments.push(
-            applySpread(
+          segments.push({
+            ...applySpread(
               branchToMain(nextMain, itemBounds),
               sourceIndex,
               sourceCount,
               itemBounds.width
-            )
-          );
+            ),
+            fromItemTitle: rejoinTitle,
+            toItemTitle: thisTitle,
+            fromItemTarget: rejoinTarget,
+            toItemTarget: thisTarget,
+          });
         }
       }
     } else {
@@ -581,13 +630,20 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       // long jump from the main item reads clearly.
       const stepped = getChainPredecessorIndex(index) >= 0;
       const prevIndex = getPreviousMainIndex(item.anchorTime);
+      const mainIndex = prevIndex >= 0 ? prevIndex : 0;
+      const mainTitle = processed[mainIndex]?.title;
+      const mainTarget: FocusTarget = { lane: 'main', index: mainIndex };
       const branchTo = attach.get(`branchTo:${index}:${sourceIndex}`);
       if (nodeX !== undefined && mainBounds.length > 0 && branchTo) {
-        const main = mainBounds[prevIndex >= 0 ? prevIndex : 0];
+        const main = mainBounds[mainIndex];
         segments.push({
-          from: { x: nodeX, y: main.top + main.height },
+          from: { x: nodeX, y: mainBranchEdgeY(main, itemBounds) },
           to: branchTo,
           stepped,
+          fromItemTitle: mainTitle,
+          toItemTitle: thisTitle,
+          fromItemTarget: mainTarget,
+          toItemTarget: thisTarget,
         });
       } else {
         segments.push({
@@ -598,6 +654,10 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
             itemBounds.width
           ),
           stepped,
+          fromItemTitle: mainTitle,
+          toItemTitle: thisTitle,
+          fromItemTarget: mainTarget,
+          toItemTarget: thisTarget,
         });
       }
     }
@@ -712,7 +772,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       rowPrevRight.set(rowIndex, baseLeft + width);
       placedRow[index] = rowIndex;
 
-      const rowTop = COLLECTED_LANE_TOP + rowIndex * COLLECTED_ROW_HEIGHT;
+      const rowTop = rowTopForRowIndex(rowIndex);
       const baseTop = rowTop + (IMAGE_HEIGHT - height) / 2;
       const offset = collectedOffsets[index];
       const left = baseLeft + offset.dx;

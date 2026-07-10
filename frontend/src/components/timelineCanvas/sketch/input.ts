@@ -1,5 +1,6 @@
 import type p5 from 'p5';
 import {
+  DOT_RADIUS,
   DRAG_THRESHOLD,
   IMAGE_HEIGHT,
   ITEM_WIDTH,
@@ -7,7 +8,7 @@ import {
 } from '../constants';
 import { getFittedSize, hitTest, screenToWorld } from '../geometry';
 import { isFutureDatedItem } from '../timelineRuntime';
-import type { TimelineSketchDeps } from '../types';
+import type { FocusTarget, TimelineSketchDeps } from '../types';
 import type { BoundsContext } from './bounds';
 import type { GalleryController } from './galleryController';
 import type { ViewContext } from './view';
@@ -199,6 +200,30 @@ export function createInputHandlers(
         gallery.step(navHit.delta, focused?.galleryUrls.length ?? 0);
         runtime.dragLane = null;
         return;
+      }
+
+      // A click on a connector dot (while an item is focused) jumps to the
+      // item at the far end of that line. Matches the hover-label hit radius.
+      if (runtime.focusTarget && runtime.nodeRegions.length > 0) {
+        let hitTarget: FocusTarget | null = null;
+        let bestDist = DOT_RADIUS + 8 / runtime.zoom;
+        for (const region of runtime.nodeRegions) {
+          const dist = Math.hypot(world.x - region.x, world.y - region.y);
+          if (dist <= bestDist) {
+            bestDist = dist;
+            hitTarget = region.target;
+          }
+        }
+        if (hitTarget) {
+          const isSameFocus =
+            runtime.focusTarget.lane === hitTarget.lane &&
+            runtime.focusTarget.index === hitTarget.index;
+          if (!isSameFocus) {
+            view.focusItem(hitTarget);
+          }
+          runtime.dragLane = null;
+          return;
+        }
       }
 
       const clicked = view.findClickedItem(world.x, world.y);

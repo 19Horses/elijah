@@ -28,7 +28,7 @@ import type {
   TimelineSketchDeps,
 } from '../types';
 import type { BoundsContext } from './bounds';
-import { drawAudioDisc } from './drawAudioDisc';
+import { AUDIO_DISC_SPIN_SPEED, drawAudioDisc } from './drawAudioDisc';
 import {
   drawContainedImage,
   drawGalleryControls,
@@ -220,14 +220,14 @@ export function drawCollectedLaneItems(
           )
         : undefined;
 
-    // Selected audio track: slide the image left and the spinning CD right,
-    // like it's being pulled out of a sleeve. `detailLayout` drives the reveal.
+    // Selected audio track: the image stays put while the spinning CD slides
+    // out to the right from behind it. `detailLayout` drives the reveal.
     const isAudioFocused =
       item.contentType === 'audioAsset' &&
       ctx.isFocusActive &&
       ctx.isFocusedTarget('collected', index);
     const audioReveal = isAudioFocused ? deps.runtime.detailLayout : 0;
-    const imageLeft = left - audioReveal * height * 0.15;
+    const imageLeft = left;
 
     // Selected image asset with multiple images: show every image in a strip
     // the arrows slide through.
@@ -243,6 +243,11 @@ export function drawCollectedLaneItems(
     }
 
     if (audioReveal > 0) {
+      // Only spin the disc while its track is actually playing; hold the angle
+      // otherwise so it freezes in place rather than snapping back.
+      if (item.audioUrl && deps.audio.isPlaying(item.audioUrl)) {
+        deps.runtime.audioDiscAngle += p.deltaTime * AUDIO_DISC_SPIN_SPEED;
+      }
       drawAudioDisc(
         p,
         collectedCtx,
@@ -250,7 +255,8 @@ export function drawCollectedLaneItems(
         deps.backgroundColour,
         visibilityAlpha,
         cdImage,
-        audioReveal
+        audioReveal,
+        deps.runtime.audioDiscAngle
       );
     }
 
@@ -324,9 +330,11 @@ export function drawCollectedLaneItems(
     }
 
     if (!hideDateLabel) {
-      p.fill(255);
+      // Items past the today separator sit on the white gradient, so their date
+      // reads black instead of white.
+      p.fill(item.anchorTime > Date.now() ? 0 : 255);
       p.noStroke();
-      p.textAlign(p.CENTER, p.TOP);
+      p.textAlign(p.CENTER, p.BOTTOM);
       if (ctx.isTypeHighlightActive && !typeMatch) {
         collectedCtx.globalAlpha = getCombinedAlpha(
           visibilityAlpha,
@@ -335,7 +343,7 @@ export function drawCollectedLaneItems(
       } else {
         collectedCtx.globalAlpha = visibilityAlpha;
       }
-      p.text(item.dateLabel, imageLeft + width / 2, top + height + 12);
+      p.text(item.dateLabel, imageLeft + width / 2, top - 12);
       resetCanvasEffects(collectedCtx);
     }
 
@@ -428,10 +436,43 @@ export function drawCollectedLaneConnectorDots(
       } else {
         collectedCtx.globalAlpha = connectorLoadAlpha;
       }
-      segments.forEach(({ from, to }) => {
-        drawDot(p, from.x, from.y, branchColour);
-        drawDot(p, to.x, to.y, branchColour);
-      });
+      segments.forEach(
+        ({
+          from,
+          to,
+          fromItemTitle,
+          toItemTitle,
+          fromItemTarget,
+          toItemTarget,
+        }) => {
+          drawDot(p, from.x, from.y, branchColour);
+          drawDot(p, to.x, to.y, branchColour);
+          if (ctx.isFocusActive) {
+            // The `from` dot connects along the line to the item at `to`; the
+            // `to` dot connects back to the item at `from`.
+            if (toItemTitle && toItemTarget) {
+              ctx.nodeRegions.push({
+                x: from.x,
+                y: from.y,
+                title: toItemTitle,
+                timeline: source.username,
+                colour: source.colour,
+                target: toItemTarget,
+              });
+            }
+            if (fromItemTitle && fromItemTarget) {
+              ctx.nodeRegions.push({
+                x: to.x,
+                y: to.y,
+                title: fromItemTitle,
+                timeline: source.username,
+                colour: source.colour,
+                target: fromItemTarget,
+              });
+            }
+          }
+        }
+      );
       resetCanvasEffects(collectedCtx);
     });
   });

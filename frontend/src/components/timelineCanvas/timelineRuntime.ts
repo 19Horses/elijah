@@ -38,6 +38,8 @@ export function createTimelineRuntime(): TimelineRuntime {
     animationWorldY: 0,
     animationStartScreenX: 0,
     animationStartScreenY: 0,
+    animationStartCameraX: 0,
+    animationStartCameraY: 0,
     animationStartZoom: 1,
     activeHighlightType: null,
     highlightStrength: 0,
@@ -45,8 +47,11 @@ export function createTimelineRuntime(): TimelineRuntime {
     branchDimRow: null,
     loadStartMs: 0,
     focusContentFade: 0,
+    focusedItemIsFuture: false,
     detailPhase: 'none',
     detailLayout: 0,
+    audioDiscAngle: 0,
+    nodeRegions: [],
   };
 }
 

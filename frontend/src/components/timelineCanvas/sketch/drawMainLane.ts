@@ -27,7 +27,7 @@ import {
   drawMainConnector,
   getMainConnectorPoints,
 } from '../connectors';
-import { drawAudioDisc } from './drawAudioDisc';
+import { AUDIO_DISC_SPIN_SPEED, drawAudioDisc } from './drawAudioDisc';
 import {
   drawContainedImage,
   drawGalleryControls,
@@ -41,6 +41,7 @@ import type { ContentType } from '../../../types/content';
 import type {
   ConnectorPoint,
   ContentBounds,
+  NodeHoverRegion,
   TimelineSketchDeps,
 } from '../types';
 import type { BoundsContext } from './bounds';
@@ -72,6 +73,9 @@ export type MainLaneDrawContext = {
     index: number,
     base?: number
   ) => number;
+  // Connector dots registered this frame while an item is focused, so a hovered
+  // node can be labelled with its timeline and the item it connects to.
+  nodeRegions: NodeHoverRegion[];
 };
 
 export type MainLaneDrawResult = {
@@ -349,14 +353,14 @@ export function drawMainLaneItems(
       ctx.isDetailLayoutActive &&
       deps.runtime.detailLayout > 0;
 
-    // Selected audio track: slide the image left and the spinning CD right,
-    // like it's being pulled out of a sleeve. `detailLayout` drives the reveal.
+    // Selected audio track: the image stays put while the spinning CD slides
+    // out to the right from behind it. `detailLayout` drives the reveal.
     const isAudioFocused =
       item.contentType === 'audioAsset' &&
       ctx.isFocusActive &&
       ctx.isFocusedTarget('main', index);
     const audioReveal = isAudioFocused ? deps.runtime.detailLayout : 0;
-    const imageLeft = left - audioReveal * height * 0.15;
+    const imageLeft = left;
 
     // Selected image asset with multiple images: show every image in a strip
     // the arrows slide through.
@@ -372,6 +376,11 @@ export function drawMainLaneItems(
     }
 
     if (audioReveal > 0) {
+      // Only spin the disc while its track is actually playing; hold the angle
+      // otherwise so it freezes in place rather than snapping back.
+      if (item.audioUrl && deps.audio.isPlaying(item.audioUrl)) {
+        deps.runtime.audioDiscAngle += p.deltaTime * AUDIO_DISC_SPIN_SPEED;
+      }
       drawAudioDisc(
         p,
         mainCtx,
@@ -379,7 +388,8 @@ export function drawMainLaneItems(
         deps.backgroundColour,
         visibilityAlpha,
         cdImage,
-        audioReveal
+        audioReveal,
+        deps.runtime.audioDiscAngle
       );
     }
 
@@ -441,15 +451,17 @@ export function drawMainLaneItems(
     }
 
     if (!hideDateLabel) {
-      p.fill(255);
+      // Items past the today separator sit on the white gradient, so their date
+      // reads black instead of white.
+      p.fill(isFutureDatedItem(deps.items[index]) ? 0 : 255);
       p.noStroke();
-      p.textAlign(p.CENTER, p.TOP);
+      p.textAlign(p.CENTER, p.BOTTOM);
       if (ctx.isTypeHighlightActive && !typeMatch) {
         mainCtx.globalAlpha = getCombinedAlpha(visibilityAlpha, ctx.dimAlpha);
       } else {
         mainCtx.globalAlpha = visibilityAlpha;
       }
-      p.text(item.dateLabel, imageLeft + width / 2, top + height + 12);
+      p.text(item.dateLabel, imageLeft + width / 2, top - 12);
       resetCanvasEffects(mainCtx);
     }
 
@@ -498,6 +510,7 @@ export function drawMainLaneItems(
 
 export function drawMainLaneConnectorDots(
   p: p5,
+  deps: TimelineSketchDeps,
   ctx: MainLaneDrawContext,
   hover: MainLaneDrawResult
 ): void {
@@ -529,6 +542,26 @@ export function drawMainLaneConnectorDots(
     const toBounds = ctx.getDetailDrawBounds('main', index + 1, bounds[index + 1]);
     drawDot(p, fromBounds.right, fromBounds.centerY, '#ffffff');
     drawDot(p, toBounds.left, toBounds.centerY, '#ffffff');
+    if (ctx.isFocusActive) {
+      // The dot on item `index` connects rightward to item `index + 1`, and the
+      // dot on item `index + 1` connects leftward to item `index`.
+      ctx.nodeRegions.push({
+        x: fromBounds.right,
+        y: fromBounds.centerY,
+        title: deps.processed[index + 1].title,
+        timeline: MAIN_USERNAME,
+        colour: MAIN_GLOW_COLOUR,
+        target: { lane: 'main', index: index + 1 },
+      });
+      ctx.nodeRegions.push({
+        x: toBounds.left,
+        y: toBounds.centerY,
+        title: deps.processed[index].title,
+        timeline: MAIN_USERNAME,
+        colour: MAIN_GLOW_COLOUR,
+        target: { lane: 'main', index },
+      });
+    }
     resetCanvasEffects(mainCtx);
   }
 }

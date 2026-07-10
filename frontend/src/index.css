@@ -266,6 +266,23 @@ main.main--home {
   animation: timeline-detail-enter 0.5s ease-out forwards;
 }
 
+/* Future-dated items invert to black text (on the white detail background). */
+.timeline-detail--light {
+  color: #000000;
+}
+
+.timeline-detail--light .timeline-detail__date {
+  color: rgba(0, 0, 0, 0.55);
+}
+
+.timeline-detail--light .timeline-detail__link {
+  color: #000000;
+}
+
+.timeline-detail--light .timeline-detail__link:hover {
+  color: rgba(0, 0, 0, 0.7);
+}
+
 @keyframes timeline-detail-enter {
   from {
     opacity: 0;
