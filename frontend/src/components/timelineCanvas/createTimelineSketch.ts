@@ -1,5 +1,6 @@
 import type p5 from 'p5';
 import blankCdUrl from '../../Blank_cd.png';
+import garamondUrl from '../../EBGaramond-Regular.ttf';
 import type { TimelineSketchDeps } from './types';
 import { createBoundsContext } from './sketch/bounds';
 import { createDrawFrameHandler } from './sketch/drawFrame';
@@ -15,6 +16,9 @@ export function createTimelineSketch(
     const view = createViewContext(p, deps, boundsCtx);
     // Cancel button (top bar) → animate back to the default fit view.
     deps.refs.resetViewRef.current = () => view.unfocusItem();
+    // User-card click → isolate the viewer's own branch into a straight line.
+    deps.refs.isolateOwnBranchRef.current = () =>
+      view.toggleOwnBranchIsolation();
     const loadedImages: (p5.Image | null)[] = new Array(
       deps.processed.length
     ).fill(null);
@@ -39,7 +43,17 @@ export function createTimelineSketch(
     p.setup = () => {
       p.createCanvas(window.innerWidth, window.innerHeight);
       p.cursor('crosshair');
-      p.textFont('Times New Roman');
+      // Serif fallback until the EB Garamond file loads, then swap to it.
+      p.textFont('serif');
+      p.loadFont(
+        garamondUrl,
+        (font) => {
+          p.textFont(font);
+        },
+        () => {
+          p.textFont('serif');
+        }
+      );
       p.textSize(12);
       view.fitView();
       deps.runtime.loadStartMs = p.millis();

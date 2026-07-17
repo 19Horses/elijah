@@ -63,6 +63,8 @@ export type ViewContext = {
   focusItem: (target: FocusTarget) => void;
   focusBranch: (rowIndex: number) => void;
   unfocusItem: () => void;
+  toggleOwnBranchIsolation: () => void;
+  exitBranchIsolation: () => void;
   isViewInteractionLocked: () => boolean;
 };
 
@@ -140,28 +142,19 @@ export function createViewContext(
   };
 
   const computeFitViewTargets = () => {
-    const list = [...bounds.getAllBounds(), ...bounds.getCollectedBounds()];
+    // Size the zoom on the MAIN timeline's width so it spans the screen
+    // edge-to-edge; the branches above/below then overflow the top and bottom.
+    const mainBounds = bounds.getAllBounds();
     let minX = Infinity;
     let maxX = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
-    list.forEach((b) => {
+    mainBounds.forEach((b) => {
       minX = Math.min(minX, b.left);
       maxX = Math.max(maxX, b.right);
-      minY = Math.min(minY, b.top);
-      maxY = Math.max(maxY, b.dateBottom);
     });
 
-    if (Number.isFinite(minX) && maxX > minX && maxY > minY) {
-      // Keep the main line exactly vertically centred: size the vertical fit
-      // from the taller half (above vs below the main line) so both sides fit
-      // symmetrically around it, then centre the camera on the main line.
-      const halfV = Math.max(MAIN_LINE_Y - minY, maxY - MAIN_LINE_Y);
+    if (Number.isFinite(minX) && maxX > minX) {
       const paddedWidth = maxX - minX + FIT_VIEW_PADDING * 2;
-      const paddedHeight = 2 * halfV + FIT_VIEW_PADDING * 2;
-      const zoomX = p.width / paddedWidth;
-      const zoomY = p.height / paddedHeight;
-      runtime.targetZoom = Math.min(zoomX, zoomY) * FIT_ZOOM_SCALAR;
+      runtime.targetZoom = (p.width / paddedWidth) * FIT_ZOOM_SCALAR;
       const centerX = (minX + maxX) / 2;
       runtime.targetCameraX = centerX - p.width / (2 * runtime.targetZoom);
       runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
@@ -212,9 +205,68 @@ export function createViewContext(
     runtime.viewAnimating = false;
   };
 
+  // The world-space rectangle covering every item (main + collected), padded so
+  // a little breathing room shows past the outermost items. The camera is kept
+  // inside this so the user can't pan off into empty space.
+  const getContentExtent = (): {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  } | null => {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const b of [...bounds.getAllBounds(), ...bounds.getCollectedBounds()]) {
+      minX = Math.min(minX, b.left);
+      maxX = Math.max(maxX, b.right);
+      minY = Math.min(minY, b.top);
+      maxY = Math.max(maxY, b.dateBottom);
+    }
+    if (!Number.isFinite(minX)) {
+      return null;
+    }
+    return {
+      minX: minX - FIT_VIEW_PADDING,
+      maxX: maxX + FIT_VIEW_PADDING,
+      minY: minY - FIT_VIEW_PADDING,
+      maxY: maxY + FIT_VIEW_PADDING,
+    };
+  };
+
+  // Clamp one axis so the viewport stays within [contentMin, contentMax]. When
+  // the content is smaller than the viewport on that axis it's locked centred.
+  const clampAxis = (
+    camera: number,
+    viewSize: number,
+    contentMin: number,
+    contentMax: number
+  ): number => {
+    const contentSize = contentMax - contentMin;
+    if (contentSize <= viewSize) {
+      return contentMin - (viewSize - contentSize) / 2;
+    }
+    return Math.max(contentMin, Math.min(camera, contentMax - viewSize));
+  };
+
+  // Keep the camera inside the timeline's content so panning/zooming can't
+  // stray into empty space.
+  const clampCameraToContent = () => {
+    const extent = getContentExtent();
+    if (!extent) {
+      return;
+    }
+    const viewW = p.width / runtime.zoom;
+    const viewH = p.height / runtime.zoom;
+    runtime.cameraX = clampAxis(runtime.cameraX, viewW, extent.minX, extent.maxX);
+    runtime.cameraY = clampAxis(runtime.cameraY, viewH, extent.minY, extent.maxY);
+  };
+
   const panView = (deltaScreenX: number, deltaScreenY: number) => {
     runtime.cameraX -= deltaScreenX / runtime.zoom;
     runtime.cameraY -= deltaScreenY / runtime.zoom;
+    clampCameraToContent();
     runtime.snapping = false;
     syncViewTargets();
   };
@@ -332,6 +384,7 @@ export function createViewContext(
     runtime.cameraX = worldX - screenX / newZoom;
     runtime.cameraY = worldY - screenY / newZoom;
     runtime.zoom = newZoom;
+    clampCameraToContent();
     resetCanvasFocus(runtime);
     syncViewTargets();
   };
@@ -605,6 +658,91 @@ export function createViewContext(
     runtime.viewAnimating = true;
   };
 
+  const getOwnBranchRow = (): number => {
+    if (!deps.currentUsername) {
+      return -1;
+    }
+    for (const item of deps.processedCollected) {
+      const source = item.sources.find(
+        (s) => s.username === deps.currentUsername
+      );
+      if (source) {
+        return source.rowIndex;
+      }
+    }
+    return -1;
+  };
+
+  const animateToFitAll = () => {
+    computeFitViewTargets();
+    beginViewAnimation(
+      runtime.targetCameraX + p.width / (2 * runtime.targetZoom),
+      runtime.targetCameraY + p.height / (2 * runtime.targetZoom)
+    );
+    runtime.viewAnimating = true;
+  };
+
+  const exitBranchIsolation = () => {
+    if (!runtime.branchIsolateActive) {
+      return;
+    }
+    // Keep the row set so the straighten/fade can ease back out; drawFrame
+    // clears it once the progress reaches zero.
+    runtime.branchIsolateActive = false;
+    animateToFitAll();
+  };
+
+  const toggleOwnBranchIsolation = () => {
+    if (runtime.branchIsolateActive) {
+      exitBranchIsolation();
+      return;
+    }
+
+    const ownRow = getOwnBranchRow();
+    if (ownRow < 0) {
+      return;
+    }
+
+    // Frame the user's branch like the main timeline is framed: its items
+    // spanning the screen edge-to-edge, vertically centred on the main line
+    // (where the isolation ease straightens them to).
+    const collectedBounds = bounds.getCollectedBounds();
+    let minX = Infinity;
+    let maxX = -Infinity;
+    deps.processedCollected.forEach((item, index) => {
+      const b = collectedBounds[index];
+      if (b && item.sources.some((s) => s.rowIndex === ownRow)) {
+        minX = Math.min(minX, b.left);
+        maxX = Math.max(maxX, b.right);
+      }
+    });
+    if (!(Number.isFinite(minX) && maxX > minX)) {
+      return;
+    }
+
+    clearBranchFocus();
+    resetCanvasFocus(runtime);
+    deps.refs.onContentUnfocusRef.current?.();
+    runtime.focusContentFade = 0;
+    notifyFocusFade(deps);
+    runtime.viewUnfocusing = false;
+    runtime.branchIsolateRow = ownRow;
+    runtime.branchIsolateActive = true;
+    syncInteractionLock(deps);
+
+    const paddedWidth = maxX - minX + FIT_VIEW_PADDING * 2;
+    runtime.targetZoom = (p.width / paddedWidth) * FIT_ZOOM_SCALAR;
+    // Don't zoom past the manual zoom ceiling for a tiny branch.
+    const maxZoom = runtime.fitZoomLevel * MAX_ZOOM_FACTOR;
+    runtime.targetZoom = Math.min(runtime.targetZoom, maxZoom);
+    const centerX = (minX + maxX) / 2;
+    runtime.targetCameraX = centerX - p.width / (2 * runtime.targetZoom);
+    runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
+
+    beginViewAnimation(centerX, MAIN_LINE_Y);
+    runtime.viewAnimating = true;
+  };
+
   return {
     setCameraFromScreenAnchor,
     computeFitViewTargets,
@@ -623,6 +761,8 @@ export function createViewContext(
     focusItem,
     focusBranch,
     unfocusItem,
+    toggleOwnBranchIsolation,
+    exitBranchIsolation,
     isViewInteractionLocked: () => isViewInteractionLocked(runtime),
   };
 }

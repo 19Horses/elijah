@@ -45,12 +45,19 @@ export function createTimelineRuntime(): TimelineRuntime {
     highlightStrength: 0,
     branchDimStrength: 0,
     branchDimRow: null,
+    branchIsolateRow: null,
+    branchIsolateActive: false,
+    branchIsolate: 0,
     loadStartMs: 0,
     focusContentFade: 0,
     focusedItemIsFuture: false,
     detailPhase: 'none',
     detailLayout: 0,
     audioDiscAngle: 0,
+    hoverNodeScale: 0,
+    hoverNodeX: 0,
+    hoverNodeY: 0,
+    hoverNodeColour: '#ffffff',
     nodeRegions: [],
   };
 }
@@ -129,7 +136,8 @@ export function isViewInteractionLocked(runtime: TimelineRuntime): boolean {
   return (
     runtime.focusTarget !== null ||
     runtime.viewUnfocusing ||
-    runtime.detailPhase !== 'none'
+    runtime.detailPhase !== 'none' ||
+    runtime.branchIsolateRow !== null
   );
 }
 

@@ -1,13 +1,21 @@
 import p5 from 'p5';
 import { memo, useEffect, useRef, useState } from 'react';
 import type { ContentType } from '../../types/content';
+import MediaPlayer from '../MediaPlayer';
 import { DEFAULT_BACKGROUND } from './constants';
 import { createTimelineSketch } from './createTimelineSketch';
-import { createAudioController } from './sketch/audioController';
+import {
+  createAudioController,
+  type AudioController,
+} from './sketch/audioController';
 import { buildProcessedCollected, buildProcessedItems } from './processItems';
 import P5CanvasHost from './P5CanvasHost';
 import { createTimelineRuntime } from './timelineRuntime';
-import type { BranchFocusInfo, TimelineCanvasProps } from './types';
+import type {
+  AudioPlayerState,
+  BranchFocusInfo,
+  TimelineCanvasProps,
+} from './types';
 
 function TimelineCanvas({
   items,
@@ -15,6 +23,8 @@ function TimelineCanvas({
   colour,
   currentUsername = null,
   highlightedType = null,
+  hoverOwnBranch = false,
+  isolateControlRef,
   onFocusFadeChange,
   onContentFocus,
   onContentUnfocus,
@@ -25,6 +35,7 @@ function TimelineCanvas({
   const interactionLockedRef = useRef(false);
   const p5InstanceRef = useRef<p5 | null>(null);
   const highlightedTypeRef = useRef<ContentType | null>(highlightedType);
+  const hoverOwnBranchRef = useRef(hoverOwnBranch);
   const onFocusFadeChangeRef = useRef(onFocusFadeChange);
   const onContentFocusRef = useRef(onContentFocus);
   const onContentUnfocusRef = useRef(onContentUnfocus);
@@ -34,10 +45,23 @@ function TimelineCanvas({
   const onBranchFocusRef =
     useRef<((info: BranchFocusInfo | null) => void) | undefined>(setBranchFocus);
   const resetViewRef = useRef<(() => void) | undefined>(undefined);
+  const localIsolateRef = useRef<(() => void) | undefined>(undefined);
+  const isolateOwnBranchRef = isolateControlRef ?? localIsolateRef;
+  const [audioState, setAudioState] = useState<AudioPlayerState | null>(null);
+  const onAudioStateChangeRef =
+    useRef<((state: AudioPlayerState | null) => void) | undefined>(
+      setAudioState
+    );
+  // Points at the live controller so the mini player can toggle playback.
+  const audioRef = useRef<AudioController | null>(null);
 
   useEffect(() => {
     highlightedTypeRef.current = highlightedType ?? null;
   }, [highlightedType]);
+
+  useEffect(() => {
+    hoverOwnBranchRef.current = hoverOwnBranch;
+  }, [hoverOwnBranch]);
 
   useEffect(() => {
     onFocusFadeChangeRef.current = onFocusFadeChange;
@@ -116,6 +140,8 @@ function TimelineCanvas({
     const collectedOffsets = processedCollected.map(() => ({ dx: 0, dy: 0 }));
     const runtime = createTimelineRuntime();
     const audio = createAudioController();
+    audioRef.current = audio;
+    setAudioState(null);
 
     const sketch = createTimelineSketch({
       runtime,
@@ -129,6 +155,7 @@ function TimelineCanvas({
       audio,
       refs: {
         highlightedTypeRef,
+        hoverOwnBranchRef,
         interactionLockedRef,
         onFocusFadeChangeRef,
         onContentFocusRef,
@@ -136,17 +163,37 @@ function TimelineCanvas({
         onDetailLayoutStartRef,
         onDetailImageRectRef,
         onBranchFocusRef,
+        onAudioStateChangeRef,
         resetViewRef,
+        isolateOwnBranchRef,
       },
     });
 
-    p5InstanceRef.current = new p5(sketch, container);
+    // p5's setup runs async after construction, so an immediate remove() (as in
+    // a StrictMode double-mount or an HMR remount) can fire before the canvas
+    // exists — leaving a zombie instance that later creates its canvas anyway
+    // and keeps drawing on top of the real one. Defer construction one frame so
+    // this effect's own cleanup can cancel it before it ever constructs.
+    let cancelled = false;
+    const rafId = requestAnimationFrame(() => {
+      if (cancelled) {
+        return;
+      }
+      // Purge any canvas a previous zombie instance may have left behind.
+      container.replaceChildren();
+      p5InstanceRef.current = new p5(sketch, container);
+    });
 
     return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
       interactionLockedRef.current = false;
       audio.dispose();
+      audioRef.current = null;
+      setAudioState(null);
       p5InstanceRef.current?.remove();
       p5InstanceRef.current = null;
+      container.replaceChildren();
     };
   }, [items, collectedRows, colour, currentUsername]);
 
@@ -171,6 +218,12 @@ function TimelineCanvas({
         </div>
       )}
       <P5CanvasHost containerRef={containerRef} />
+      {audioState && (
+        <MediaPlayer
+          state={audioState}
+          onToggle={() => audioRef.current?.toggle(audioState.src)}
+        />
+      )}
     </div>
   );
 }

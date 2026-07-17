@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"const nodeRegions\\\\|const drawCtx\\\\|audioNodeX,\\\\|drawMainTimelineGlow\\(p\\\\|p.pop\\(\\);\\\\|import type {\" src/components/timelineCanvas/sketch/drawFrame.ts)"
+    ]
+  }
+}

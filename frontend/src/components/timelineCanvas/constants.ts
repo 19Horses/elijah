@@ -4,7 +4,13 @@ export const IMAGE_HEIGHT = 144;
 export const PADDING_X = 48;
 export const PADDING_Y = 48;
 export const DATE_OFFSET = 24;
+// Font size (world px) of the date labels above items.
+export const DATE_FONT_SIZE = 16;
 export const DOT_RADIUS = 3;
+// Hovering a connector node grows its dot: extra diameter as a fraction of the
+// base (1.5 = up to 2.5× size), eased in/out at this rate.
+export const NODE_HOVER_GROW = 0.3;
+export const NODE_GROW_LERP = 0.25;
 // Spacing between adjacent branch nodes on a main item's underside.
 export const BRANCH_NODE_GAP = 9;
 // Alpha for main-timeline connectors a focused/hovered branch doesn't travel.
@@ -12,6 +18,8 @@ export const MAIN_CONNECTOR_DIM_ALPHA = 0.2;
 export const DEFAULT_BACKGROUND = '#000000';
 export const DRAG_THRESHOLD = 5;
 export const FIT_VIEW_PADDING = 80;
+// Multiplies the fit-to-view zoom. 1.0 frames the whole timeline edge-to-edge,
+// centred, with every item visible; >1 zooms in (content runs off the edges).
 export const FIT_ZOOM_SCALAR = 1.0;
 export const TODAY_LABEL_BOTTOM_OFFSET = 24;
 export const TODAY_LABEL_GAP = 8;
@@ -19,6 +27,11 @@ export const TODAY_LABEL_GAP = 8;
 // crossover is centred on the today line, so the fade spans this far to each
 // side before clamping to transparent (past) / white (future).
 export const TODAY_GRADIENT_HALF_PX = 70;
+// Colour the future half of the canvas fades to at the today line.
+export const TODAY_GRADIENT_COLOUR = '#cccccc';
+// Width (screen px) of the fade-to-background gradient at each screen edge, so
+// the timeline dissolves into the background instead of hard-cutting at the border.
+export const EDGE_GRADIENT_PX = 140;
 export const LANE_GAP = 50;
 export const MAIN_LINE_Y = PADDING_Y + IMAGE_HEIGHT / 2;
 export const COLLECTED_LANE_TOP = PADDING_Y + IMAGE_HEIGHT + LANE_GAP;
@@ -41,6 +54,8 @@ export const MAIN_GLOW_CENTER_LIGHTEN = 0.65;
 // Colour the other collectors' branches fade to while one is hovered.
 export const BRANCH_DIM_COLOUR = '#555555';
 export const BRANCH_DIM_LERP = 0.16;
+// Opacity items not in the hovered branch's timeline fade to while it's hovered.
+export const BRANCH_DIM_ITEM_ALPHA = 0.3;
 export const TYPE_DIM_ALPHA = 0.4;
 export const TYPE_DIM_OVERLAY = 0.3;
 export const TYPE_HIGHLIGHT_BLUR = 22;

@@ -1,8 +1,16 @@
+@font-face {
+  font-family: 'EB Garamond';
+  src: url('./EBGaramond-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --selection-color: #f44e3b;
   --selection-text-color: #ffffff;
   color: #ffffff;
-  font-family: 'Times New Roman', Times, serif;
+  font-family: 'EB Garamond', 'Times New Roman', Times, serif;
 }
 
 ::selection {
@@ -384,6 +392,28 @@ main.main--home {
   overflow-y: auto;
   overscroll-behavior: contain;
   white-space: pre-wrap;
+}
+
+.timeline-detail__collected {
+  color: rgba(255, 255, 255, 0.55);
+  /* Sits in the meta flex row; full basis forces it onto its own line below
+     the title/date. */
+  flex-basis: 100%;
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  margin: 0.25rem 0 0;
+}
+
+.timeline-detail__collected-count {
+  color: #ffffff;
+}
+
+.timeline-detail--light .timeline-detail__collected {
+  color: rgba(0, 0, 0, 0.55);
+}
+
+.timeline-detail--light .timeline-detail__collected-count {
+  color: #000000;
 }
 
 .timeline-detail__body {
@@ -972,6 +1002,75 @@ main.main--home {
   margin: 0;
 }
 
+.signup-form__welcome {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.media-player {
+  align-items: center;
+  background: rgba(20, 20, 20, 0.85);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  /* Sits above the centred reset/test button (bottom: 1.5rem) so its controls
+     aren't covered. */
+  bottom: 5.5rem;
+  color: #ffffff;
+  display: flex;
+  gap: 0.75rem;
+  left: 50%;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 0.375rem;
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 21;
+}
+
+.media-player__art {
+  border-radius: 8px;
+  flex-shrink: 0;
+  height: 40px;
+  object-fit: cover;
+  width: 40px;
+}
+
+.media-player__art--empty {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.media-player__title {
+  font-size: 0.875rem;
+  min-width: 0;
+  overflow: hidden;
+  padding-left: 0.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-player__toggle {
+  align-items: center;
+  background: #ffffff;
+  border: none;
+  border-radius: 999px;
+  color: #111111;
+  cursor: pointer;
+  display: flex;
+  flex-shrink: 0;
+  height: 36px;
+  justify-content: center;
+  padding: 0;
+  width: 36px;
+}
+
+.media-player__toggle svg {
+  fill: currentColor;
+  height: 18px;
+  width: 18px;
+}
+
 .signup-form__actions {
   display: flex;
   justify-content: space-between;
@@ -998,7 +1097,7 @@ main.main--home {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-radius: 0;
-  bottom: 1.5rem;
+  top: 1.5rem;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.12);
   display: flex;
   flex-direction: column;
@@ -1114,7 +1213,7 @@ main.main--home {
   -webkit-backdrop-filter: blur(12px);
   background: rgba(255, 255, 255, 0.92);
   border-radius: 0;
-  bottom: 1.5rem;
+  top: 1.5rem;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.12);
   display: flex;
   flex-direction: column;
@@ -1174,60 +1273,6 @@ main.main--home {
   color: #111827;
   font-size: 0.8125rem;
   font-weight: 500;
-}
-
-/* ── Reset button (testing) ─────────────────── */
-
-.reset-button {
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 999px;
-  bottom: 1.5rem;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-  color: rgba(0, 0, 0, 0.65);
-  cursor: pointer;
-  font-size: 0.75rem;
-  left: 50%;
-  letter-spacing: 0.02em;
-  padding: 0.5rem 1rem;
-  position: fixed;
-  transform: translateX(-50%);
-  z-index: 20;
-}
-
-.reset-button:hover:not(:disabled) {
-  background: #fff;
-  color: #111827;
-}
-
-.reset-button:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-
-.logout-button {
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 999px;
-  bottom: 1.5rem;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-  color: rgba(0, 0, 0, 0.65);
-  cursor: pointer;
-  font-size: 0.75rem;
-  letter-spacing: 0.02em;
-  padding: 0.5rem 1rem;
-  position: fixed;
-  right: 1.5rem;
-  z-index: 20;
-}
-
-.logout-button:hover {
-  background: #fff;
-  color: #111827;
 }
 
 .debug-panel {
@@ -1306,6 +1351,36 @@ main.main--home {
 .debug-panel__row-hint {
   font-size: 0.65rem;
   color: rgba(255, 255, 255, 0.5);
+}
+
+.debug-panel__heading--spaced {
+  margin-top: 0.75rem;
+}
+
+.debug-panel__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.debug-panel__action {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0.5rem;
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+
+.debug-panel__action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.debug-panel__action:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 @media (prefers-reduced-motion: reduce) {

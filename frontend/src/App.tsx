@@ -3,8 +3,6 @@ import { useEffect } from 'react';
 import { HashRouter, Route, Routes, useLocation } from 'react-router-dom';
 import DebugPanel from './components/DebugPanel';
 import Header from './components/Header';
-import LogoutButton from './components/LogoutButton';
-import ResetButton from './components/ResetButton';
 import Content from './pages/Content';
 import Home from './pages/Home';
 import Landing from './pages/Landing';
@@ -34,8 +32,6 @@ const AppRoutes = () => {
           <Route path="/shop" element={<Shop />} />
         </Routes>
       </main>
-      <ResetButton />
-      <LogoutButton />
       <DebugPanel />
     </>
   );

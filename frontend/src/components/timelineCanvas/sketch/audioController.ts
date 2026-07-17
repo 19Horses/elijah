@@ -8,6 +8,9 @@ export type AudioButtonRegion = {
 export type AudioController = {
   isPlaying: (src: string) => boolean;
   toggle: (src: string) => void;
+  // The loaded track and whether it's currently playing, or null when none has
+  // been started. Kept after pause/end so a mini player can offer to resume.
+  getCurrent: () => { src: string; playing: boolean } | null;
   setButtonRegion: (region: AudioButtonRegion | null) => void;
   getButtonRegion: () => AudioButtonRegion | null;
   dispose: () => void;
@@ -67,6 +70,7 @@ export function createAudioController(): AudioController {
   return {
     isPlaying,
     toggle,
+    getCurrent: () => (currentSrc ? { src: currentSrc, playing } : null),
     setButtonRegion: (next) => {
       region = next;
     },

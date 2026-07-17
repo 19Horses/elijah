@@ -16,6 +16,9 @@ export type ContentDetail = {
   description: string | null;
   content: string | null;
   link: string | null;
+  // Number of images on an imageAsset (null for other types). A count of 1 (or a
+  // legacy single `image` field, which yields null) means a solitary image.
+  imageCount: number | null;
 };
 
 const CONTENT_BY_SLUG_QUERY = (slug: string) => `*[
@@ -29,6 +32,9 @@ const CONTENT_BY_SLUG_QUERY = (slug: string) => `*[
   date,
   _type in ["imageAsset", "audioAsset", "event"] => {
     description
+  },
+  _type == "imageAsset" => {
+    "imageCount": count(images)
   },
   _type == "event" => {
     link
@@ -83,4 +89,10 @@ export function getContentDetailNewsletterContent(
 
 export function getContentDetailDateLabel(detail: ContentDetail): string {
   return formatMainTimelineDate(detail.date);
+}
+
+// A solitary image (no gallery) is presented like a newsletter: the image on
+// one side with its description flowing beside it.
+export function getContentDetailIsSingleImage(detail: ContentDetail): boolean {
+  return detail._type === 'imageAsset' && (detail.imageCount ?? 1) <= 1;
 }

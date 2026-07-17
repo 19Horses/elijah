@@ -1,4 +1,73 @@
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import type { DetailImageRect } from './timelineCanvas/types';
+
+// Height (px) of the fade applied to an overflowing text block's edge.
+const SCROLL_FADE_PX = 42;
+
+// Builds a mask that fades the top and/or bottom edge to transparent, so
+// overflowing text dissolves into the background on whichever side has more
+// content to scroll to.
+function buildScrollFadeMask(top: boolean, bottom: boolean): string | undefined {
+  if (!top && !bottom) {
+    return undefined;
+  }
+  const topStop = top ? `transparent 0, #000 ${SCROLL_FADE_PX}px` : '#000 0';
+  const bottomStop = bottom
+    ? `#000 calc(100% - ${SCROLL_FADE_PX}px), transparent 100%`
+    : '#000 100%';
+  return `linear-gradient(to bottom, ${topStop}, ${bottomStop})`;
+}
+
+// A scrollable text block that fades its top/bottom edge only while there's
+// hidden content in that direction.
+function ScrollFadeText({
+  className,
+  children,
+}: {
+  className: string;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const [fade, setFade] = useState({ top: false, bottom: false });
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) {
+      return;
+    }
+    const update = () => {
+      const top = el.scrollTop > 1;
+      const bottom = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+      setFade((prev) =>
+        prev.top === top && prev.bottom === bottom ? prev : { top, bottom }
+      );
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => {
+      el.removeEventListener('scroll', update);
+      observer.disconnect();
+    };
+  }, [children]);
+
+  const mask = buildScrollFadeMask(fade.top, fade.bottom);
+  return (
+    <p
+      ref={ref}
+      className={className}
+      style={mask ? { maskImage: mask, WebkitMaskImage: mask } : undefined}
+    >
+      {children}
+    </p>
+  );
+}
 
 export type TimelineDetailView = {
   title: string;
@@ -6,8 +75,13 @@ export type TimelineDetailView = {
   description: string;
   link: string | null;
   newsletterContent: string | null;
+  // A solitary image is laid out like a newsletter (description beside the
+  // image) even though it has no newsletter content of its own.
+  presentAsNewsletter: boolean;
   // Dated after today: the detail view inverts to black text on white.
   isFuture: boolean;
+  // Number of other people (besides the viewer) who have collected this item.
+  collectedByOthers: number;
 };
 
 type TimelineDetailOverlayProps = {
@@ -36,9 +110,13 @@ function TimelineDetailOverlay({
     window.innerHeight - (imageRect.top + imageRect.height) - TEXT_GAP_PX * 2
   );
 
-  // Newsletters put their content to the right of the image, filling the
-  // remaining viewport width; everything else stacks below the image.
-  const isNewsletter = Boolean(detail.newsletterContent);
+  // Newsletters (and solitary images) put their body text to the right of the
+  // image, filling the remaining viewport width; everything else stacks below.
+  const isNewsletter =
+    detail.presentAsNewsletter || Boolean(detail.newsletterContent);
+  // Real newsletters carry their own content; a solitary image reuses its
+  // description as the side body.
+  const sideBody = detail.newsletterContent ?? detail.description;
   const sideWidth = Math.max(
     0,
     window.innerWidth -
@@ -57,6 +135,17 @@ function TimelineDetailOverlay({
       {detail.link}
     </a>
   ) : null;
+
+  const collectedNode =
+    detail.collectedByOthers > 0 ? (
+      <p className="timeline-detail__collected">
+        Collected by{' '}
+        <span className="timeline-detail__collected-count">
+          {detail.collectedByOthers} other
+          {detail.collectedByOthers === 1 ? '' : 's'}
+        </span>
+      </p>
+    ) : null;
 
   return (
     <aside
@@ -79,6 +168,7 @@ function TimelineDetailOverlay({
         {detail.dateLabel ? (
           <p className="timeline-detail__date">{detail.dateLabel}</p>
         ) : null}
+        {collectedNode}
       </div>
       {isNewsletter ? (
         <div
@@ -93,9 +183,7 @@ function TimelineDetailOverlay({
             paddingBottom: `calc(${imageRect.top}px + 1.5rem)`,
           }}
         >
-          <div className="timeline-detail__body">
-            {detail.newsletterContent}
-          </div>
+          <div className="timeline-detail__body">{sideBody}</div>
           {linkNode}
         </div>
       ) : (
@@ -104,7 +192,9 @@ function TimelineDetailOverlay({
           style={{ maxHeight: `${belowSpace}px` }}
         >
           {detail.description ? (
-            <p className="timeline-detail__description">{detail.description}</p>
+            <ScrollFadeText className="timeline-detail__description">
+              {detail.description}
+            </ScrollFadeText>
           ) : null}
           {linkNode}
         </div>

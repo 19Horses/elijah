@@ -61,6 +61,18 @@ export type BoundsContext = {
   // is left untouched.
   getBranchDetouredGaps: (rowIndex: number) => Set<number>;
   getCollectedBounds: () => ContentBounds[];
+  // The evenly-spaced straight-line layout for an isolated branch: all main
+  // items plus that branch's collected items, ordered chronologically, laid out
+  // on the main line at a fixed step. Keyed `${lane}:${index}` → target centre X.
+  getIsolatedLineTargets: (
+    rowIndex: number,
+    mainBounds: ContentBounds[],
+    collectedBounds: ContentBounds[]
+  ) => {
+    targetX: Map<string, number>;
+    order: { lane: 'main' | 'collected'; index: number }[];
+    frame: ContentBounds | null;
+  };
 };
 
 // The edge of a main item a branch springs from: the top when the collected
@@ -70,6 +82,12 @@ function mainBranchEdgeY(
   itemBounds: ContentBounds
 ): number {
   return itemBounds.centerY < main.centerY ? main.top : main.top + main.height;
+}
+
+// Whether a segment's ends sit on opposite sides of the main line (one above,
+// one below) — such a branch is drawn stepped so the crossing reads clearly.
+function crossesMainLine(from: ConnectorPoint, to: ConnectorPoint): boolean {
+  return (from.y - MAIN_LINE_Y) * (to.y - MAIN_LINE_Y) < 0;
 }
 
 // Branch rows alternate sides of the main line: even rows stack downward below
@@ -587,6 +605,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       segments.push({
         from: chainFromPt,
         to: chainToPt,
+        stepped: crossesMainLine(chainFromPt, chainToPt),
         fromItemTitle: processedCollected[predIndex]?.title,
         toItemTitle: thisTitle,
         fromItemTarget: { lane: 'collected', index: predIndex },
@@ -601,22 +620,29 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
         const rejoinTarget: FocusTarget = { lane: 'main', index: gapIndex + 1 };
         const rejoinTo = attach.get(`rejoinTo:${index}:${sourceIndex}`);
         if (nodeX !== undefined && rejoinTo) {
+          const rejoinFrom = {
+            x: nodeX,
+            y: mainBranchEdgeY(nextMain, itemBounds),
+          };
           segments.push({
-            from: { x: nodeX, y: mainBranchEdgeY(nextMain, itemBounds) },
+            from: rejoinFrom,
             to: rejoinTo,
+            stepped: crossesMainLine(rejoinFrom, rejoinTo),
             fromItemTitle: rejoinTitle,
             toItemTitle: thisTitle,
             fromItemTarget: rejoinTarget,
             toItemTarget: thisTarget,
           });
         } else {
+          const spread = applySpread(
+            branchToMain(nextMain, itemBounds),
+            sourceIndex,
+            sourceCount,
+            itemBounds.width
+          );
           segments.push({
-            ...applySpread(
-              branchToMain(nextMain, itemBounds),
-              sourceIndex,
-              sourceCount,
-              itemBounds.width
-            ),
+            ...spread,
+            stepped: crossesMainLine(spread.from, spread.to),
             fromItemTitle: rejoinTitle,
             toItemTitle: thisTitle,
             fromItemTarget: rejoinTarget,
@@ -636,24 +662,26 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       const branchTo = attach.get(`branchTo:${index}:${sourceIndex}`);
       if (nodeX !== undefined && mainBounds.length > 0 && branchTo) {
         const main = mainBounds[mainIndex];
+        const branchFrom = { x: nodeX, y: mainBranchEdgeY(main, itemBounds) };
         segments.push({
-          from: { x: nodeX, y: mainBranchEdgeY(main, itemBounds) },
+          from: branchFrom,
           to: branchTo,
-          stepped,
+          stepped: stepped || crossesMainLine(branchFrom, branchTo),
           fromItemTitle: mainTitle,
           toItemTitle: thisTitle,
           fromItemTarget: mainTarget,
           toItemTarget: thisTarget,
         });
       } else {
+        const spread = applySpread(
+          getBranchEndpoints(item.anchorTime, itemBounds, mainBounds),
+          sourceIndex,
+          sourceCount,
+          itemBounds.width
+        );
         segments.push({
-          ...applySpread(
-            getBranchEndpoints(item.anchorTime, itemBounds, mainBounds),
-            sourceIndex,
-            sourceCount,
-            itemBounds.width
-          ),
-          stepped,
+          ...spread,
+          stepped: stepped || crossesMainLine(spread.from, spread.to),
           fromItemTitle: mainTitle,
           toItemTitle: thisTitle,
           fromItemTarget: mainTarget,
@@ -791,6 +819,77 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     return bounds;
   };
 
+  const getIsolatedLineTargets = (
+    rowIndex: number,
+    mainBounds: ContentBounds[],
+    collectedBounds: ContentBounds[]
+  ) => {
+    const entries: {
+      lane: 'main' | 'collected';
+      index: number;
+      centerX: number;
+      width: number;
+      height: number;
+    }[] = [];
+    mainBounds.forEach((b, index) => {
+      if (b) {
+        entries.push({
+          lane: 'main',
+          index,
+          centerX: (b.left + b.right) / 2,
+          width: b.width,
+          height: b.height,
+        });
+      }
+    });
+    processedCollected.forEach((item, index) => {
+      const b = collectedBounds[index];
+      if (b && item.sources.some((s) => s.rowIndex === rowIndex)) {
+        entries.push({
+          lane: 'collected',
+          index,
+          centerX: (b.left + b.right) / 2,
+          width: b.width,
+          height: b.height,
+        });
+      }
+    });
+    entries.sort((a, b) => a.centerX - b.centerX);
+
+    const targetX = new Map<string, number>();
+    const order: { lane: 'main' | 'collected'; index: number }[] = [];
+    const n = entries.length;
+    if (n === 0) {
+      return { targetX, order, frame: null };
+    }
+
+    const step = ITEM_WIDTH + ITEM_GAP;
+    const centroid = entries.reduce((sum, e) => sum + e.centerX, 0) / n;
+    const startX = centroid - ((n - 1) * step) / 2;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let maxHeight = 0;
+    entries.forEach((e, k) => {
+      const cx = startX + k * step;
+      targetX.set(`${e.lane}:${e.index}`, cx);
+      order.push({ lane: e.lane, index: e.index });
+      minX = Math.min(minX, cx - e.width / 2);
+      maxX = Math.max(maxX, cx + e.width / 2);
+      maxHeight = Math.max(maxHeight, e.height);
+    });
+
+    const frame: ContentBounds = {
+      left: minX,
+      right: maxX,
+      width: maxX - minX,
+      top: MAIN_LINE_Y - maxHeight / 2,
+      centerY: MAIN_LINE_Y,
+      height: maxHeight,
+      dateBottom: MAIN_LINE_Y + maxHeight / 2 + DATE_OFFSET,
+    };
+    return { targetX, order, frame };
+  };
+
   return {
     getAllBounds,
     slotLeft,
@@ -803,5 +902,6 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     getUserTimelinePath,
     getBranchDetouredGaps,
     getCollectedBounds,
+    getIsolatedLineTargets,
   };
 }

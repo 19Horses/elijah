@@ -17,7 +17,6 @@ import {
   MAIN_GLOW_STRIP_WIDTH,
   MAIN_GLOW_TRAVEL_BLUR,
   MAIN_GLOW_TRAVEL_MS,
-  MAIN_LINE_Y,
   MAIN_USERNAME,
   TYPE_HIGHLIGHT_BLUR,
 } from '../constants';
@@ -76,6 +75,25 @@ export type MainLaneDrawContext = {
   // Connector dots registered this frame while an item is focused, so a hovered
   // node can be labelled with its timeline and the item it connects to.
   nodeRegions: NodeHoverRegion[];
+  // Multiplier that fades connectors out while a branch is isolated (1 = none).
+  isolateOtherAlpha: number;
+  // While a focused audio item reveals its CD, branch endpoints sitting on that
+  // item's right edge (x === audioNodeX) slide out by audioNodeShift so the node
+  // rides the CD's right edge. null when no audio item is focused.
+  audioNodeX: number | null;
+  audioNodeShift: number;
+  // Date labels collected during the item pass and drawn last (after the
+  // connectors and nodes) so they sit on top of them.
+  dateLabels: DateLabel[];
+};
+
+export type DateLabel = {
+  x: number;
+  y: number;
+  text: string;
+  // Text fill (0 = black for future items on the grey gradient, 255 = white).
+  colour: number;
+  alpha: number;
 };
 
 export type MainLaneDrawResult = {
@@ -174,23 +192,14 @@ export function drawMainTimelineGlow(
   mainBounds: ContentBounds[],
   collectedBounds: ContentBounds[]
 ): void {
-  const { processedCollected, currentUsername, runtime } = deps;
+  const { processedCollected, runtime } = deps;
 
   let path: ConnectorPoint[] | null = null;
   let glowColour = MAIN_GLOW_COLOUR;
 
-  // Trace the hovered branch if one is active, otherwise the logged-in
-  // viewer's own branch. Only ever one strip.
-  let rowIndex = runtime.branchDimRow ?? -1;
-  if (rowIndex < 0 && currentUsername && currentUsername !== MAIN_USERNAME) {
-    for (const item of processedCollected) {
-      const source = item.sources.find((s) => s.username === currentUsername);
-      if (source) {
-        rowIndex = source.rowIndex;
-        break;
-      }
-    }
-  }
+  // Only trace the branch the view is clicked/zoomed into. The strip no longer
+  // follows a hovered branch or the logged-in viewer's own branch by default.
+  const rowIndex = runtime.focusedBranchRow ?? -1;
 
   if (rowIndex >= 0) {
     for (const item of processedCollected) {
@@ -210,21 +219,10 @@ export function drawMainTimelineGlow(
     }
   }
 
-  // Fallback: trace the main lane horizontally.
+  // No branch to trace (no clicked branch and the viewer has none): draw no
+  // strip. The main timeline itself never gets a travelling pulse.
   if (!path) {
-    glowColour = MAIN_GLOW_COLOUR;
-    if (mainBounds.length === 0) {
-      return;
-    }
-    const startX = mainBounds[0].left;
-    const endX = mainBounds[mainBounds.length - 1].right;
-    if (endX <= startX) {
-      return;
-    }
-    path = [
-      { x: startX, y: MAIN_LINE_Y },
-      { x: endX, y: MAIN_LINE_Y },
-    ];
+    return;
   }
 
   const total = polylineLength(path);
@@ -406,6 +404,13 @@ export function drawMainLaneItems(
       );
     }
 
+    // Audio tracks get a drop shadow so the image reads as lifted off the disc.
+    if (item.contentType === 'audioAsset') {
+      mainCtx.shadowColor = hexToRgba('#000000', 0.35 * visibilityAlpha);
+      mainCtx.shadowBlur = 18;
+      mainCtx.shadowOffsetY = 8;
+    }
+
     if (ctx.isTypeHighlightActive && !typeMatch) {
       mainCtx.globalAlpha = getCombinedAlpha(visibilityAlpha, ctx.dimAlpha);
     } else {
@@ -450,19 +455,32 @@ export function drawMainLaneItems(
       );
     }
 
-    if (!hideDateLabel) {
-      // Items past the today separator sit on the white gradient, so their date
-      // reads black instead of white.
-      p.fill(isFutureDatedItem(deps.items[index]) ? 0 : 255);
-      p.noStroke();
-      p.textAlign(p.CENTER, p.BOTTOM);
-      if (ctx.isTypeHighlightActive && !typeMatch) {
-        mainCtx.globalAlpha = getCombinedAlpha(visibilityAlpha, ctx.dimAlpha);
-      } else {
-        mainCtx.globalAlpha = visibilityAlpha;
-      }
-      p.text(item.dateLabel, imageLeft + width / 2, top - 12);
+    // White border on every item except the selected (focused) one.
+    if (!(ctx.isFocusActive && ctx.isFocusedTarget('main', index))) {
+      mainCtx.globalAlpha =
+        ctx.isTypeHighlightActive && !typeMatch
+          ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
+          : visibilityAlpha;
+      p.noFill();
+      p.stroke(255);
+      p.strokeWeight(2);
+      p.rect(imageLeft, top, width, height);
       resetCanvasEffects(mainCtx);
+    }
+
+    if (!hideDateLabel) {
+      // Deferred so dates render above the connectors/nodes. Items past the
+      // today separator sit on the grey gradient, so their date reads black.
+      ctx.dateLabels.push({
+        x: imageLeft + width / 2,
+        y: top - 12,
+        text: item.dateLabel,
+        colour: isFutureDatedItem(deps.items[index]) ? 0 : 255,
+        alpha:
+          ctx.isTypeHighlightActive && !typeMatch
+            ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
+            : visibilityAlpha,
+      });
     }
 
     // Play/pause control on top of the selected audio track's image.

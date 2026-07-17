@@ -39,3 +39,8 @@ export const PICKER_COLORS = [
 ];
 
 export const DEFAULT_PICKER_COLOUR = PICKER_COLORS[0];
+
+// A random colour from the palette, assigned to new users in place of a picker.
+export function randomPickerColour(): string {
+  return PICKER_COLORS[Math.floor(Math.random() * PICKER_COLORS.length)];
+}

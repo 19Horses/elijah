@@ -1,13 +1,6 @@
 import type p5 from 'p5';
-import {
-  DOT_RADIUS,
-  DRAG_THRESHOLD,
-  IMAGE_HEIGHT,
-  ITEM_WIDTH,
-  PADDING_Y,
-} from '../constants';
-import { getFittedSize, hitTest, screenToWorld } from '../geometry';
-import { isFutureDatedItem } from '../timelineRuntime';
+import { DOT_RADIUS, DRAG_THRESHOLD } from '../constants';
+import { screenToWorld } from '../geometry';
 import type { FocusTarget, TimelineSketchDeps } from '../types';
 import type { BoundsContext } from './bounds';
 import type { GalleryController } from './galleryController';
@@ -25,7 +18,7 @@ export function createInputHandlers(
   mouseReleased: (event?: Event) => void;
   mouseWheel: (event?: WheelEvent) => boolean;
 } {
-  const { runtime, items, processed, itemOffsets, collectedOffsets } = deps;
+  const { runtime, processed } = deps;
 
   // p5 v2 binds pointer events on `window`, so clicks on DOM UI layered over
   // the canvas (e.g. the branch top-bar) also reach these handlers. Ignore any
@@ -53,40 +46,9 @@ export function createInputHandlers(
       return;
     }
 
-    const world = screenToWorld(
-      runtime.pressX,
-      runtime.pressY,
-      runtime.cameraX,
-      runtime.cameraY,
-      runtime.zoom
-    );
-    const bounds = boundsCtx.getAllBounds();
-
-    for (let index = processed.length - 1; index >= 0; index--) {
-      if (!hitTest(bounds[index], world.x, world.y)) {
-        continue;
-      }
-
-      runtime.dragLane = 'main';
-      runtime.dragIndex = index;
-      runtime.dragPointerOffsetX = world.x - bounds[index].left;
-      runtime.dragPointerOffsetY = world.y - bounds[index].top;
-      return;
-    }
-
-    const collectedBounds = boundsCtx.getCollectedBounds();
-    for (let index = deps.processedCollected.length - 1; index >= 0; index--) {
-      if (!hitTest(collectedBounds[index], world.x, world.y)) {
-        continue;
-      }
-
-      runtime.dragLane = 'collected';
-      runtime.dragIndex = index;
-      runtime.dragPointerOffsetX = world.x - collectedBounds[index].left;
-      runtime.dragPointerOffsetY = world.y - collectedBounds[index].top;
-      return;
-    }
-
+    // Items are no longer draggable: every press on the canvas pans the view. A
+    // press that doesn't move past the threshold is treated as a click (and can
+    // still focus an item) in mouseReleased.
     runtime.dragLane = 'canvas';
   };
 
@@ -104,56 +66,7 @@ export function createInputHandlers(
 
     if (runtime.dragLane === 'canvas') {
       view.panView(p.mouseX - p.pmouseX, p.mouseY - p.pmouseY);
-      return;
     }
-
-    const world = screenToWorld(
-      p.mouseX,
-      p.mouseY,
-      runtime.cameraX,
-      runtime.cameraY,
-      runtime.zoom
-    );
-
-    if (runtime.dragLane === 'collected') {
-      const current = boundsCtx.getCollectedBounds()[runtime.dragIndex];
-      const offset = collectedOffsets[runtime.dragIndex];
-      const defaultLeft = current.left - offset.dx;
-      const defaultTop = current.top - offset.dy;
-
-      collectedOffsets[runtime.dragIndex] = {
-        dx: world.x - runtime.dragPointerOffsetX - defaultLeft,
-        dy: world.y - runtime.dragPointerOffsetY - defaultTop,
-      };
-      return;
-    }
-
-    const item = processed[runtime.dragIndex];
-    const slotX = boundsCtx.slotLeft(runtime.dragIndex);
-    const { width, height } = getFittedSize(
-      item.aspectRatio,
-      ITEM_WIDTH,
-      IMAGE_HEIGHT
-    );
-    const offsetXInSlot = (ITEM_WIDTH - width) / 2;
-    const offsetYInSlot = (IMAGE_HEIGHT - height) / 2;
-    const defaultLeft = slotX + offsetXInSlot;
-    const defaultTop = PADDING_Y + offsetYInSlot;
-
-    let newLeft = world.x - runtime.dragPointerOffsetX;
-    const newTop = world.y - runtime.dragPointerOffsetY;
-
-    const lineWorldX = boundsCtx.getNowWorldX();
-    if (isFutureDatedItem(items[runtime.dragIndex])) {
-      newLeft = Math.max(newLeft, lineWorldX);
-    } else {
-      newLeft = Math.min(newLeft, lineWorldX - width);
-    }
-
-    itemOffsets[runtime.dragIndex] = {
-      dx: newLeft - defaultLeft,
-      dy: newTop - defaultTop,
-    };
   };
 
   const mouseReleased = (event?: Event) => {
@@ -174,6 +87,14 @@ export function createInputHandlers(
         runtime.cameraY,
         runtime.zoom
       );
+
+      // While a branch is isolated, any click on the canvas exits back to the
+      // full timeline.
+      if (runtime.branchIsolateRow !== null) {
+        view.exitBranchIsolation();
+        runtime.dragLane = null;
+        return;
+      }
 
       const audioButton = deps.audio.getButtonRegion();
       if (

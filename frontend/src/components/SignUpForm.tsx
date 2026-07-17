@@ -1,33 +1,54 @@
 import { useState } from 'react';
-import { CompactPicker, type ColorResult } from 'react-color';
-import { PICKER_COLORS } from '../constants/pickerColors';
 import { createUser } from '../services/createUser';
-import { storeColour } from '../services/userColor';
+import {
+  findUserByEmail,
+  type ExistingUser,
+} from '../services/findUserByEmail';
+import { applySelectionColour, storeColour } from '../services/userColor';
 import { storeUser } from '../services/userStorage';
 
 type SignUpFormProps = {
   visible: boolean;
   color: string;
-  onColorChange: (color: string) => void;
-  onColorHover?: (color: string) => void;
-  onColorHoverEnd?: () => void;
   onClose: () => void;
   onSuccess: () => void;
 };
 
-function SignUpForm({
-  visible,
-  color,
-  onColorChange,
-  onColorHover,
-  onColorHoverEnd,
-  onClose,
-  onSuccess,
-}: SignUpFormProps) {
+function SignUpForm({ visible, color, onClose, onSuccess }: SignUpFormProps) {
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Set once we've looked up the entered email and found a matching account, so
+  // returning users skip the username step and just log back in.
+  const [existingUser, setExistingUser] = useState<ExistingUser | null>(null);
+  const [isCheckingEmail, setIsCheckingEmail] = useState(false);
+  // The email string the existingUser result belongs to, so we don't re-check
+  // an unchanged value or act on a stale lookup.
+  const [checkedEmail, setCheckedEmail] = useState('');
+
+  const checkEmail = async () => {
+    const trimmed = email.trim();
+    if (!trimmed || trimmed === checkedEmail) {
+      return;
+    }
+    // Only bother once it looks like a complete address.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      return;
+    }
+
+    setIsCheckingEmail(true);
+    try {
+      const match = await findUserByEmail(trimmed);
+      setExistingUser(match);
+      setCheckedEmail(trimmed);
+    } catch {
+      // Ignore lookup errors and fall back to the normal sign-up flow.
+      setExistingUser(null);
+    } finally {
+      setIsCheckingEmail(false);
+    }
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -35,6 +56,19 @@ function SignUpForm({
     setIsSubmitting(true);
 
     try {
+      // Returning user: log straight in with their stored account and colour.
+      if (existingUser) {
+        storeColour(existingUser.colour);
+        applySelectionColour(existingUser.colour);
+        storeUser({
+          id: existingUser.id,
+          email: existingUser.email,
+          username: existingUser.username,
+        });
+        onSuccess();
+        return;
+      }
+
       const result = await createUser({ email, username, colour: color });
 
       if (!result.ok) {
@@ -71,39 +105,38 @@ function SignUpForm({
           onChange={(event) => {
             setEmail(event.target.value);
             setError('');
+            // Editing the email invalidates any prior lookup.
+            setExistingUser(null);
+            setCheckedEmail('');
           }}
+          onBlur={checkEmail}
           required
           tabIndex={visible ? 0 : -1}
         />
       </label>
 
-      <label className="signup-form__field">
-        <span className="signup-form__label">Username</span>
-        <input
-          type="text"
-          name="username"
-          value={username}
-          onChange={(event) => {
-            setUsername(event.target.value);
-            setError('');
-          }}
-          required
-          tabIndex={visible ? 0 : -1}
-        />
-      </label>
-
-      <fieldset className="signup-form__field signup-form__color">
-        <legend className="signup-form__label">Colour</legend>
-        <div className="signup-form__picker" onMouseLeave={onColorHoverEnd}>
-          <CompactPicker
-            color={color}
-            colors={PICKER_COLORS}
-            onChange={(result: ColorResult) => onColorChange(result.hex)}
-            onSwatchHover={(result: ColorResult) => onColorHover?.(result.hex)}
+      {existingUser ? (
+        <p className="signup-form__welcome">
+          Welcome back, {existingUser.username}.
+        </p>
+      ) : (
+        <label className="signup-form__field">
+          <span className="signup-form__label">Username</span>
+          <input
+            type="text"
+            name="username"
+            value={username}
+            onChange={(event) => {
+              setUsername(event.target.value);
+              setError('');
+            }}
+            required
+            tabIndex={visible ? 0 : -1}
           />
-        </div>
-        <input type="hidden" name="color" value={color} required />
-      </fieldset>
+        </label>
+      )}
+
+      <input type="hidden" name="color" value={color} />
 
       {error && <p className="signup-form__error">{error}</p>}
 
@@ -120,10 +153,16 @@ function SignUpForm({
         <button
           type="submit"
           className="signup-form__action"
-          disabled={isSubmitting}
+          disabled={isSubmitting || isCheckingEmail}
           tabIndex={visible ? 0 : -1}
         >
-          {isSubmitting ? 'Saving…' : 'Continue'}
+          {isSubmitting
+            ? 'Saving…'
+            : isCheckingEmail
+              ? 'Checking…'
+              : existingUser
+                ? 'Log in'
+                : 'Continue'}
         </button>
       </div>
     </form>

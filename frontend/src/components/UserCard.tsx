@@ -6,9 +6,16 @@ import { getCollectedItems } from '../services/collectItem';
 type UserCardProps = {
   refreshSignal?: number;
   chromeOpacity?: number;
+  onActivate?: () => void;
+  onHoverChange?: (hovering: boolean) => void;
 };
 
-function UserCard({ refreshSignal = 0, chromeOpacity = 1 }: UserCardProps) {
+function UserCard({
+  refreshSignal = 0,
+  chromeOpacity = 1,
+  onActivate,
+  onHoverChange,
+}: UserCardProps) {
   const [user] = useState(() => getStoredUser());
   const [colour] = useState(() => getStoredColour() ?? DEFAULT_COLOUR);
   const [collectedCount, setCollectedCount] = useState(0);
@@ -42,7 +49,23 @@ function UserCard({ refreshSignal = 0, chromeOpacity = 1 }: UserCardProps) {
       style={{
         opacity: chromeOpacity,
         pointerEvents: chromeOpacity < 0.5 ? 'none' : undefined,
+        cursor: onActivate ? 'pointer' : undefined,
       }}
+      role={onActivate ? 'button' : undefined}
+      tabIndex={onActivate ? 0 : undefined}
+      onClick={onActivate}
+      onMouseEnter={() => onHoverChange?.(true)}
+      onMouseLeave={() => onHoverChange?.(false)}
+      onKeyDown={
+        onActivate
+          ? (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onActivate();
+              }
+            }
+          : undefined
+      }
     >
       <div className="user-card__header">
         <span

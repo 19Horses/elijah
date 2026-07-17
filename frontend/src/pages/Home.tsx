@@ -2,7 +2,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CollectionCountdown from '../components/CollectionCountdown';
 import CollectionViewer from '../components/CollectionViewer';
-import ContentLegend from '../components/ContentLegend';
 import TimelineCanvas from '../components/timelineCanvas';
 import type { DetailImageRect } from '../components/timelineCanvas/types';
 import TimelineDetailOverlay, {
@@ -12,6 +11,7 @@ import UserCard from '../components/UserCard';
 import {
   getContentDetailDateLabel,
   getContentDetailDescription,
+  getContentDetailIsSingleImage,
   getContentDetailLink,
   getContentDetailNewsletterContent,
   useContentDetail,
@@ -34,26 +34,24 @@ function Home() {
   const [alreadyCollected, setAlreadyCollected] = useState(false);
   const [statusChecked, setStatusChecked] = useState(false);
   const [collectedSignal, setCollectedSignal] = useState(0);
-  const [highlightedType, setHighlightedType] = useState<ContentType | null>(
-    null
-  );
+  const [highlightedType] = useState<ContentType | null>(null);
   const [focusSlug, setFocusSlug] = useState<string | null>(null);
+  const [ownBranchHover, setOwnBranchHover] = useState(false);
   const [detailReady, setDetailReady] = useState(false);
   const [detailImageRect, setDetailImageRect] =
     useState<DetailImageRect | null>(null);
   const userCardWrapRef = useRef<HTMLDivElement>(null);
-  const legendWrapRef = useRef<HTMLDivElement>(null);
+  const isolateOwnBranchRef = useRef<(() => void) | undefined>(undefined);
 
   const { data: contentDetail } = useContentDetail(focusSlug);
 
   const handleFocusFadeChange = useCallback((fade: number) => {
     const opacity = 1 - fade;
     const pointerEvents = opacity < 0.5 ? 'none' : 'auto';
-    for (const ref of [userCardWrapRef, legendWrapRef]) {
-      if (ref.current) {
-        ref.current.style.opacity = String(opacity);
-        ref.current.style.pointerEvents = pointerEvents;
-      }
+    const ref = userCardWrapRef;
+    if (ref.current) {
+      ref.current.style.opacity = String(opacity);
+      ref.current.style.pointerEvents = pointerEvents;
     }
   }, []);
 
@@ -77,10 +75,19 @@ function Home() {
     setDetailImageRect(rect);
   }, []);
 
+  const currentUsername = useMemo(() => getStoredUser()?.username ?? null, []);
+
   const timelineDetail = useMemo((): TimelineDetailView | null => {
     if (!focusSlug || !detailReady || !contentDetail) {
       return null;
     }
+
+    // How many other people (besides the viewer) have collected this item.
+    const collectedByOthers = (collectedRows ?? []).filter(
+      (row) =>
+        row.username !== currentUsername &&
+        row.items.some((entry) => entry.content.slug === focusSlug)
+    ).length;
 
     return {
       title: contentDetail.title,
@@ -88,14 +95,15 @@ function Home() {
       description: getContentDetailDescription(contentDetail),
       link: getContentDetailLink(contentDetail),
       newsletterContent: getContentDetailNewsletterContent(contentDetail),
+      presentAsNewsletter: getContentDetailIsSingleImage(contentDetail),
       isFuture: contentDetail.date
         ? new Date(contentDetail.date).getTime() > Date.now()
         : false,
+      collectedByOthers,
     };
-  }, [contentDetail, detailReady, focusSlug]);
+  }, [contentDetail, detailReady, focusSlug, collectedRows, currentUsername]);
 
   const activeCollection = collections?.[0] ?? null;
-  const currentUsername = useMemo(() => getStoredUser()?.username ?? null, []);
 
   const handleCollected = () => {
     setAlreadyCollected(true);
@@ -161,6 +169,8 @@ function Home() {
         colour={timeline.colour}
         currentUsername={currentUsername}
         highlightedType={highlightedType}
+        hoverOwnBranch={ownBranchHover}
+        isolateControlRef={isolateOwnBranchRef}
         onFocusFadeChange={handleFocusFadeChange}
         onContentFocus={handleContentFocus}
         onContentUnfocus={handleContentUnfocus}
@@ -185,12 +195,10 @@ function Home() {
         />
       )}
       <div ref={userCardWrapRef}>
-        <UserCard refreshSignal={collectedSignal} />
-      </div>
-      <div ref={legendWrapRef}>
-        <ContentLegend
-          highlightedType={highlightedType}
-          onHighlight={setHighlightedType}
+        <UserCard
+          refreshSignal={collectedSignal}
+          onActivate={() => isolateOwnBranchRef.current?.()}
+          onHoverChange={setOwnBranchHover}
         />
       </div>
     </section>

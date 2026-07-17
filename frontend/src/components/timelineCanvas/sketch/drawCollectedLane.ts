@@ -10,6 +10,7 @@ import {
 } from '../canvasEffects';
 import {
   BRANCH_DIM_COLOUR,
+  BRANCH_DIM_ITEM_ALPHA,
   CONNECTOR_HOVER_THRESHOLD,
   LOAD_ALPHA_SNAP,
   TYPE_HIGHLIGHT_BLUR,
@@ -23,6 +24,7 @@ import {
 } from '../connectors';
 import type {
   CollectedSource,
+  ConnectorPoint,
   ContentBounds,
   TimelineRuntime,
   TimelineSketchDeps,
@@ -44,6 +46,17 @@ export type CollectedLaneDrawResult = {
   hoveredCollectedIsImage: boolean;
   hoveredUserRow: number | null;
 };
+
+// Slide a branch endpoint out to the revealing CD's right edge when it sits on
+// the focused audio item's right edge; otherwise leave it untouched.
+function shiftAudioNode(
+  pt: ConnectorPoint,
+  ctx: MainLaneDrawContext
+): ConnectorPoint {
+  return ctx.audioNodeX !== null && Math.abs(pt.x - ctx.audioNodeX) < 0.5
+    ? { x: pt.x + ctx.audioNodeShift, y: pt.y }
+    : pt;
+}
 
 // A source's branch colour, eased toward grey while another branch is hovered.
 function branchSourceColour(
@@ -159,16 +172,21 @@ export function drawCollectedLaneConnectors(
       }
 
       if (ctx.isTypeHighlightActive) {
-        collectedCtx.globalAlpha = getCombinedAlpha(
-          connectorLoadAlpha,
-          ctx.dimAlpha
-        );
+        collectedCtx.globalAlpha =
+          getCombinedAlpha(connectorLoadAlpha, ctx.dimAlpha) *
+          ctx.isolateOtherAlpha;
       } else {
-        collectedCtx.globalAlpha = connectorLoadAlpha;
+        collectedCtx.globalAlpha = connectorLoadAlpha * ctx.isolateOtherAlpha;
       }
 
       segments.forEach(({ from, to, stepped }) =>
-        drawBranchConnector(p, from, to, branchColour, stepped)
+        drawBranchConnector(
+          p,
+          shiftAudioNode(from, ctx),
+          shiftAudioNode(to, ctx),
+          branchColour,
+          stepped
+        )
       );
       resetCanvasEffects(collectedCtx);
     });
@@ -219,6 +237,18 @@ export function drawCollectedLaneItems(
             (source) => source.rowIndex === hover.hoveredUserRow
           )
         : undefined;
+
+    // Items not in the hovered/zoomed branch's timeline fade toward grey. The
+    // eased branchDimStrength drives the transition in and back out.
+    const branchDimT =
+      deps.runtime.branchDimRow !== null &&
+      deps.runtime.branchDimStrength > 0 &&
+      !item.sources.some(
+        (source) => source.rowIndex === deps.runtime.branchDimRow
+      )
+        ? deps.runtime.branchDimStrength
+        : 0;
+    const branchDimAlpha = 1 - branchDimT * (1 - BRANCH_DIM_ITEM_ALPHA);
 
     // Selected audio track: the image stays put while the spinning CD slides
     // out to the right from behind it. `detailLayout` drives the reveal.
@@ -282,13 +312,18 @@ export function drawCollectedLaneItems(
       );
     }
 
+    // Audio tracks get a drop shadow so the image reads as lifted off the disc.
+    if (item.contentType === 'audioAsset') {
+      collectedCtx.shadowColor = hexToRgba('#000000', 0.35 * visibilityAlpha);
+      collectedCtx.shadowBlur = 18;
+      collectedCtx.shadowOffsetY = 8;
+    }
+
     if (ctx.isTypeHighlightActive && !typeMatch) {
-      collectedCtx.globalAlpha = getCombinedAlpha(
-        visibilityAlpha,
-        ctx.dimAlpha
-      );
+      collectedCtx.globalAlpha =
+        getCombinedAlpha(visibilityAlpha, ctx.dimAlpha) * branchDimAlpha;
     } else {
-      collectedCtx.globalAlpha = visibilityAlpha;
+      collectedCtx.globalAlpha = visibilityAlpha * branchDimAlpha;
     }
 
     if (galleryActive && galleryImages) {
@@ -329,22 +364,32 @@ export function drawCollectedLaneItems(
       );
     }
 
-    if (!hideDateLabel) {
-      // Items past the today separator sit on the white gradient, so their date
-      // reads black instead of white.
-      p.fill(item.anchorTime > Date.now() ? 0 : 255);
-      p.noStroke();
-      p.textAlign(p.CENTER, p.BOTTOM);
-      if (ctx.isTypeHighlightActive && !typeMatch) {
-        collectedCtx.globalAlpha = getCombinedAlpha(
-          visibilityAlpha,
-          ctx.dimAlpha
-        );
-      } else {
-        collectedCtx.globalAlpha = visibilityAlpha;
-      }
-      p.text(item.dateLabel, imageLeft + width / 2, top - 12);
+    // White border on every item except the selected (focused) one.
+    if (!(ctx.isFocusActive && ctx.isFocusedTarget('collected', index))) {
+      collectedCtx.globalAlpha =
+        (ctx.isTypeHighlightActive && !typeMatch
+          ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
+          : visibilityAlpha) * branchDimAlpha;
+      p.noFill();
+      p.stroke(255);
+      p.strokeWeight(1);
+      p.rect(imageLeft, top, width, height);
       resetCanvasEffects(collectedCtx);
+    }
+
+    if (!hideDateLabel) {
+      // Deferred so dates render above the connectors/nodes. Items past the
+      // today separator sit on the grey gradient, so their date reads black.
+      ctx.dateLabels.push({
+        x: imageLeft + width / 2,
+        y: top - 12,
+        text: item.dateLabel,
+        colour: item.anchorTime > Date.now() ? 0 : 255,
+        alpha:
+          (ctx.isTypeHighlightActive && !typeMatch
+            ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
+            : visibilityAlpha) * branchDimAlpha,
+      });
     }
 
     // Play/pause control on top of the selected audio track's image.
@@ -429,12 +474,11 @@ export function drawCollectedLaneConnectorDots(
         );
       }
       if (ctx.isTypeHighlightActive) {
-        collectedCtx.globalAlpha = getCombinedAlpha(
-          connectorLoadAlpha,
-          ctx.dimAlpha
-        );
+        collectedCtx.globalAlpha =
+          getCombinedAlpha(connectorLoadAlpha, ctx.dimAlpha) *
+          ctx.isolateOtherAlpha;
       } else {
-        collectedCtx.globalAlpha = connectorLoadAlpha;
+        collectedCtx.globalAlpha = connectorLoadAlpha * ctx.isolateOtherAlpha;
       }
       segments.forEach(
         ({
@@ -445,15 +489,17 @@ export function drawCollectedLaneConnectorDots(
           fromItemTarget,
           toItemTarget,
         }) => {
-          drawDot(p, from.x, from.y, branchColour);
-          drawDot(p, to.x, to.y, branchColour);
+          const sFrom = shiftAudioNode(from, ctx);
+          const sTo = shiftAudioNode(to, ctx);
+          drawDot(p, sFrom.x, sFrom.y, branchColour);
+          drawDot(p, sTo.x, sTo.y, branchColour);
           if (ctx.isFocusActive) {
             // The `from` dot connects along the line to the item at `to`; the
             // `to` dot connects back to the item at `from`.
             if (toItemTitle && toItemTarget) {
               ctx.nodeRegions.push({
-                x: from.x,
-                y: from.y,
+                x: sFrom.x,
+                y: sFrom.y,
                 title: toItemTitle,
                 timeline: source.username,
                 colour: source.colour,
@@ -462,8 +508,8 @@ export function drawCollectedLaneConnectorDots(
             }
             if (fromItemTitle && fromItemTarget) {
               ctx.nodeRegions.push({
-                x: to.x,
-                y: to.y,
+                x: sTo.x,
+                y: sTo.y,
                 title: fromItemTitle,
                 timeline: source.username,
                 colour: source.colour,

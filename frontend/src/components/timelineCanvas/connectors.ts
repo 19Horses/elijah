@@ -79,7 +79,13 @@ export function getBranchPoints(
   const dirY = Math.sign(to.y - from.y) || 1;
   const adx = Math.abs(to.x - from.x);
   const ady = Math.abs(to.y - from.y);
-  const diag = Math.max(0, Math.min(adx - BRANCH_HORIZONTAL_STUB, ady));
+  // Reserve a stub of both the vertical and horizontal so the shape is always
+  // vert -> diag -> hor (a leading vertical, then the 45° diagonal, then the
+  // horizontal into the target) rather than dropping the leading straight.
+  const diag = Math.max(
+    0,
+    Math.min(adx - BRANCH_HORIZONTAL_STUB, ady - BRANCH_VERTICAL_STUB)
+  );
   const vStub = ady - diag;
   const elbowY = from.y + dirY * vStub;
   return [
@@ -104,19 +110,34 @@ export function getSteppedBranchPoints(
   const dy = Math.abs(to.y - from.y);
   const vStub = BRANCH_VERTICAL_STUB;
   const hStub = BRANCH_HORIZONTAL_STUB;
-  // Two equal 45° diagonals share the remaining drop, joined by a straight
-  // horizontal run. Needs enough width; otherwise fall back to a single
-  // diagonal (still straight -> diagonal -> straight).
-  const diag = (dy - vStub) / 2;
-  const middle = dx - 2 * diag - hStub;
-  if (diag <= 0 || middle <= 0) {
-    return getBranchPoints(from, to);
+
+  if (dy >= dx) {
+    // Vertical-dominant (e.g. crossing the main line): the straights alternate
+    // hor -> diag -> vert -> diag -> hor, so both ends are horizontal stubs.
+    const diag = (dx - 2 * hStub) / 2;
+    const middle = dy - 2 * diag;
+    if (diag >= 0 && middle >= 0) {
+      const p1 = { x: from.x + dirX * hStub, y: from.y };
+      const p2 = { x: p1.x + dirX * diag, y: p1.y + dirY * diag };
+      const p3 = { x: p2.x, y: p2.y + dirY * middle };
+      const p4 = { x: p3.x + dirX * diag, y: p3.y + dirY * diag };
+      return [{ x: from.x, y: from.y }, p1, p2, p3, p4, { x: to.x, y: to.y }];
+    }
+  } else {
+    // Horizontal-dominant: vert -> diag -> hor -> diag -> vert, so both ends are
+    // vertical stubs.
+    const diag = (dy - 2 * vStub) / 2;
+    const middle = dx - 2 * diag;
+    if (diag >= 0 && middle >= 0) {
+      const p1 = { x: from.x, y: from.y + dirY * vStub };
+      const p2 = { x: p1.x + dirX * diag, y: p1.y + dirY * diag };
+      const p3 = { x: p2.x + dirX * middle, y: p2.y };
+      const p4 = { x: p3.x + dirX * diag, y: p3.y + dirY * diag };
+      return [{ x: from.x, y: from.y }, p1, p2, p3, p4, { x: to.x, y: to.y }];
+    }
   }
-  const p1 = { x: from.x, y: from.y + dirY * vStub };
-  const p2 = { x: p1.x + dirX * diag, y: p1.y + dirY * diag };
-  const p3 = { x: p2.x + dirX * middle, y: p2.y };
-  const p4 = { x: p3.x + dirX * diag, y: p3.y + dirY * diag };
-  return [{ x: from.x, y: from.y }, p1, p2, p3, p4, { x: to.x, y: to.y }];
+
+  return getBranchPoints(from, to);
 }
 
 export function distanceToSegment(

@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import Card from '../components/Card';
 import SignUpForm from '../components/SignUpForm';
+import { randomPickerColour } from '../constants/pickerColors';
 import {
   applySelectionColour,
-  DEFAULT_COLOUR,
   getStoredColour,
   storeColour,
 } from '../services/userColor';
@@ -16,26 +16,15 @@ const CARD_FADE_MS = 500;
 function Landing() {
   const navigate = useNavigate();
   const [showForm, setShowForm] = useState(false);
-  const [color, setColor] = useState(() => getStoredColour() ?? DEFAULT_COLOUR);
-  const [vignetteColor, setVignetteColor] = useState(
-    () => getStoredColour() ?? DEFAULT_COLOUR
-  );
-
-  const handleColorChange = (nextColor: string) => {
-    setColor(nextColor);
-    setVignetteColor(nextColor);
-    storeColour(nextColor);
-    applySelectionColour(nextColor);
-  };
-
-  const handleColorHover = (nextColor: string) => {
-    setVignetteColor(nextColor);
-  };
-
-  const handleColorHoverEnd = () => {
-    setVignetteColor(color);
-  };
+  // Returning users keep their stored colour; new users get a random one from
+  // the palette (the colour picker has been removed).
+  const [color] = useState(() => getStoredColour() ?? randomPickerColour());
   const [exitPhase, setExitPhase] = useState<'none' | 'form' | 'card'>('none');
+
+  useEffect(() => {
+    storeColour(color);
+    applySelectionColour(color);
+  }, [color]);
 
   useEffect(() => {
     if (exitPhase === 'form') {
@@ -68,7 +57,7 @@ function Landing() {
     >
       <div
         className="landing__vignette"
-        style={{ backgroundColor: vignetteColor }}
+        style={{ backgroundColor: color }}
         aria-hidden="true"
       />
       <div className="landing__stage">
@@ -79,9 +68,6 @@ function Landing() {
         <SignUpForm
           visible={showForm}
           color={color}
-          onColorChange={handleColorChange}
-          onColorHover={handleColorHover}
-          onColorHoverEnd={handleColorHoverEnd}
           onClose={() => setShowForm(false)}
           onSuccess={handleSuccess}
         />

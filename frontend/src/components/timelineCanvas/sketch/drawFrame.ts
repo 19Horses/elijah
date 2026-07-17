@@ -4,6 +4,7 @@ import {
   getTypeDimAlpha,
   hexToRgba,
   mixHex,
+  resetCanvasEffects,
 } from '../canvasEffects';
 import {
   BRANCH_DIM_LERP,
@@ -18,9 +19,15 @@ import {
   DOT_RADIUS,
   MAIN_CONNECTOR_DIM_ALPHA,
   MAIN_GLOW_COLOUR,
+  MAIN_LINE_Y,
   MAIN_USERNAME,
+  NODE_GROW_LERP,
+  NODE_HOVER_GROW,
+  DATE_FONT_SIZE,
+  TODAY_GRADIENT_COLOUR,
   TODAY_GRADIENT_HALF_PX,
 } from '../constants';
+import { drawDot } from '../connectors';
 import { screenToWorld } from '../geometry';
 import { drawCollectedSourcesLabel, drawUserLabel } from '../labels';
 import {
@@ -28,7 +35,12 @@ import {
   syncInteractionLock,
   updateHighlightFade,
 } from '../timelineRuntime';
-import type { NodeHoverRegion, TimelineSketchDeps } from '../types';
+import type {
+  AudioPlayerState,
+  ContentBounds,
+  NodeHoverRegion,
+  TimelineSketchDeps,
+} from '../types';
 import type { BoundsContext } from './bounds';
 import type { GalleryController } from './galleryController';
 import {
@@ -44,6 +56,7 @@ import {
   drawMainLaneConnectors,
   drawMainLaneItems,
   drawMainTimelineGlow,
+  type DateLabel,
   type MainLaneDrawContext,
 } from './drawMainLane';
 import type { ViewContext } from './view';
@@ -61,6 +74,76 @@ export function createDrawFrameHandler(
   const { runtime } = deps;
   const { isFocusedTarget, getDetailDrawBounds } =
     createMainLaneDrawHelpers(deps);
+
+  // audioUrl → the item that owns it, so the mini player can be labelled and
+  // suppressed while that item is the focused one.
+  const audioMeta = new Map<
+    string,
+    { title: string; imageUrl: string | null; lane: 'main' | 'collected'; index: number }
+  >();
+  deps.processed.forEach((item, index) => {
+    if (item.audioUrl) {
+      audioMeta.set(item.audioUrl, {
+        title: item.title,
+        imageUrl: item.imageUrl,
+        lane: 'main',
+        index,
+      });
+    }
+  });
+  deps.processedCollected.forEach((item, index) => {
+    if (item.audioUrl) {
+      audioMeta.set(item.audioUrl, {
+        title: item.title,
+        imageUrl: item.imageUrl,
+        lane: 'collected',
+        index,
+      });
+    }
+  });
+  // Last reported mini-player key, so the ref only fires when it changes.
+  let lastAudioKey = '';
+
+  // The logged-in viewer's own branch row, so hovering the user card can
+  // highlight it exactly like hovering the branch on the canvas.
+  let ownBranchRow = -1;
+  if (deps.currentUsername) {
+    for (const item of deps.processedCollected) {
+      const source = item.sources.find(
+        (s) => s.username === deps.currentUsername
+      );
+      if (source) {
+        ownBranchRow = source.rowIndex;
+        break;
+      }
+    }
+  }
+
+  const reportAudioState = (isFocusActive: boolean) => {
+    const current = deps.audio.getCurrent();
+    let state: AudioPlayerState | null = null;
+    if (current) {
+      const meta = audioMeta.get(current.src);
+      const focusedOnIt =
+        isFocusActive &&
+        meta !== undefined &&
+        runtime.focusTarget?.lane === meta.lane &&
+        runtime.focusTarget.index === meta.index;
+      if (meta && !focusedOnIt) {
+        state = {
+          src: current.src,
+          title: meta.title,
+          imageUrl: meta.imageUrl,
+          playing: current.playing,
+        };
+      }
+    }
+    const key = state ? `${state.src}|${state.playing}` : 'null';
+    if (key !== lastAudioKey) {
+      lastAudioKey = key;
+      deps.refs.onAudioStateChangeRef.current?.(state);
+    }
+  };
 
   // A gradient marks "now": the background eases from its normal colour to
   // white across the future. A tight crossover is centred on the today line (so
@@ -86,8 +169,8 @@ export function createDrawFrameHandler(
     const crossover = span > 0 ? Math.min(0.999, half / span) : 0.999;
     const gradient = ctx.createLinearGradient(start, 0, p.width, 0);
     gradient.addColorStop(0, hexToRgba(deps.backgroundColour, 0));
-    gradient.addColorStop(crossover, hexToRgba('#ffffff', 0.5));
-    gradient.addColorStop(1, hexToRgba('#ffffff', 1));
+    gradient.addColorStop(crossover, hexToRgba(TODAY_GRADIENT_COLOUR, 0.2));
+    gradient.addColorStop(1, hexToRgba(TODAY_GRADIENT_COLOUR, 1));
 
     const fillLeft = Math.max(0, start);
     ctx.save();
@@ -152,18 +235,51 @@ export function createDrawFrameHandler(
       runtime.focusTarget !== null && !runtime.viewUnfocusing;
     const isDetailLayoutActive = runtime.detailPhase !== 'none';
     const otherContentAlpha = 1 - runtime.focusContentFade;
+
+    // Branch isolation: straighten the viewer's own branch onto the main line
+    // and fade everything else out, eased by `isolate` (0-1).
+    const isolateRow = runtime.branchIsolateRow;
+    const isolate = runtime.branchIsolate;
+    const isolateActive = isolate > LOAD_ALPHA_SNAP && isolateRow !== null;
+    const isIsolatedItem = (index: number) =>
+      isolateRow !== null &&
+      (deps.processedCollected[index]?.sources.some(
+        (s) => s.rowIndex === isolateRow
+      ) ??
+        false);
+    const isolateOtherAlpha = isolateActive ? 1 - isolate : 1;
+
     const contentAlphaFor = (
       lane: 'main' | 'collected',
       index: number,
       base = 1
     ) => {
-      if (
-        runtime.focusContentFade <= LOAD_ALPHA_SNAP ||
-        isFocusedTarget(lane, index)
-      ) {
-        return base;
+      let alpha = base;
+      // Selecting an item no longer fades the others out — they stay visible.
+      // Other collectors' items still fade away while isolating a branch.
+      if (isolateActive && lane === 'collected' && !isIsolatedItem(index)) {
+        alpha *= 1 - isolate;
       }
-      return base * otherContentAlpha;
+      return alpha;
+    };
+
+    // While isolating, a collected item in the branch eases from its normal
+    // position onto the main line (its straightened position).
+    const getDetailDrawBoundsIso = (
+      lane: 'main' | 'collected',
+      index: number,
+      itemBounds: ContentBounds
+    ): ContentBounds => {
+      const base = getDetailDrawBounds(lane, index, itemBounds);
+      if (isolateActive && lane === 'collected' && isIsolatedItem(index)) {
+        const straightTop = MAIN_LINE_Y - base.height / 2;
+        return {
+          ...base,
+          top: base.top + (straightTop - base.top) * isolate,
+          centerY: base.centerY + (MAIN_LINE_Y - base.centerY) * isolate,
+        };
+      }
+      return base;
     };
 
     // Focusing an item dated after today inverts the view to a white
@@ -182,6 +298,7 @@ export function createDrawFrameHandler(
     p.translate(-runtime.cameraX, -runtime.cameraY);
 
     const bounds = boundsCtx.getAllBounds();
+    const collectedBounds = boundsCtx.getCollectedBounds();
     const lineWorldX = boundsCtx.getNowWorldX();
     const mouseWorld = screenToWorld(
       p.mouseX,
@@ -191,16 +308,40 @@ export function createDrawFrameHandler(
       runtime.zoom
     );
 
+    // Hover effects are suppressed while focused or isolating.
+    const hoverSuppressed = isFocusActive || isolateActive;
     const mainHover = computeMainLaneHover(
       deps,
       bounds,
       mouseWorld,
-      isFocusActive
+      hoverSuppressed
     );
 
     // Rebuilt each frame and shared with the input handler for click-to-focus.
     const nodeRegions: NodeHoverRegion[] = [];
     runtime.nodeRegions = nodeRegions;
+
+    // Date labels are collected during the item pass and drawn last so they sit
+    // above the connectors and nodes.
+    const dateLabels: DateLabel[] = [];
+
+    // A focused audio item reveals its CD to the right; slide any branch node on
+    // that item's right edge out to the CD's right edge (radius * 1.1 at full
+    // reveal, matching drawAudioDisc).
+    let audioNodeX: number | null = null;
+    let audioNodeShift = 0;
+    if (
+      isFocusActive &&
+      runtime.focusTarget?.lane === 'collected' &&
+      deps.processedCollected[runtime.focusTarget.index]?.contentType ===
+        'audioAsset'
+    ) {
+      const focusBounds = collectedBounds[runtime.focusTarget.index];
+      if (focusBounds) {
+        audioNodeX = focusBounds.right;
+        audioNodeShift = focusBounds.height * 0.45 * 1.1 * runtime.detailLayout;
+      }
+    }
 
     const drawCtx: MainLaneDrawContext = {
       bounds,
@@ -218,8 +359,12 @@ export function createDrawFrameHandler(
       getMainConnectorLoadAlpha,
       getCollectedConnectorLoadAlpha,
       isFocusedTarget,
-      getDetailDrawBounds,
+      getDetailDrawBounds: getDetailDrawBoundsIso,
       contentAlphaFor,
+      isolateOtherAlpha,
+      audioNodeX,
+      audioNodeShift,
+      dateLabels,
       // Grey only the main connectors the active branch detours below; the rest
       // of the main line (before, after, and skipped gaps) stays lit.
       mainConnectorTravelAlpha: (connectorIndex: number) => {
@@ -251,8 +396,6 @@ export function createDrawFrameHandler(
 
     drawMainLaneItems(p, deps, loadedImages, drawCtx, mainHover, cdImage, gallery);
 
-    const collectedBounds = boundsCtx.getCollectedBounds();
-
     if (runtime.focusTarget && runtime.detailLayout > 0) {
       const { lane, index } = runtime.focusTarget;
       const laneBounds =
@@ -273,8 +416,22 @@ export function createDrawFrameHandler(
       collectedBounds,
       bounds,
       mouseWorld,
-      isFocusActive
+      hoverSuppressed
     );
+
+    // Hovering the user card behaves like hovering the viewer's own branch on
+    // the canvas: only when nothing else on the canvas is already hovered.
+    if (
+      deps.refs.hoverOwnBranchRef.current === true &&
+      ownBranchRow >= 0 &&
+      !isFocusActive &&
+      !isolateActive &&
+      runtime.focusedBranchRow === null &&
+      collectedHover.hoveredCollected === -1 &&
+      collectedHover.hoveredUserRow === null
+    ) {
+      collectedHover.hoveredUserRow = ownBranchRow;
+    }
 
     // Ease the branch grey-out: 1 while a branch is hovered — or zoomed into
     // via a click — back to 0 on leave, keeping the active row's colour until
@@ -300,6 +457,21 @@ export function createDrawFrameHandler(
       runtime.branchDimRow = null;
     } else if (runtime.branchDimStrength > 1 - HIGHLIGHT_FADE_SNAP) {
       runtime.branchDimStrength = 1;
+    }
+
+    // Ease the branch-isolation progress in/out, releasing the row (and the
+    // interaction lock) only once the fade-out has completed.
+    runtime.branchIsolate +=
+      ((runtime.branchIsolateActive ? 1 : 0) - runtime.branchIsolate) *
+      BRANCH_DIM_LERP;
+    if (runtime.branchIsolate < HIGHLIGHT_FADE_SNAP) {
+      runtime.branchIsolate = 0;
+      if (!runtime.branchIsolateActive && runtime.branchIsolateRow !== null) {
+        runtime.branchIsolateRow = null;
+        syncInteractionLock(deps);
+      }
+    } else if (runtime.branchIsolate > 1 - HIGHLIGHT_FADE_SNAP) {
+      runtime.branchIsolate = 1;
     }
 
     drawCollectedLaneItems(
@@ -336,6 +508,54 @@ export function createDrawFrameHandler(
       collectedHover
     );
     drawMainTimelineGlow(p, deps, boundsCtx, bounds, collectedBounds);
+
+    // Straight connectors joining the isolated branch's items into one line.
+    if (isolateActive && isolateRow !== null) {
+      const isolatedOrdered = deps.processedCollected
+        .map((_, index) => index)
+        .filter((index) => isIsolatedItem(index))
+        .map((index) => ({
+          rect: getDetailDrawBoundsIso(
+            'collected',
+            index,
+            collectedBounds[index]
+          ),
+        }))
+        .sort((a, b) => a.rect.left - b.rect.left);
+
+      const ctx2 = p.drawingContext as CanvasRenderingContext2D;
+      ctx2.globalAlpha = isolate;
+      ctx2.setLineDash([]);
+      p.stroke(255);
+      p.strokeWeight(1);
+      p.noFill();
+      for (let k = 0; k < isolatedOrdered.length - 1; k++) {
+        const a = isolatedOrdered[k].rect;
+        const b = isolatedOrdered[k + 1].rect;
+        p.line(a.right, a.centerY, b.left, b.centerY);
+      }
+      for (const { rect } of isolatedOrdered) {
+        drawDot(p, rect.left, rect.centerY, '#ffffff');
+        drawDot(p, rect.right, rect.centerY, '#ffffff');
+      }
+      resetCanvasEffects(ctx2);
+    }
+
+    // Date labels drawn last (still inside the world transform) so they sit
+    // above the connectors and nodes.
+    if (dateLabels.length > 0) {
+      const dateCtx = p.drawingContext as CanvasRenderingContext2D;
+      p.noStroke();
+      p.textSize(DATE_FONT_SIZE);
+      p.textAlign(p.CENTER, p.BOTTOM);
+      for (const label of dateLabels) {
+        dateCtx.globalAlpha = label.alpha;
+        p.fill(label.colour);
+        p.text(label.text, label.x, label.y);
+      }
+      resetCanvasEffects(dateCtx);
+      p.textSize(12);
+    }
 
     p.pop();
 
@@ -385,10 +605,10 @@ export function createDrawFrameHandler(
       );
     }
 
-    // While an item is focused, hovering one of its connector dots labels the
-    // node with the timeline it belongs to and the item it links to at the far
-    // end of the line.
-    if (isFocusActive && nodeRegions.length > 0) {
+    // While an item is focused, hovering one of its connector dots grows the
+    // dot and labels the node with the timeline it belongs to and the item it
+    // links to at the far end of the line.
+    if (isFocusActive) {
       let hoveredNode: NodeHoverRegion | null = null;
       let bestDist = DOT_RADIUS * runtime.zoom + 8;
       for (const region of nodeRegions) {
@@ -400,14 +620,37 @@ export function createDrawFrameHandler(
           hoveredNode = region;
         }
       }
+
+      // Remember the hovered node so the grown dot keeps drawing (shrinking)
+      // after the cursor leaves it.
+      if (hoveredNode) {
+        runtime.hoverNodeX = hoveredNode.x;
+        runtime.hoverNodeY = hoveredNode.y;
+        runtime.hoverNodeColour = hoveredNode.colour;
+      }
+      runtime.hoverNodeScale +=
+        ((hoveredNode ? 1 : 0) - runtime.hoverNodeScale) * NODE_GROW_LERP;
+
+      // Redraw the node larger, eased by the grow. At scale 0 it matches the
+      // normal dot underneath, so the grow/shrink reads seamlessly.
+      if (runtime.hoverNodeScale > LOAD_ALPHA_SNAP) {
+        const sx = (runtime.hoverNodeX - runtime.cameraX) * runtime.zoom;
+        const sy = (runtime.hoverNodeY - runtime.cameraY) * runtime.zoom;
+        const diameter =
+          DOT_RADIUS *
+          2 *
+          runtime.zoom *
+          (1 + runtime.hoverNodeScale * NODE_HOVER_GROW);
+        p.noStroke();
+        p.fill(runtime.hoverNodeColour);
+        p.circle(sx, sy, diameter);
+        p.fill(0);
+        p.circle(sx, sy, diameter / 2);
+      }
+
       if (hoveredNode) {
         const sx = (hoveredNode.x - runtime.cameraX) * runtime.zoom;
         const sy = (hoveredNode.y - runtime.cameraY) * runtime.zoom;
-        // Ring the hovered node so it reads as the source of the label.
-        p.noFill();
-        p.stroke(hoveredNode.colour);
-        p.strokeWeight(1.5);
-        p.circle(sx, sy, DOT_RADIUS * 2 * runtime.zoom + 8);
         drawUserLabel(
           p,
           hoveredNode.timeline,
@@ -417,6 +660,8 @@ export function createDrawFrameHandler(
           hoveredNode.title
         );
       }
+    } else if (runtime.hoverNodeScale !== 0) {
+      runtime.hoverNodeScale = 0;
     }
 
     const audioButton = deps.audio.getButtonRegion();
@@ -447,5 +692,7 @@ export function createDrawFrameHandler(
     } else {
       p.cursor('grab');
     }
+
+    reportAudioState(isFocusActive);
   };
 }

@@ -10,6 +10,12 @@ export type TimelineCanvasProps = {
   colour?: string | null;
   currentUsername?: string | null;
   highlightedType?: ContentType | null;
+  // When true (e.g. the user card is hovered), the view highlights the logged-in
+  // viewer's own branch as though it were hovered on the canvas.
+  hoverOwnBranch?: boolean;
+  // Populated by the canvas with a toggle for isolating the viewer's own branch,
+  // so an outside control (the user card) can invoke it.
+  isolateControlRef?: MutableRefObject<(() => void) | undefined>;
   onFocusFadeChange?: (fade: number) => void;
   onContentFocus?: (slug: string) => void;
   onContentUnfocus?: () => void;
@@ -29,6 +35,15 @@ export type DetailImageRect = {
 export type BranchFocusInfo = {
   username: string;
   colour: string;
+};
+
+// The persistent mini-player state: the loaded audio track's metadata, shown
+// when a track is active and its own item isn't focused. Null hides the player.
+export type AudioPlayerState = {
+  src: string;
+  title: string;
+  imageUrl: string | null;
+  playing: boolean;
 };
 
 export type CollectedSource = {
@@ -147,6 +162,12 @@ export type TimelineRuntime = {
   // at full colour while it fades.
   branchDimStrength: number;
   branchDimRow: number | null;
+  // The collector row isolated into a straight, centred timeline (or null; kept
+  // set until the fade-out finishes), whether isolation is currently engaged
+  // (the ease target), and the eased 0-1 progress for the transition.
+  branchIsolateRow: number | null;
+  branchIsolateActive: boolean;
+  branchIsolate: number;
   loadStartMs: number;
   focusContentFade: number;
   // Whether the currently/last focused item is dated after today, so the detail
@@ -157,6 +178,12 @@ export type TimelineRuntime = {
   // Accumulated rotation (radians) of the focused audio track's CD. Only
   // advances while that track is playing, so it holds still when paused.
   audioDiscAngle: number;
+  // Eased 0-1 grow of the hovered connector node, and the world position and
+  // colour of the node it's drawn at (kept while it shrinks back out).
+  hoverNodeScale: number;
+  hoverNodeX: number;
+  hoverNodeY: number;
+  hoverNodeColour: string;
   // Connector dots drawn on the most recent frame while an item is focused, so
   // the input handler can hit-test them for hover labels and click-to-focus.
   nodeRegions: NodeHoverRegion[];
@@ -164,6 +191,8 @@ export type TimelineRuntime = {
 
 export type TimelineSketchRefs = {
   highlightedTypeRef: RefObject<ContentType | null>;
+  // React → sketch: whether the user card is hovered (highlight own branch).
+  hoverOwnBranchRef: RefObject<boolean>;
   interactionLockedRef: MutableRefObject<boolean>;
   onFocusFadeChangeRef: RefObject<((fade: number) => void) | undefined>;
   onContentFocusRef: RefObject<((slug: string) => void) | undefined>;
@@ -176,8 +205,15 @@ export type TimelineSketchRefs = {
   onBranchFocusRef: RefObject<
     ((info: BranchFocusInfo | null) => void) | undefined
   >;
+  // Sketch → React: reports the mini-player state (or null to hide it).
+  onAudioStateChangeRef: RefObject<
+    ((state: AudioPlayerState | null) => void) | undefined
+  >;
   // React → sketch: cancel button calls this to animate back to default fit.
   resetViewRef: MutableRefObject<(() => void) | undefined>;
+  // React → sketch: user-card click toggles isolating the viewer's own branch
+  // into a straight, centred timeline.
+  isolateOwnBranchRef: MutableRefObject<(() => void) | undefined>;
 };
 
 export type TimelineSketchDeps = {
