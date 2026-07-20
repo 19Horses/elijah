@@ -25,10 +25,20 @@ export function mixHex(from: string, to: string, t: number): string {
   if (a.length !== 6 || b.length !== 6) {
     return from;
   }
-  const lerp = (start: number, end: number) => Math.round(start + (end - start) * t);
-  const r = lerp(Number.parseInt(a.slice(0, 2), 16), Number.parseInt(b.slice(0, 2), 16));
-  const g = lerp(Number.parseInt(a.slice(2, 4), 16), Number.parseInt(b.slice(2, 4), 16));
-  const c = lerp(Number.parseInt(a.slice(4, 6), 16), Number.parseInt(b.slice(4, 6), 16));
+  const lerp = (start: number, end: number) =>
+    Math.round(start + (end - start) * t);
+  const r = lerp(
+    Number.parseInt(a.slice(0, 2), 16),
+    Number.parseInt(b.slice(0, 2), 16)
+  );
+  const g = lerp(
+    Number.parseInt(a.slice(2, 4), 16),
+    Number.parseInt(b.slice(2, 4), 16)
+  );
+  const c = lerp(
+    Number.parseInt(a.slice(4, 6), 16),
+    Number.parseInt(b.slice(4, 6), 16)
+  );
   return `rgb(${r}, ${g}, ${c})`;
 }
 

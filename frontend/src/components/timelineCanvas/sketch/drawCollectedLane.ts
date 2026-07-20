@@ -114,7 +114,9 @@ export function computeCollectedLaneHover(
           const points = stepped
             ? getSteppedBranchPoints(from, to)
             : getBranchPoints(from, to);
-          return distanceToPolyline(points, mouseWorld) <= CONNECTOR_HOVER_THRESHOLD;
+          return (
+            distanceToPolyline(points, mouseWorld) <= CONNECTOR_HOVER_THRESHOLD
+          );
         });
         if (hit) {
           hoveredCollected = index;

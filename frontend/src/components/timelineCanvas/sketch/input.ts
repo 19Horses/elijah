@@ -181,7 +181,7 @@ export function createInputHandlers(
       event.preventDefault();
       const deltaX = event.deltaX ?? 0;
       const deltaY =
-        (event.deltaY ?? (event as WheelEvent & { delta: number }).delta) ?? 0;
+        event.deltaY ?? (event as WheelEvent & { delta: number }).delta ?? 0;
       view.scrollView(deltaX, deltaY);
     }
     return false;

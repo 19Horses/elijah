@@ -361,7 +361,10 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     );
     if (chainFrom) {
       // Tail rejoin into the next main item (only if this is the chain's tail).
-      if (mainBounds[gapIndex + 1] && !hasChainSuccessor(index, source.rowIndex)) {
+      if (
+        mainBounds[gapIndex + 1] &&
+        !hasChainSuccessor(index, source.rowIndex)
+      ) {
         return gapIndex + 1;
       }
       return -1;
@@ -426,7 +429,9 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       const mb = mainBounds[mainIndex];
       // Left-to-right by target so the branches fan out without crossing each
       // other (like metro lines leaving a station).
-      list.sort((a, b) => a.targetX - b.targetX || a.sourceIndex - b.sourceIndex);
+      list.sort(
+        (a, b) => a.targetX - b.targetX || a.sourceIndex - b.sourceIndex
+      );
       const n = list.length;
       const center = mb.left + mb.width / 2;
       // Tight, fixed, equal spacing centred on the item. A fixed gap (rather
@@ -512,7 +517,12 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
         if (predecessor >= 0 && collectedBounds[predecessor]) {
           const pb = collectedBounds[predecessor];
           // Chain link: predecessor's right edge -> this item's left edge.
-          add(predecessor, 'right', `chainFrom:${index}:${sourceIndex}`, itemBounds.centerY);
+          add(
+            predecessor,
+            'right',
+            `chainFrom:${index}:${sourceIndex}`,
+            itemBounds.centerY
+          );
           add(index, 'left', `chainTo:${index}:${sourceIndex}`, pb.centerY);
           // Tail rejoin up to the next main item.
           const nextMain = mainBounds[gapIndex + 1];
@@ -702,9 +712,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
   ): ConnectorPoint[] => {
     const ordered = processedCollected
       .map((item, index) => ({ item, index }))
-      .filter(({ item }) =>
-        item.sources.some((s) => s.rowIndex === rowIndex)
-      )
+      .filter(({ item }) => item.sources.some((s) => s.rowIndex === rowIndex))
       .sort((a, b) => a.item.anchorTime - b.item.anchorTime);
 
     const path: ConnectorPoint[] = [];

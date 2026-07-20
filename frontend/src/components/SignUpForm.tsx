@@ -159,10 +159,10 @@ function SignUpForm({ visible, color, onClose, onSuccess }: SignUpFormProps) {
           {isSubmitting
             ? 'Saving…'
             : isCheckingEmail
-              ? 'Checking…'
-              : existingUser
-                ? 'Log in'
-                : 'Continue'}
+            ? 'Checking…'
+            : existingUser
+            ? 'Log in'
+            : 'Continue'}
         </button>
       </div>
     </form>

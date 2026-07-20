@@ -28,9 +28,7 @@ const MEDIA_ASSETS_QUERY = `*[
 
 export async function fetchMediaAssets(): Promise<MediaAsset[]> {
   const collectedIds = await getMyCollectedIds();
-  const response = await fetch(
-    getApiUrl(MEDIA_ASSETS_QUERY, { collectedIds })
-  );
+  const response = await fetch(getApiUrl(MEDIA_ASSETS_QUERY, { collectedIds }));
   if (!response.ok) {
     throw new Error(`Failed to fetch media assets: ${response.status}`);
   }

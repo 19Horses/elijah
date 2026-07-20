@@ -148,7 +148,10 @@ export function computeMainLaneHover(
 function polylineLength(points: ConnectorPoint[]): number {
   let length = 0;
   for (let i = 0; i < points.length - 1; i++) {
-    length += Math.hypot(points[i + 1].x - points[i].x, points[i + 1].y - points[i].y);
+    length += Math.hypot(
+      points[i + 1].x - points[i].x,
+      points[i + 1].y - points[i].y
+    );
   }
   return length;
 }
@@ -307,7 +310,11 @@ export function drawMainLaneConnectors(
 
     // Focused item's endpoint follows its image to the detail position.
     const fromBounds = ctx.getDetailDrawBounds('main', index, bounds[index]);
-    const toBounds = ctx.getDetailDrawBounds('main', index + 1, bounds[index + 1]);
+    const toBounds = ctx.getDetailDrawBounds(
+      'main',
+      index + 1,
+      bounds[index + 1]
+    );
     drawMainConnector(
       p,
       { x: fromBounds.right, y: fromBounds.centerY },
@@ -463,7 +470,15 @@ export function drawMainLaneItems(
     }
 
     if (item.isPrivate) {
-      drawPrivateOverlay(p, mainCtx, imageLeft, top, width, height, visibilityAlpha);
+      drawPrivateOverlay(
+        p,
+        mainCtx,
+        imageLeft,
+        top,
+        width,
+        height,
+        visibilityAlpha
+      );
     }
 
     // White border on every item except the selected (focused) one.
@@ -568,7 +583,11 @@ export function drawMainLaneConnectorDots(
       mainCtx.globalAlpha = connectorLoadAlpha * travelAlpha;
     }
     const fromBounds = ctx.getDetailDrawBounds('main', index, bounds[index]);
-    const toBounds = ctx.getDetailDrawBounds('main', index + 1, bounds[index + 1]);
+    const toBounds = ctx.getDetailDrawBounds(
+      'main',
+      index + 1,
+      bounds[index + 1]
+    );
     drawDot(p, fromBounds.right, fromBounds.centerY, '#ffffff');
     drawDot(p, toBounds.left, toBounds.centerY, '#ffffff');
     if (ctx.isFocusActive) {

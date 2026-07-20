@@ -19,7 +19,10 @@ function getPixelatedGraphics(p: p5, img: p5.Image): p5.Graphics | null {
   if (cached) {
     return cached;
   }
-  const scale = Math.min(1, PRIVATE_PIXEL_CELL_PX / Math.max(img.width, img.height));
+  const scale = Math.min(
+    1,
+    PRIVATE_PIXEL_CELL_PX / Math.max(img.width, img.height)
+  );
   const smallW = Math.max(1, Math.round(img.width * scale));
   const smallH = Math.max(1, Math.round(img.height * scale));
   const small = p.createGraphics(smallW, smallH);
@@ -112,7 +115,10 @@ export function galleryFocusWidth(
   if (images.length === 0) {
     return boxWidth;
   }
-  const lower = Math.max(0, Math.min(images.length - 1, Math.floor(displayIndex)));
+  const lower = Math.max(
+    0,
+    Math.min(images.length - 1, Math.floor(displayIndex))
+  );
   const upper = Math.min(images.length - 1, lower + 1);
   const frac = displayIndex - lower;
   const wLower = containedSize(images[lower], boxWidth, boxHeight).w;
@@ -148,7 +154,10 @@ export function drawGalleryStrip(
   }
 
   // Interpolate the scroll position between whole-image offsets.
-  const lower = Math.max(0, Math.min(images.length - 1, Math.floor(displayIndex)));
+  const lower = Math.max(
+    0,
+    Math.min(images.length - 1, Math.floor(displayIndex))
+  );
   const upper = Math.min(images.length - 1, lower + 1);
   const frac = displayIndex - lower;
   const scrollOffset = lefts[lower] + (lefts[upper] - lefts[lower]) * frac;

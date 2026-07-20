@@ -81,7 +81,12 @@ export function createDrawFrameHandler(
   // suppressed while that item is the focused one.
   const audioMeta = new Map<
     string,
-    { title: string; imageUrl: string | null; lane: 'main' | 'collected'; index: number }
+    {
+      title: string;
+      imageUrl: string | null;
+      lane: 'main' | 'collected';
+      index: number;
+    }
   >();
   deps.processed.forEach((item, index) => {
     if (item.audioUrl) {
@@ -286,7 +291,9 @@ export function createDrawFrameHandler(
 
     // Focusing an item dated after today inverts the view to a white
     // background, eased in/out by the focus fade.
-    const bgWhiteMix = runtime.focusedItemIsFuture ? runtime.focusContentFade : 0;
+    const bgWhiteMix = runtime.focusedItemIsFuture
+      ? runtime.focusContentFade
+      : 0;
     p.background(
       bgWhiteMix > 0
         ? mixHex(deps.backgroundColour, '#ffffff', bgWhiteMix)
@@ -396,7 +403,15 @@ export function createDrawFrameHandler(
     deps.audio.setButtonRegion(null);
     gallery.setNavRegions([]);
 
-    drawMainLaneItems(p, deps, loadedImages, drawCtx, mainHover, cdImage, gallery);
+    drawMainLaneItems(
+      p,
+      deps,
+      loadedImages,
+      drawCtx,
+      mainHover,
+      cdImage,
+      gallery
+    );
 
     if (runtime.focusTarget && runtime.detailLayout > 0) {
       const { lane, index } = runtime.focusTarget;
@@ -446,8 +461,8 @@ export function createDrawFrameHandler(
       runtime.focusedBranchRow !== null
         ? runtime.focusedBranchRow
         : branchHovered
-          ? collectedHover.hoveredUserRow
-          : null;
+        ? collectedHover.hoveredUserRow
+        : null;
     if (activeBranchRow !== null) {
       runtime.branchDimRow = activeBranchRow;
     }
@@ -604,7 +619,9 @@ export function createDrawFrameHandler(
       mainHover.mainHighlighted
     ) {
       const hoveredMainItem =
-        mainHover.hoveredMain !== -1 ? deps.processed[mainHover.hoveredMain] : undefined;
+        mainHover.hoveredMain !== -1
+          ? deps.processed[mainHover.hoveredMain]
+          : undefined;
       if (hoveredMainItem?.isPrivate) {
         drawUserLabel(
           p,
