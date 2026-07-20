@@ -9,8 +9,7 @@ type SanityResponse<T> = {
 };
 
 const MEDIA_ASSETS_QUERY = `*[
-  _type in ["imageAsset", "audioAsset"] &&
-  (public != false || _id in $collectedIds)
+  _type in ["imageAsset", "audioAsset"]
 ] | order(_createdAt desc) {
   _id,
   _type,
@@ -19,6 +18,7 @@ const MEDIA_ASSETS_QUERY = `*[
   description,
   "created_at": _createdAt,
   public,
+  "isPrivate": public == false && !(_id in $collectedIds),
   ...coalesce(images[isCover == true][0], images[0], image){
     "imageUrl": asset->url,
     "imageDimensions": asset->metadata.dimensions{width, height, aspectRatio}

@@ -47,6 +47,7 @@ export const CONTENT_PROJECTION = `_id,
   "created_at": _createdAt,
   "slug": slug.current,
   public,
+  "isPrivate": public == false && !(_id in $collectedIds),
   _type == "imageAsset" => {
     title,
     description,
@@ -77,15 +78,10 @@ export const CONTENT_PROJECTION = `_id,
     "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
   }`;
 
-// An asset is visible if it's public, or the current user has collected it.
-const VISIBLE_TO_ME = `(public != false || _id in $collectedIds)`;
-
 const MAIN_TIMELINE_QUERY = `{
   "colour": *[_type == "mainTimeline"][0].colour,
   "items": (
-  coalesce(*[_type == "mainTimeline"][0].items, [])[
-    defined(content) && (content->public != false || content->_id in $collectedIds)
-  ] {
+  coalesce(*[_type == "mainTimeline"][0].items, [])[defined(content)] {
     unlockTime,
     expiryTime,
     ...content-> {
@@ -93,7 +89,7 @@ const MAIN_TIMELINE_QUERY = `{
     }
   }
 ) + (
-  *[_type == "event" && ${VISIBLE_TO_ME}] {
+  *[_type == "event"] {
     "unlockTime": null,
     "expiryTime": null,
     _id,
@@ -106,6 +102,7 @@ const MAIN_TIMELINE_QUERY = `{
     link,
     image,
     public,
+    "isPrivate": public == false && !(_id in $collectedIds),
     "imageUrl": image.asset->url,
     "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
   }

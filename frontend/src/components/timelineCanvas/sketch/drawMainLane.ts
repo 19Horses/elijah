@@ -2,6 +2,7 @@ import type p5 from 'p5';
 import { getContentTypeColour } from '../../../constants/contentTypes';
 import {
   drawDimOverlay,
+  drawPrivateOverlay,
   getCombinedAlpha,
   hexToRgba,
   matchesHighlightedType,
@@ -18,6 +19,7 @@ import {
   MAIN_GLOW_TRAVEL_BLUR,
   MAIN_GLOW_TRAVEL_MS,
   MAIN_USERNAME,
+  PRIVATE_IMAGE_EFFECT,
   TYPE_HIGHLIGHT_BLUR,
 } from '../constants';
 import {
@@ -427,7 +429,12 @@ export function drawMainLaneItems(
     } else if (img) {
       // Contain (not fill) so the full image shows without cropping when its
       // true aspect ratio differs from the slot's.
-      drawContainedImage(p, img, { left: imageLeft, top, width, height });
+      drawContainedImage(
+        p,
+        img,
+        { left: imageLeft, top, width, height },
+        item.isPrivate ? PRIVATE_IMAGE_EFFECT : undefined
+      );
     } else {
       p.fill(245);
       p.stroke(220);
@@ -453,6 +460,10 @@ export function drawMainLaneItems(
         height,
         ctx.typeHighlightStrength * visibilityAlpha
       );
+    }
+
+    if (item.isPrivate) {
+      drawPrivateOverlay(p, mainCtx, imageLeft, top, width, height, visibilityAlpha);
     }
 
     // White border on every item except the selected (focused) one.

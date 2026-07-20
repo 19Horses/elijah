@@ -1,6 +1,7 @@
 import type p5 from 'p5';
 import {
   LOAD_INITIAL_DELAY_MS,
+  PRIVATE_OVERLAY_ALPHA,
   TYPE_DIM_ALPHA,
   TYPE_DIM_OVERLAY,
 } from './constants';
@@ -81,6 +82,22 @@ export function drawDimOverlay(
   p.fill(255);
   p.noStroke();
   ctx.globalAlpha = TYPE_DIM_OVERLAY * strength;
+  p.rect(left, top, width, height);
+  resetCanvasEffects(ctx);
+}
+
+export function drawPrivateOverlay(
+  p: p5,
+  ctx: CanvasRenderingContext2D,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  alpha = 1
+): void {
+  p.fill(255);
+  p.noStroke();
+  ctx.globalAlpha = PRIVATE_OVERLAY_ALPHA * alpha;
   p.rect(left, top, width, height);
   resetCanvasEffects(ctx);
 }

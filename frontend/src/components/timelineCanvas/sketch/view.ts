@@ -24,6 +24,7 @@ import { hitTest } from '../geometry';
 import {
   getFocusedSlug,
   isFutureDatedItem,
+  isPrivateTarget,
   isViewInteractionLocked,
   notifyFocusFade,
   resetCanvasFocus,
@@ -613,6 +614,9 @@ export function createViewContext(
   };
 
   const focusItem = (target: FocusTarget) => {
+    if (isPrivateTarget(deps, target)) {
+      return;
+    }
     clearBranchFocus();
     runtime.snapping = false;
     runtime.snapStepReadyMs = 0;

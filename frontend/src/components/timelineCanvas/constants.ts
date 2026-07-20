@@ -58,6 +58,16 @@ export const BRANCH_DIM_LERP = 0.16;
 export const BRANCH_DIM_ITEM_ALPHA = 0.3;
 export const TYPE_DIM_ALPHA = 0.4;
 export const TYPE_DIM_OVERLAY = 0.3;
+// Fade applied over private items the viewer hasn't collected.
+export const PRIVATE_OVERLAY_ALPHA = 0.55;
+export const PRIVATE_BADGE_TEXT = 'Private content';
+export const PRIVATE_BADGE_COLOUR = '#3f3f46';
+// Which distortion private images render with — swap to compare.
+export const PRIVATE_IMAGE_EFFECT: 'blur' | 'pixelate' = 'blur';
+export const PRIVATE_BLUR_PX = 10;
+// Long edge (px) of the low-res buffer private images are downsampled to
+// before being scaled back up with smoothing off, for the pixelate effect.
+export const PRIVATE_PIXEL_CELL_PX = 14;
 export const TYPE_HIGHLIGHT_BLUR = 22;
 export const FOCUS_VIEWPORT_FILL = 0.52;
 export const VIEW_ANIMATION_LERP = 0.12;

@@ -23,6 +23,8 @@ import {
   MAIN_USERNAME,
   NODE_GROW_LERP,
   NODE_HOVER_GROW,
+  PRIVATE_BADGE_COLOUR,
+  PRIVATE_BADGE_TEXT,
   DATE_FONT_SIZE,
   TODAY_GRADIENT_COLOUR,
   TODAY_GRADIENT_HALF_PX,
@@ -571,7 +573,15 @@ export function createDrawFrameHandler(
             )
           : undefined;
 
-      if (!collectedHover.hoveredCollectedIsImage && hoveredUserSource) {
+      if (collectedHover.hoveredCollectedIsImage && hovered.isPrivate) {
+        drawUserLabel(
+          p,
+          PRIVATE_BADGE_TEXT,
+          PRIVATE_BADGE_COLOUR,
+          p.mouseX,
+          p.mouseY
+        );
+      } else if (!collectedHover.hoveredCollectedIsImage && hoveredUserSource) {
         // Hovering a single user's line: show just that user.
         drawUserLabel(
           p,
@@ -593,16 +603,26 @@ export function createDrawFrameHandler(
       runtime.focusContentFade <= LOAD_ALPHA_SNAP &&
       mainHover.mainHighlighted
     ) {
-      drawUserLabel(
-        p,
-        MAIN_USERNAME,
-        MAIN_GLOW_COLOUR,
-        p.mouseX,
-        p.mouseY,
-        mainHover.hoveredMain !== -1
-          ? deps.processed[mainHover.hoveredMain].title
-          : undefined
-      );
+      const hoveredMainItem =
+        mainHover.hoveredMain !== -1 ? deps.processed[mainHover.hoveredMain] : undefined;
+      if (hoveredMainItem?.isPrivate) {
+        drawUserLabel(
+          p,
+          PRIVATE_BADGE_TEXT,
+          PRIVATE_BADGE_COLOUR,
+          p.mouseX,
+          p.mouseY
+        );
+      } else {
+        drawUserLabel(
+          p,
+          MAIN_USERNAME,
+          MAIN_GLOW_COLOUR,
+          p.mouseX,
+          p.mouseY,
+          hoveredMainItem?.title
+        );
+      }
     }
 
     // While an item is focused, hovering one of its connector dots grows the
@@ -680,7 +700,10 @@ export function createDrawFrameHandler(
       );
 
     const hoveringContent =
-      mainHover.hoveredMain !== -1 || collectedHover.hoveredCollectedIsImage;
+      (mainHover.hoveredMain !== -1 &&
+        !deps.processed[mainHover.hoveredMain]?.isPrivate) ||
+      (collectedHover.hoveredCollectedIsImage &&
+        !deps.processedCollected[collectedHover.hoveredCollected]?.isPrivate);
     if (overAudioButton || overGalleryArrow) {
       p.cursor('pointer');
     } else if (view.isViewInteractionLocked()) {
