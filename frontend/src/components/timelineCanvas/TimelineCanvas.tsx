@@ -42,16 +42,16 @@ function TimelineCanvas({
   const onDetailLayoutStartRef = useRef(onDetailLayoutStart);
   const onDetailImageRectRef = useRef(onDetailImageRect);
   const [branchFocus, setBranchFocus] = useState<BranchFocusInfo | null>(null);
-  const onBranchFocusRef =
-    useRef<((info: BranchFocusInfo | null) => void) | undefined>(setBranchFocus);
+  const onBranchFocusRef = useRef<
+    ((info: BranchFocusInfo | null) => void) | undefined
+  >(setBranchFocus);
   const resetViewRef = useRef<(() => void) | undefined>(undefined);
   const localIsolateRef = useRef<(() => void) | undefined>(undefined);
   const isolateOwnBranchRef = isolateControlRef ?? localIsolateRef;
   const [audioState, setAudioState] = useState<AudioPlayerState | null>(null);
-  const onAudioStateChangeRef =
-    useRef<((state: AudioPlayerState | null) => void) | undefined>(
-      setAudioState
-    );
+  const onAudioStateChangeRef = useRef<
+    ((state: AudioPlayerState | null) => void) | undefined
+  >(setAudioState);
   // Points at the live controller so the mini player can toggle playback.
   const audioRef = useRef<AudioController | null>(null);
 

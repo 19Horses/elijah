@@ -1,9 +1,4 @@
-import {
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { DetailImageRect } from './timelineCanvas/types';
 
 // Height (px) of the fade applied to an overflowing text block's edge.
@@ -12,7 +7,10 @@ const SCROLL_FADE_PX = 42;
 // Builds a mask that fades the top and/or bottom edge to transparent, so
 // overflowing text dissolves into the background on whichever side has more
 // content to scroll to.
-function buildScrollFadeMask(top: boolean, bottom: boolean): string | undefined {
+function buildScrollFadeMask(
+  top: boolean,
+  bottom: boolean
+): string | undefined {
   if (!top && !bottom) {
     return undefined;
   }

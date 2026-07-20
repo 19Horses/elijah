@@ -32,6 +32,7 @@ const COLLECTIONS_QUERY = `*[_type == "collection" && expiresAt > now()] | order
     _type,
     "created_at": _createdAt,
     "slug": slug.current,
+    public,
     _type == "newsletter" => {
       title,
       content,

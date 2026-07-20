@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getApiUrl } from '../sanityIntegration';
 import { getUserCollections } from '../services/collectedContent';
+import { getMyCollectedIds } from '../services/collectItem';
 import { CONTENT_PROJECTION, type MainTimelineItem } from './mainTimeline';
 
 type SanityResponse<T> = {
@@ -30,7 +31,8 @@ export async function fetchContentByIds(
     ${CONTENT_PROJECTION}
   }`;
 
-  const response = await fetch(getApiUrl(query));
+  const collectedIds = await getMyCollectedIds();
+  const response = await fetch(getApiUrl(query, { collectedIds }));
   if (!response.ok) {
     throw new Error(`Failed to fetch collected content: ${response.status}`);
   }

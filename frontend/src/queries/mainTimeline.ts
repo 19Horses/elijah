@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import type { SanityImageSource } from '@sanity/image-url';
 import { getApiUrl, getSanityImageUrl } from '../sanityIntegration';
+import { getMyCollectedIds } from '../services/collectItem';
 import type {
   AudioAsset,
   Event,
@@ -45,6 +46,8 @@ export const CONTENT_PROJECTION = `_id,
   date,
   "created_at": _createdAt,
   "slug": slug.current,
+  public,
+  "isPrivate": public == false && !(_id in $collectedIds),
   _type == "imageAsset" => {
     title,
     description,
@@ -78,7 +81,7 @@ export const CONTENT_PROJECTION = `_id,
 const MAIN_TIMELINE_QUERY = `{
   "colour": *[_type == "mainTimeline"][0].colour,
   "items": (
-  coalesce(*[_type == "mainTimeline"][0].items, [])[] {
+  coalesce(*[_type == "mainTimeline"][0].items, [])[defined(content)] {
     unlockTime,
     expiryTime,
     ...content-> {
@@ -98,6 +101,8 @@ const MAIN_TIMELINE_QUERY = `{
     description,
     link,
     image,
+    public,
+    "isPrivate": public == false && !(_id in $collectedIds),
     "imageUrl": image.asset->url,
     "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
   }
@@ -150,7 +155,10 @@ export function formatMainTimelineNow(date: Date = new Date()): {
 }
 
 export async function fetchMainTimeline(): Promise<MainTimelineData> {
-  const response = await fetch(getApiUrl(MAIN_TIMELINE_QUERY));
+  const collectedIds = await getMyCollectedIds();
+  const response = await fetch(
+    getApiUrl(MAIN_TIMELINE_QUERY, { collectedIds })
+  );
   if (!response.ok) {
     throw new Error(`Failed to fetch main timeline: ${response.status}`);
   }

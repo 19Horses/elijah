@@ -66,6 +66,7 @@ export type ProcessedCollected = {
   sources: CollectedSource[];
   audioUrl: string | null;
   galleryUrls: string[];
+  isPrivate: boolean;
 };
 
 export type ProcessedItem = {
@@ -78,6 +79,7 @@ export type ProcessedItem = {
   aspectRatio: number;
   audioUrl: string | null;
   galleryUrls: string[];
+  isPrivate: boolean;
 };
 
 export type ItemOffset = {

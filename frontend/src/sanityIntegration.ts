@@ -26,8 +26,17 @@ export function getSanityImageUrl(
   return builder.url();
 }
 
-export const getApiUrl = (query: string) =>
-  `${SANITY_URL}/data/query/production?query=${encodeURIComponent(query)}`;
+export const getApiUrl = (
+  query: string,
+  params: Record<string, unknown> = {}
+) => {
+  const url = new URL(`${SANITY_URL}/data/query/production`);
+  url.searchParams.set('query', query);
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(`$${key}`, JSON.stringify(value));
+  }
+  return url.toString();
+};
 
 type ImageOptions = {
   width: number;

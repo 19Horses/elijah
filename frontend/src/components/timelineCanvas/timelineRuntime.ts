@@ -6,6 +6,7 @@ import {
 import type {
   FocusTarget,
   ProcessedCollected,
+  ProcessedItem,
   TimelineRuntime,
   TimelineSketchDeps,
 } from './types';
@@ -145,6 +146,18 @@ export function syncInteractionLock(deps: TimelineSketchDeps): void {
   deps.refs.interactionLockedRef.current = isViewInteractionLocked(
     deps.runtime
   );
+}
+
+// Private items (not public, not collected by the viewer) aren't focusable.
+export function isPrivateTarget(
+  deps: TimelineSketchDeps,
+  target: FocusTarget
+): boolean {
+  const item: ProcessedItem | ProcessedCollected | undefined =
+    target.lane === 'main'
+      ? deps.processed[target.index]
+      : deps.processedCollected[target.index];
+  return item?.isPrivate ?? false;
 }
 
 export function isFutureDatedItem(

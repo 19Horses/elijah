@@ -1,5 +1,6 @@
 import { arrayUnion, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { getStoredUser } from './userStorage';
 
 export type CollectedItem = {
   id: string;
@@ -15,6 +16,16 @@ export async function getCollectedItems(
   if (!snapshot.exists()) return [];
 
   return (snapshot.data().collectedItems as CollectedItem[] | undefined) ?? [];
+}
+
+// Ids of content the current (locally stored) user has collected, used to
+// let non-public assets through the visibility filter in content queries.
+export async function getMyCollectedIds(): Promise<string[]> {
+  const user = getStoredUser();
+  if (!user) return [];
+
+  const items = await getCollectedItems(user.id);
+  return items.map((item) => item.id);
 }
 
 export async function hasCollectedFrom(

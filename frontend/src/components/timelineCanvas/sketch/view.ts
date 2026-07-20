@@ -24,6 +24,7 @@ import { hitTest } from '../geometry';
 import {
   getFocusedSlug,
   isFutureDatedItem,
+  isPrivateTarget,
   isViewInteractionLocked,
   notifyFocusFade,
   resetCanvasFocus,
@@ -218,7 +219,10 @@ export function createViewContext(
     let maxX = -Infinity;
     let minY = Infinity;
     let maxY = -Infinity;
-    for (const b of [...bounds.getAllBounds(), ...bounds.getCollectedBounds()]) {
+    for (const b of [
+      ...bounds.getAllBounds(),
+      ...bounds.getCollectedBounds(),
+    ]) {
       minX = Math.min(minX, b.left);
       maxX = Math.max(maxX, b.right);
       minY = Math.min(minY, b.top);
@@ -259,8 +263,18 @@ export function createViewContext(
     }
     const viewW = p.width / runtime.zoom;
     const viewH = p.height / runtime.zoom;
-    runtime.cameraX = clampAxis(runtime.cameraX, viewW, extent.minX, extent.maxX);
-    runtime.cameraY = clampAxis(runtime.cameraY, viewH, extent.minY, extent.maxY);
+    runtime.cameraX = clampAxis(
+      runtime.cameraX,
+      viewW,
+      extent.minX,
+      extent.maxX
+    );
+    runtime.cameraY = clampAxis(
+      runtime.cameraY,
+      viewH,
+      extent.minY,
+      extent.maxY
+    );
   };
 
   const panView = (deltaScreenX: number, deltaScreenY: number) => {
@@ -292,8 +306,7 @@ export function createViewContext(
       return;
     }
 
-    const delta =
-      Math.abs(deltaX) >= Math.abs(deltaY) ? deltaX : deltaY;
+    const delta = Math.abs(deltaX) >= Math.abs(deltaY) ? deltaX : deltaY;
     if (Math.abs(delta) < SCROLL_STEP_MIN_DELTA) {
       return;
     }
@@ -472,7 +485,9 @@ export function createViewContext(
         runtime.targetCameraY - runtime.cameraY
       );
       const progress =
-        totalPan > 0 ? Math.max(0, Math.min(1, 1 - remainingPan / totalPan)) : 1;
+        totalPan > 0
+          ? Math.max(0, Math.min(1, 1 - remainingPan / totalPan))
+          : 1;
       if (runtime.focusTarget && !runtime.viewUnfocusing) {
         runtime.focusContentFade = progress;
       } else if (runtime.viewUnfocusing) {
@@ -603,8 +618,10 @@ export function createViewContext(
     const maxZoom = runtime.fitZoomLevel * MAX_ZOOM_FACTOR;
     if (runtime.targetZoom > maxZoom) {
       runtime.targetZoom = maxZoom;
-      runtime.targetCameraX = center.centerX - p.width / (2 * runtime.targetZoom);
-      runtime.targetCameraY = center.centerY - p.height / (2 * runtime.targetZoom);
+      runtime.targetCameraX =
+        center.centerX - p.width / (2 * runtime.targetZoom);
+      runtime.targetCameraY =
+        center.centerY - p.height / (2 * runtime.targetZoom);
     }
 
     setBranchFocus(rowIndex);
@@ -613,6 +630,9 @@ export function createViewContext(
   };
 
   const focusItem = (target: FocusTarget) => {
+    if (isPrivateTarget(deps, target)) {
+      return;
+    }
     clearBranchFocus();
     runtime.snapping = false;
     runtime.snapStepReadyMs = 0;

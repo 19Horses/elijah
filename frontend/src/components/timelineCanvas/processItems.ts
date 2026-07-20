@@ -44,6 +44,7 @@ export function buildProcessedItems(
     aspectRatio: getItemAspectRatio(item),
     audioUrl: item._type === 'audioAsset' ? item.audioUrl ?? null : null,
     galleryUrls: getGalleryUrls(item),
+    isPrivate: item.isPrivate,
   }));
 }
 
@@ -91,6 +92,7 @@ export function buildProcessedCollected(
             ? item.content.audioUrl ?? null
             : null,
         galleryUrls: getGalleryUrls(item.content),
+        isPrivate: item.content.isPrivate,
       });
     });
   });

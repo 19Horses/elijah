@@ -8,6 +8,10 @@ export type ContentBase = {
   title: string;
   slug: string | null;
   created_at: string;
+  public: boolean;
+  // Whether this item should render as private (not public, and not
+  // collected by the current viewer) — computed server-side per viewer.
+  isPrivate: boolean;
 };
 
 export type WithOptionalDate = {

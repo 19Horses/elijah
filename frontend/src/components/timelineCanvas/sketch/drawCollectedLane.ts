@@ -2,6 +2,7 @@ import type p5 from 'p5';
 import { getContentTypeColour } from '../../../constants/contentTypes';
 import {
   drawDimOverlay,
+  drawPrivateOverlay,
   getCombinedAlpha,
   hexToRgba,
   matchesHighlightedType,
@@ -13,6 +14,7 @@ import {
   BRANCH_DIM_ITEM_ALPHA,
   CONNECTOR_HOVER_THRESHOLD,
   LOAD_ALPHA_SNAP,
+  PRIVATE_IMAGE_EFFECT,
   TYPE_HIGHLIGHT_BLUR,
 } from '../constants';
 import {
@@ -112,7 +114,9 @@ export function computeCollectedLaneHover(
           const points = stepped
             ? getSteppedBranchPoints(from, to)
             : getBranchPoints(from, to);
-          return distanceToPolyline(points, mouseWorld) <= CONNECTOR_HOVER_THRESHOLD;
+          return (
+            distanceToPolyline(points, mouseWorld) <= CONNECTOR_HOVER_THRESHOLD
+          );
         });
         if (hit) {
           hoveredCollected = index;
@@ -336,7 +340,12 @@ export function drawCollectedLaneItems(
     } else if (img) {
       // Contain (not fill) so the full image shows without cropping when its
       // true aspect ratio differs from the slot's.
-      drawContainedImage(p, img, { left: imageLeft, top, width, height });
+      drawContainedImage(
+        p,
+        img,
+        { left: imageLeft, top, width, height },
+        item.isPrivate ? PRIVATE_IMAGE_EFFECT : undefined
+      );
     } else {
       p.fill(245);
       p.stroke(220);
@@ -361,6 +370,18 @@ export function drawCollectedLaneItems(
         width,
         height,
         ctx.typeHighlightStrength * visibilityAlpha
+      );
+    }
+
+    if (item.isPrivate) {
+      drawPrivateOverlay(
+        p,
+        collectedCtx,
+        imageLeft,
+        top,
+        width,
+        height,
+        visibilityAlpha
       );
     }
 

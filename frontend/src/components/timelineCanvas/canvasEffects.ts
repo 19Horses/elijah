@@ -1,6 +1,7 @@
 import type p5 from 'p5';
 import {
   LOAD_INITIAL_DELAY_MS,
+  PRIVATE_OVERLAY_ALPHA,
   TYPE_DIM_ALPHA,
   TYPE_DIM_OVERLAY,
 } from './constants';
@@ -24,10 +25,20 @@ export function mixHex(from: string, to: string, t: number): string {
   if (a.length !== 6 || b.length !== 6) {
     return from;
   }
-  const lerp = (start: number, end: number) => Math.round(start + (end - start) * t);
-  const r = lerp(Number.parseInt(a.slice(0, 2), 16), Number.parseInt(b.slice(0, 2), 16));
-  const g = lerp(Number.parseInt(a.slice(2, 4), 16), Number.parseInt(b.slice(2, 4), 16));
-  const c = lerp(Number.parseInt(a.slice(4, 6), 16), Number.parseInt(b.slice(4, 6), 16));
+  const lerp = (start: number, end: number) =>
+    Math.round(start + (end - start) * t);
+  const r = lerp(
+    Number.parseInt(a.slice(0, 2), 16),
+    Number.parseInt(b.slice(0, 2), 16)
+  );
+  const g = lerp(
+    Number.parseInt(a.slice(2, 4), 16),
+    Number.parseInt(b.slice(2, 4), 16)
+  );
+  const c = lerp(
+    Number.parseInt(a.slice(4, 6), 16),
+    Number.parseInt(b.slice(4, 6), 16)
+  );
   return `rgb(${r}, ${g}, ${c})`;
 }
 
@@ -81,6 +92,22 @@ export function drawDimOverlay(
   p.fill(255);
   p.noStroke();
   ctx.globalAlpha = TYPE_DIM_OVERLAY * strength;
+  p.rect(left, top, width, height);
+  resetCanvasEffects(ctx);
+}
+
+export function drawPrivateOverlay(
+  p: p5,
+  ctx: CanvasRenderingContext2D,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  alpha = 1
+): void {
+  p.fill(255);
+  p.noStroke();
+  ctx.globalAlpha = PRIVATE_OVERLAY_ALPHA * alpha;
   p.rect(left, top, width, height);
   resetCanvasEffects(ctx);
 }
