@@ -8,6 +8,7 @@ export type ContentBase = {
   title: string;
   slug: string | null;
   created_at: string;
+  public: boolean;
 };
 
 export type WithOptionalDate = {

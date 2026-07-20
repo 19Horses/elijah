@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getApiUrl } from '../sanityIntegration';
+import { getMyCollectedIds } from '../services/collectItem';
 import type { ContentType } from '../types/content';
 import { formatMainTimelineDate } from './mainTimeline';
 
@@ -23,7 +24,8 @@ export type ContentDetail = {
 
 const CONTENT_BY_SLUG_QUERY = (slug: string) => `*[
   _type in ["imageAsset", "audioAsset", "newsletter", "event"] &&
-  slug.current == ${JSON.stringify(slug)}
+  slug.current == ${JSON.stringify(slug)} &&
+  (public != false || _id in $collectedIds)
 ][0] {
   _id,
   _type,
@@ -45,7 +47,10 @@ const CONTENT_BY_SLUG_QUERY = (slug: string) => `*[
 }`;
 
 export async function fetchContentBySlug(slug: string): Promise<ContentDetail> {
-  const response = await fetch(getApiUrl(CONTENT_BY_SLUG_QUERY(slug)));
+  const collectedIds = await getMyCollectedIds();
+  const response = await fetch(
+    getApiUrl(CONTENT_BY_SLUG_QUERY(slug), { collectedIds })
+  );
   if (!response.ok) {
     throw new Error(`Failed to fetch content: ${response.status}`);
   }

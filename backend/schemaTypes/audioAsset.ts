@@ -47,6 +47,14 @@ export const audioAsset = defineType({
       },
       validation: (Rule) => Rule.required(),
     }),
+    defineField({
+      name: 'public',
+      title: 'Public',
+      description: 'If off, this is only visible to users who have collected it.',
+      type: 'boolean',
+      initialValue: true,
+      validation: (Rule) => Rule.required(),
+    }),
   ],
   preview: {
     select: {

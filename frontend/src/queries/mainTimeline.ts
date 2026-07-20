@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import type { SanityImageSource } from '@sanity/image-url';
 import { getApiUrl, getSanityImageUrl } from '../sanityIntegration';
+import { getMyCollectedIds } from '../services/collectItem';
 import type {
   AudioAsset,
   Event,
@@ -45,6 +46,7 @@ export const CONTENT_PROJECTION = `_id,
   date,
   "created_at": _createdAt,
   "slug": slug.current,
+  public,
   _type == "imageAsset" => {
     title,
     description,
@@ -75,10 +77,15 @@ export const CONTENT_PROJECTION = `_id,
     "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
   }`;
 
+// An asset is visible if it's public, or the current user has collected it.
+const VISIBLE_TO_ME = `(public != false || _id in $collectedIds)`;
+
 const MAIN_TIMELINE_QUERY = `{
   "colour": *[_type == "mainTimeline"][0].colour,
   "items": (
-  coalesce(*[_type == "mainTimeline"][0].items, [])[] {
+  coalesce(*[_type == "mainTimeline"][0].items, [])[
+    defined(content) && (content->public != false || content->_id in $collectedIds)
+  ] {
     unlockTime,
     expiryTime,
     ...content-> {
@@ -86,7 +93,7 @@ const MAIN_TIMELINE_QUERY = `{
     }
   }
 ) + (
-  *[_type == "event"] {
+  *[_type == "event" && ${VISIBLE_TO_ME}] {
     "unlockTime": null,
     "expiryTime": null,
     _id,
@@ -98,6 +105,7 @@ const MAIN_TIMELINE_QUERY = `{
     description,
     link,
     image,
+    public,
     "imageUrl": image.asset->url,
     "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
   }
@@ -150,7 +158,10 @@ export function formatMainTimelineNow(date: Date = new Date()): {
 }
 
 export async function fetchMainTimeline(): Promise<MainTimelineData> {
-  const response = await fetch(getApiUrl(MAIN_TIMELINE_QUERY));
+  const collectedIds = await getMyCollectedIds();
+  const response = await fetch(
+    getApiUrl(MAIN_TIMELINE_QUERY, { collectedIds })
+  );
   if (!response.ok) {
     throw new Error(`Failed to fetch main timeline: ${response.status}`);
   }

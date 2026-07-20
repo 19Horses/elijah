@@ -109,6 +109,8 @@ function Home() {
     setAlreadyCollected(true);
     setCollectedSignal((signal) => signal + 1);
     void queryClient.invalidateQueries({ queryKey: ['collectedTimeline'] });
+    void queryClient.invalidateQueries({ queryKey: ['mainTimeline'] });
+    void queryClient.invalidateQueries({ queryKey: ['contentDetail'] });
   };
 
   useEffect(() => {
