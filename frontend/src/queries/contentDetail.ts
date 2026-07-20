@@ -64,7 +64,12 @@ export async function fetchContentBySlug(slug: string): Promise<ContentDetail> {
 export function useContentDetail(slug: string | null) {
   return useQuery({
     queryKey: ['contentDetail', slug],
-    queryFn: () => fetchContentBySlug(slug!),
+    queryFn: () => {
+      if (!slug) {
+        throw new Error('Content slug is required');
+      }
+      return fetchContentBySlug(slug);
+    },
     enabled: Boolean(slug),
   });
 }
