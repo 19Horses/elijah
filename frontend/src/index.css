@@ -1497,19 +1497,22 @@ main.main--shop {
   transition-delay: 140ms;
 }
 
+/* Each item's offset below is the arc position plus a constant (18px left,
+   15px down) shift of the whole cluster, so it wraps around the e's actual
+   visual weight rather than its geometric box centre. */
 .e-menu--open .e-menu__item--mailing {
   opacity: 1;
-  transform: translate(calc(50% - 85px), calc(50% - 7px)) scale(1);
+  transform: translate(calc(50% - 103px), calc(50% + 8px)) scale(1);
 }
 
 .e-menu--open .e-menu__item--login {
   opacity: 1;
-  transform: translate(calc(50% - 65px), calc(50% - 55px)) scale(1);
+  transform: translate(calc(50% - 83px), calc(50% - 40px)) scale(1);
 }
 
 .e-menu--open .e-menu__item--shop {
   opacity: 1;
-  transform: translate(calc(50% - 22px), calc(50% - 82px)) scale(1);
+  transform: translate(calc(50% - 40px), calc(50% - 67px)) scale(1);
 }
 
 @media (prefers-reduced-motion: reduce) {
