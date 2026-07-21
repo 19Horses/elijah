@@ -1479,9 +1479,12 @@ main.main--shop {
   white-space: nowrap;
 }
 
-/* Each item sits the same radius from the e, in a tight arc up and to the
-   left (the only open quadrant, since the e sits in the bottom-right
-   corner). Cascades around the arc in order. */
+/* Each item sits the same radius from the e, spread across a wider arc up
+   and to the left (the only open quadrant, since the e sits in the
+   bottom-right corner) than the radius alone would suggest - shrinking the
+   radius without widening the angle crowds adjacent items together, since
+   the gap between them scales with the radius too. Cascades around the arc
+   in order. */
 .e-menu__item--mailing {
   transition-delay: 0ms;
 }
@@ -1496,17 +1499,17 @@ main.main--shop {
 
 .e-menu--open .e-menu__item--mailing {
   opacity: 1;
-  transform: translate(calc(50% - 64px), calc(50% - 11px)) scale(1);
+  transform: translate(calc(50% - 85px), calc(50% - 7px)) scale(1);
 }
 
 .e-menu--open .e-menu__item--login {
   opacity: 1;
-  transform: translate(calc(50% - 56px), calc(50% - 33px)) scale(1);
+  transform: translate(calc(50% - 65px), calc(50% - 55px)) scale(1);
 }
 
 .e-menu--open .e-menu__item--shop {
   opacity: 1;
-  transform: translate(calc(50% - 42px), calc(50% - 50px)) scale(1);
+  transform: translate(calc(50% - 22px), calc(50% - 82px)) scale(1);
 }
 
 @media (prefers-reduced-motion: reduce) {
