@@ -1383,6 +1383,101 @@ main.main--home {
   opacity: 0.6;
 }
 
+/* ── E menu ────────────────────────── */
+
+.e-menu {
+  bottom: 1.5rem;
+  position: fixed;
+  right: 1.5rem;
+  z-index: 12;
+  opacity: 0;
+}
+
+.e-menu--visible {
+  animation: e-menu-fade-in 0.8s ease forwards;
+}
+
+@keyframes e-menu-fade-in {
+  to {
+    opacity: 1;
+  }
+}
+
+.e-menu__trigger {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  display: block;
+  font-family: 'EB Garamond', 'Times New Roman', Times, serif;
+  font-size: 4.5rem;
+  line-height: 1;
+  padding: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.e-menu__items {
+  bottom: 0;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+}
+
+.e-menu--open .e-menu__items {
+  pointer-events: auto;
+}
+
+.e-menu__item {
+  background: rgba(17, 24, 39, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  bottom: 0;
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  font-family: 'EB Garamond', 'Times New Roman', Times, serif;
+  font-size: 1rem;
+  opacity: 0;
+  padding: 0.5rem 1.25rem;
+  position: absolute;
+  right: 0;
+  text-decoration: none;
+  transform: translate(0, 0) scale(0.85);
+  transition: opacity 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+}
+
+/* Cascades outward from the e: the nearest item moves first. */
+.e-menu__item--mailing {
+  transition-delay: 0ms;
+}
+
+.e-menu__item--login {
+  transition-delay: 70ms;
+}
+
+.e-menu__item--shop {
+  transition-delay: 140ms;
+}
+
+.e-menu--open .e-menu__item--mailing {
+  opacity: 1;
+  transform: translate(-64px, -56px) scale(1);
+}
+
+.e-menu--open .e-menu__item--login {
+  opacity: 1;
+  transform: translate(-118px, -132px) scale(1);
+}
+
+.e-menu--open .e-menu__item--shop {
+  opacity: 1;
+  transform: translate(-150px, -218px) scale(1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .landing__vignette,
   .splash-card,
@@ -1392,6 +1487,15 @@ main.main--home {
 
   .user-card {
     animation: none;
+  }
+
+  .e-menu--visible {
+    animation: none;
+    opacity: 1;
+  }
+
+  .e-menu__item {
+    transition: none;
   }
 
   .landing--card-exit .splash-card {
