@@ -1434,8 +1434,16 @@ main.main--shop {
   line-height: 1;
   padding: 0;
   position: relative;
+  transition: color 0.15s ease;
   user-select: none;
   z-index: 1;
+}
+
+/* The e only acts as a link back to the timeline off the timeline itself
+   (see the e-menu--linkable modifier in EMenu.tsx) - only show the link
+   hover colour there, not while it's just the fan-out toggle. */
+.e-menu--linkable .e-menu__trigger:hover {
+  color: var(--selection-color);
 }
 
 .e-menu__items {
@@ -1475,8 +1483,18 @@ main.main--shop {
      per-item rules below, which add the actual offset on top of this. */
   transform: translate(50%, 50%) scale(0.85);
   transition: opacity 0.28s cubic-bezier(0.4, 0, 0.2, 1),
-    transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), color 0.15s ease;
   white-space: nowrap;
+}
+
+.e-menu__item:hover {
+  color: var(--selection-color);
+}
+
+/* Marks the Shop link as the current page while on /shop. */
+.e-menu__item--active {
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
 /* Each item sits the same radius from the e, spread across a wider arc up

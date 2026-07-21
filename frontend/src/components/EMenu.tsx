@@ -87,6 +87,10 @@ function EMenu() {
     <div
       className={`e-menu${isVisible ? ' e-menu--visible' : ''}${
         open ? ' e-menu--open' : ''
+      }${
+        // The e only acts as a "back to timeline" link off the timeline
+        // itself - only show its link-hover colour there.
+        !isOnTimeline ? ' e-menu--linkable' : ''
       }`}
       // Hovering anywhere in the section (the e or a fanned-out item) keeps
       // the menu open; it only closes (after the grace period above) once
@@ -114,7 +118,10 @@ function EMenu() {
         <Link
           to="/shop"
           role="menuitem"
-          className="e-menu__item e-menu__item--shop"
+          className={`e-menu__item e-menu__item--shop${
+            pathname === '/shop' ? ' e-menu__item--active' : ''
+          }`}
+          aria-current={pathname === '/shop' ? 'page' : undefined}
           tabIndex={open ? 0 : -1}
           onClick={(event) => {
             // Let modified/non-primary clicks (open in new tab, etc.)
