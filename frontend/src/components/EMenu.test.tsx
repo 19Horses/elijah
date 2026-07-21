@@ -4,11 +4,16 @@ import { describe, expect, test } from 'vitest';
 import EMenu from './EMenu';
 
 function renderMenu() {
-  return render(
+  const result = render(
     <MemoryRouter>
       <EMenu />
     </MemoryRouter>
   );
+  const section = result.container.querySelector('.e-menu');
+  if (!section) {
+    throw new Error('Expected to find the .e-menu section wrapper');
+  }
+  return { ...result, section };
 }
 
 describe('EMenu', () => {
@@ -18,19 +23,26 @@ describe('EMenu', () => {
   });
 
   test('hovering the e reveals all three menu items', () => {
-    renderMenu();
-    fireEvent.mouseEnter(screen.getByRole('button', { name: 'e' }));
+    const { section } = renderMenu();
+    fireEvent.mouseEnter(section);
     expect(screen.getByRole('menuitem', { name: 'Shop' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: 'Login' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: 'Mailing list' })).toBeTruthy();
   });
 
-  test('the mouse leaving the e closes the menu again', () => {
-    renderMenu();
-    const trigger = screen.getByRole('button', { name: 'e' });
-    fireEvent.mouseEnter(trigger);
-    fireEvent.mouseLeave(trigger);
+  test('the mouse leaving the section closes the menu again', () => {
+    const { section } = renderMenu();
+    fireEvent.mouseEnter(section);
+    fireEvent.mouseLeave(section);
     expect(screen.queryByRole('menuitem', { name: 'Shop' })).toBeNull();
+  });
+
+  test('moving from the e onto a menu item keeps the menu open', () => {
+    const { section } = renderMenu();
+    fireEvent.mouseEnter(section);
+    const shopLink = screen.getByRole('menuitem', { name: 'Shop' });
+    fireEvent.mouseEnter(shopLink);
+    expect(screen.getByRole('menuitem', { name: 'Shop' })).toBeTruthy();
   });
 
   test('clicking the e toggles the menu open and closed, for touch devices', () => {

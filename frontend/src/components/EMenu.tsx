@@ -18,14 +18,17 @@ function EMenu() {
       className={`e-menu${isVisible ? ' e-menu--visible' : ''}${
         open ? ' e-menu--open' : ''
       }`}
+      // Hovering anywhere in the section (the e or a fanned-out item) keeps
+      // the menu open; it only closes once the pointer leaves the whole
+      // group, not just the trigger itself.
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
     >
       <button
         type="button"
         className="e-menu__trigger"
         aria-haspopup="menu"
         aria-expanded={open}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
         onClick={() => setOpen((current) => !current)}
       >
         e

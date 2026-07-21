@@ -1410,7 +1410,7 @@ main.main--home {
   cursor: pointer;
   display: block;
   font-family: 'EB Garamond', 'Times New Roman', Times, serif;
-  font-size: 4.5rem;
+  font-size: 7rem;
   line-height: 1;
   padding: 0;
   position: relative;
@@ -1450,7 +1450,9 @@ main.main--home {
   white-space: nowrap;
 }
 
-/* Cascades outward from the e: the nearest item moves first. */
+/* Each item sits the same radius from the e, wrapping around it from
+   straight-left up to nearly-straight-up (the only open quadrant, since the
+   e sits in the bottom-right corner). Cascades around the arc in order. */
 .e-menu__item--mailing {
   transition-delay: 0ms;
 }
@@ -1465,17 +1467,17 @@ main.main--home {
 
 .e-menu--open .e-menu__item--mailing {
   opacity: 1;
-  transform: translate(-64px, -56px) scale(1);
+  transform: translate(-170px, 0) scale(1);
 }
 
 .e-menu--open .e-menu__item--login {
   opacity: 1;
-  transform: translate(-118px, -132px) scale(1);
+  transform: translate(-130px, -109px) scale(1);
 }
 
 .e-menu--open .e-menu__item--shop {
   opacity: 1;
-  transform: translate(-150px, -218px) scale(1);
+  transform: translate(-30px, -167px) scale(1);
 }
 
 @media (prefers-reduced-motion: reduce) {
