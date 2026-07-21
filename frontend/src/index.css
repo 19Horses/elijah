@@ -1439,10 +1439,12 @@ main.main--shop {
 }
 
 .e-menu__items {
-  bottom: 0;
+  /* Anchored at the centre of the e's own box (not its corner), so items
+     collapse into and fan out from the middle of the glyph itself. */
+  bottom: 50%;
   pointer-events: none;
   position: absolute;
-  right: 0;
+  right: 50%;
   /* Above the trigger's own z-index, so items win clicks/hover in the area
      where the fanned-out pills overlap the e's large glyph box. */
   z-index: 2;
@@ -1494,17 +1496,17 @@ main.main--shop {
 
 .e-menu--open .e-menu__item--mailing {
   opacity: 1;
-  transform: translate(calc(50% - 113px), calc(50% - 20px)) scale(1);
+  transform: translate(calc(50% - 207px), calc(50% - 36px)) scale(1);
 }
 
 .e-menu--open .e-menu__item--login {
   opacity: 1;
-  transform: translate(calc(50% - 100px), calc(50% - 58px)) scale(1);
+  transform: translate(calc(50% - 182px), calc(50% - 105px)) scale(1);
 }
 
 .e-menu--open .e-menu__item--shop {
   opacity: 1;
-  transform: translate(calc(50% - 74px), calc(50% - 88px)) scale(1);
+  transform: translate(calc(50% - 135px), calc(50% - 161px)) scale(1);
 }
 
 @media (prefers-reduced-motion: reduce) {
