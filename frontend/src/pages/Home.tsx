@@ -2,7 +2,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CollectionCountdown from '../components/CollectionCountdown';
 import CollectionViewer from '../components/CollectionViewer';
-import EMenu from '../components/EMenu';
 import TimelineCanvas from '../components/timelineCanvas';
 import type { DetailImageRect } from '../components/timelineCanvas/types';
 import TimelineDetailOverlay, {
@@ -25,7 +24,11 @@ import { DEBUG_TIMERS_EVENT } from '../services/debugTimers';
 import { getStoredUser } from '../services/userStorage';
 import type { ContentType } from '../types/content';
 
-function Home() {
+type HomeProps = {
+  onEntranceComplete?: () => void;
+};
+
+function Home({ onEntranceComplete }: HomeProps) {
   const queryClient = useQueryClient();
   const { data: timeline, isLoading, error } = useMainTimeline();
   const { data: collections } = useCollections();
@@ -41,7 +44,6 @@ function Home() {
   const [detailReady, setDetailReady] = useState(false);
   const [detailImageRect, setDetailImageRect] =
     useState<DetailImageRect | null>(null);
-  const [timelineReady, setTimelineReady] = useState(false);
   const userCardWrapRef = useRef<HTMLDivElement>(null);
   const isolateOwnBranchRef = useRef<(() => void) | undefined>(undefined);
 
@@ -71,10 +73,6 @@ function Home() {
 
   const handleDetailLayoutStart = useCallback(() => {
     setDetailReady(true);
-  }, []);
-
-  const handleEntranceComplete = useCallback(() => {
-    setTimelineReady(true);
   }, []);
 
   const handleDetailImageRect = useCallback((rect: DetailImageRect) => {
@@ -184,7 +182,7 @@ function Home() {
         onContentUnfocus={handleContentUnfocus}
         onDetailLayoutStart={handleDetailLayoutStart}
         onDetailImageRect={handleDetailImageRect}
-        onEntranceComplete={handleEntranceComplete}
+        onEntranceComplete={onEntranceComplete}
       />
       <TimelineDetailOverlay
         detail={timelineDetail}
@@ -210,7 +208,6 @@ function Home() {
           onHoverChange={setOwnBranchHover}
         />
       </div>
-      {timelineReady && <EMenu />}
     </section>
   );
 }

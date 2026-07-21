@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import EMenu from '../components/EMenu';
 import ProductCard from '../components/ProductCard';
 import { fetchProducts } from '../queries/products';
 
@@ -27,7 +26,6 @@ function Shop() {
           ))}
         </section>
       )}
-      <EMenu />
     </>
   );
 }
