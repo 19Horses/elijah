@@ -1,8 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { getApiUrl } from '../sanityIntegration';
 import { getMyCollectedIds } from '../services/collectItem';
+import { BANDSINTOWN_SLUG_PREFIX } from './bandsintownEvents';
 import type { ContentType } from '../types/content';
-import { formatMainTimelineDate } from './mainTimeline';
+import {
+  formatMainTimelineDate,
+  type MainTimelineEvent,
+  type MainTimelineItem,
+} from './mainTimeline';
 
 type SanityResponse<T> = {
   result: T;
@@ -61,11 +66,43 @@ export async function fetchContentBySlug(slug: string): Promise<ContentDetail> {
   return data.result;
 }
 
-export function useContentDetail(slug: string | null) {
+function isBandsintownSlug(slug: string): boolean {
+  return slug.startsWith(BANDSINTOWN_SLUG_PREFIX);
+}
+
+function toContentDetail(item: MainTimelineEvent): ContentDetail {
+  return {
+    _id: item._id,
+    _type: 'event',
+    title: item.title,
+    slug: item.slug ?? '',
+    date: item.date,
+    description: item.description,
+    content: null,
+    link: item.link,
+    imageCount: null,
+  };
+}
+
+export function useContentDetail(
+  slug: string | null,
+  items: MainTimelineItem[] = []
+) {
+  const isBandsintown = Boolean(slug) && isBandsintownSlug(slug!);
+  const bandsintownItem = isBandsintown
+    ? items.find(
+        (item): item is MainTimelineEvent =>
+          item.slug === slug && item._type === 'event'
+      )
+    : undefined;
+
   return useQuery({
     queryKey: ['contentDetail', slug],
-    queryFn: () => fetchContentBySlug(slug!),
-    enabled: Boolean(slug),
+    queryFn: () =>
+      isBandsintown
+        ? Promise.resolve(toContentDetail(bandsintownItem!))
+        : fetchContentBySlug(slug!),
+    enabled: Boolean(slug) && (!isBandsintown || Boolean(bandsintownItem)),
   });
 }
 

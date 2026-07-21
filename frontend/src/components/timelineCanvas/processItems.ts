@@ -55,6 +55,12 @@ export function buildProcessedCollected(
 
   rows.forEach((row, rowIndex) => {
     row.items.forEach((item) => {
+      // Events never get a duplicate tile in the collected lane; they only
+      // ever appear once, in the main timeline itself.
+      if (item.content._type === 'event') {
+        return;
+      }
+
       const contentId = item.content._id;
       const contentTime = item.content.date
         ? new Date(item.content.date).getTime()
