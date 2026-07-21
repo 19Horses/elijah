@@ -403,6 +403,38 @@ main.main--shop {
   white-space: nowrap;
 }
 
+.timeline-detail__attend {
+  background: none;
+  border: none;
+  color: #ffffff;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 0.875rem;
+  margin-top: 1.25rem;
+  padding: 0;
+  text-align: left;
+  transition: opacity 0.2s ease;
+}
+
+.timeline-detail__attend:hover {
+  opacity: 0.7;
+}
+
+.timeline-detail--light .timeline-detail__attend {
+  color: #000000;
+}
+
+.timeline-detail__attended {
+  color: rgba(255, 255, 255, 0.55);
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  margin-top: 1.25rem;
+}
+
+.timeline-detail--light .timeline-detail__attended {
+  color: rgba(0, 0, 0, 0.55);
+}
+
 .timeline-detail__description {
   flex: 1;
   font-size: 0.9375rem;

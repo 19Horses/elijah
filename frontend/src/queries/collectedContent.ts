@@ -2,7 +2,15 @@ import { useQuery } from '@tanstack/react-query';
 import { getApiUrl } from '../sanityIntegration';
 import { getUserCollections } from '../services/collectedContent';
 import { getMyCollectedIds } from '../services/collectItem';
-import { CONTENT_PROJECTION, type MainTimelineItem } from './mainTimeline';
+import {
+  BANDSINTOWN_SLUG_PREFIX,
+  fetchBandsintownEvents,
+} from './bandsintownEvents';
+import {
+  CONTENT_PROJECTION,
+  type MainTimelineEvent,
+  type MainTimelineItem,
+} from './mainTimeline';
 
 type SanityResponse<T> = {
   result: T;
@@ -40,12 +48,39 @@ export async function fetchContentByIds(
   return data.result ?? [];
 }
 
+// Attended events are synthetic (bandsintown-*) ids that don't exist in
+// Sanity, so they're resolved from the Bandsintown API instead of GROQ.
+async function fetchBandsintownContentByIds(
+  ids: string[]
+): Promise<MainTimelineEvent[]> {
+  if (ids.length === 0) return [];
+  try {
+    const events = await fetchBandsintownEvents();
+    const idSet = new Set(ids);
+    return events.filter((event) => idSet.has(event._id));
+  } catch (error) {
+    console.error(
+      'Failed to fetch Bandsintown events for collected timeline',
+      error
+    );
+    return [];
+  }
+}
+
 async function fetchCollectedTimeline(): Promise<CollectedUserRow[]> {
   const users = await getUserCollections();
   const ids = Array.from(
     new Set(users.flatMap((user) => user.items.map((item) => item.id)))
   );
-  const content = await fetchContentByIds(ids);
+  const sanityIds = ids.filter((id) => !id.startsWith(BANDSINTOWN_SLUG_PREFIX));
+  const bandsintownIds = ids.filter((id) =>
+    id.startsWith(BANDSINTOWN_SLUG_PREFIX)
+  );
+  const [sanityContent, bandsintownContent] = await Promise.all([
+    fetchContentByIds(sanityIds),
+    fetchBandsintownContentByIds(bandsintownIds),
+  ]);
+  const content = [...sanityContent, ...bandsintownContent];
 
   const contentById = new Map(content.map((item) => [item._id, item]));
 
