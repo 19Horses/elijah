@@ -399,13 +399,12 @@ export function drawCollectedLaneItems(
     }
 
     if (!hideDateLabel) {
-      // Deferred so dates render above the connectors/nodes. Items past the
-      // today separator sit on the grey gradient, so their date reads black.
+      // Deferred so dates render above the connectors/nodes.
       ctx.dateLabels.push({
         x: imageLeft + width / 2,
         y: top - 12,
         text: item.dateLabel,
-        colour: item.anchorTime > Date.now() ? 0 : 255,
+        colour: 255,
         alpha:
           (ctx.isTypeHighlightActive && !typeMatch
             ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)

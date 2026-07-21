@@ -23,12 +23,6 @@ export const FIT_VIEW_PADDING = 80;
 export const FIT_ZOOM_SCALAR = 1.0;
 export const TODAY_LABEL_BOTTOM_OFFSET = 24;
 export const TODAY_LABEL_GAP = 8;
-// Half-width (screen px) of the today background gradient's transition. The
-// crossover is centred on the today line, so the fade spans this far to each
-// side before clamping to transparent (past) / white (future).
-export const TODAY_GRADIENT_HALF_PX = 70;
-// Colour the future half of the canvas fades to at the today line.
-export const TODAY_GRADIENT_COLOUR = '#cccccc';
 // Width (screen px) of the fade-to-background gradient at each screen edge, so
 // the timeline dissolves into the background instead of hard-cutting at the border.
 export const EDGE_GRADIENT_PX = 140;

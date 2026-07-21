@@ -2,7 +2,6 @@ import type p5 from 'p5';
 import {
   getStaggeredLoadAlpha,
   getTypeDimAlpha,
-  hexToRgba,
   mixHex,
   resetCanvasEffects,
 } from '../canvasEffects';
@@ -26,8 +25,6 @@ import {
   PRIVATE_BADGE_COLOUR,
   PRIVATE_BADGE_TEXT,
   DATE_FONT_SIZE,
-  TODAY_GRADIENT_COLOUR,
-  TODAY_GRADIENT_HALF_PX,
 } from '../constants';
 import { drawDot } from '../connectors';
 import { screenToWorld } from '../geometry';
@@ -152,41 +149,6 @@ export function createDrawFrameHandler(
     }
   };
 
-  // A gradient marks "now": the background eases from its normal colour to
-  // white across the future. A tight crossover is centred on the today line (so
-  // the ~50% point sits on the red line), then it settles gently to full white
-  // across the rest of the screen — no hard seam where the fade meets white.
-  const drawTodayGradient = (alpha = 1) => {
-    if (alpha <= LOAD_ALPHA_SNAP) {
-      return;
-    }
-
-    const lineX = (boundsCtx.getNowWorldX() - runtime.cameraX) * runtime.zoom;
-    const half = TODAY_GRADIENT_HALF_PX;
-    const start = lineX - half;
-    // Nothing to fade if the whole transition sits past the right edge.
-    if (start >= p.width) {
-      return;
-    }
-
-    const ctx = p.drawingContext as CanvasRenderingContext2D;
-    const span = p.width - start;
-    // Proportional position of the today line within the gradient span; the
-    // crossover stop lands there so the red line reads as the ~50% point.
-    const crossover = span > 0 ? Math.min(0.999, half / span) : 0.999;
-    const gradient = ctx.createLinearGradient(start, 0, p.width, 0);
-    gradient.addColorStop(0, hexToRgba(deps.backgroundColour, 0));
-    gradient.addColorStop(crossover, hexToRgba(TODAY_GRADIENT_COLOUR, 0.2));
-    gradient.addColorStop(1, hexToRgba(TODAY_GRADIENT_COLOUR, 1));
-
-    const fillLeft = Math.max(0, start);
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = gradient;
-    ctx.fillRect(fillLeft, 0, p.width - fillLeft, p.height);
-    ctx.restore();
-  };
-
   return () => {
     view.animateView();
     view.animateScrollSnap();
@@ -243,13 +205,6 @@ export function createDrawFrameHandler(
         LOAD_CONNECTOR_STAGGER_MS,
         collectedConnectorBaseStart
       );
-    const todayLineAlpha = getStaggeredLoadAlpha(
-      elapsed,
-      0,
-      LOAD_CONNECTOR_FADE_MS,
-      0,
-      connectorBaseStart
-    );
     const isFocusActive =
       runtime.focusTarget !== null && !runtime.viewUnfocusing;
     const isDetailLayoutActive = runtime.detailPhase !== 'none';
@@ -311,9 +266,6 @@ export function createDrawFrameHandler(
         ? mixHex(deps.backgroundColour, '#ffffff', bgWhiteMix)
         : deps.backgroundColour
     );
-    // Behind the content: the future half of the canvas fades to white.
-    drawTodayGradient(todayLineAlpha * otherContentAlpha);
-
     p.push();
     p.scale(runtime.zoom);
     p.translate(-runtime.cameraX, -runtime.cameraY);
