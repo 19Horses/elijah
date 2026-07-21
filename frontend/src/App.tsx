@@ -15,14 +15,21 @@ const AppRoutes = () => {
   const { pathname } = useLocation();
   const isLanding = pathname === '/';
   const isHome = pathname === '/home';
-  const showHeader = !isLanding && !isHome;
+  const isShop = pathname === '/shop';
+  const showHeader = !isLanding && !isHome && !isShop;
 
   return (
     <>
       {showHeader && <Header />}
       <main
         className={
-          isLanding ? 'main--landing' : isHome ? 'main--home' : undefined
+          isLanding
+            ? 'main--landing'
+            : isHome
+            ? 'main--home'
+            : isShop
+            ? 'main--shop'
+            : undefined
         }
       >
         <Routes>

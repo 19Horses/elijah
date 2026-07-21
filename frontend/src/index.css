@@ -191,6 +191,15 @@ main.main--home {
   width: 100%;
 }
 
+main.main--shop {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+}
+
 .home {
   height: 100%;
   overflow: hidden;
