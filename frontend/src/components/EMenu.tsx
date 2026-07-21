@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 // How long the menu stays open after the pointer leaves before it actually
 // closes. The items sit some distance from the e with empty space between
@@ -12,6 +12,12 @@ function EMenu() {
   const [isVisible, setIsVisible] = useState(false);
   const [open, setOpen] = useState(false);
   const closeTimeoutRef = useRef<number | null>(null);
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  // On the timeline screen itself, clicking the e just toggles the fan-out
+  // (there's nowhere else for it to take you). Everywhere else, it's a way
+  // back to the main timeline.
+  const isOnTimeline = pathname === '/home';
 
   // Mirrors the CollectionCountdown/UserCard entrance idiom: flip a class on
   // the next tick so the CSS transition actually plays instead of starting
@@ -67,7 +73,11 @@ function EMenu() {
         aria-expanded={open}
         onClick={() => {
           clearCloseTimeout();
-          setOpen((current) => !current);
+          if (isOnTimeline) {
+            setOpen((current) => !current);
+          } else {
+            navigate('/home');
+          }
         }}
       >
         e

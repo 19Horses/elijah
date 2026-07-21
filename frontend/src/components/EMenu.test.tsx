@@ -1,12 +1,23 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import EMenu from './EMenu';
 
-function renderMenu() {
+function LocationDisplay() {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname}</div>;
+}
+
+// Defaults to the timeline screen itself, since most of these tests are
+// about the hover/toggle interaction rather than the cross-screen
+// navigate-back behavior (covered separately below).
+function renderMenu(initialEntries: string[] = ['/home']) {
   const result = render(
-    <MemoryRouter>
-      <EMenu />
+    <MemoryRouter initialEntries={initialEntries}>
+      <Routes>
+        <Route path="*" element={<EMenu />} />
+      </Routes>
+      <LocationDisplay />
     </MemoryRouter>
   );
   const section = result.container.querySelector('.e-menu');
@@ -79,5 +90,13 @@ describe('EMenu', () => {
     fireEvent.click(screen.getByRole('button', { name: 'e' }));
     const shopLink = screen.getByRole('menuitem', { name: 'Shop' });
     expect(shopLink.getAttribute('href')).toBe('/shop');
+  });
+
+  test('clicking the e on a non-timeline screen navigates back to the timeline instead of toggling', () => {
+    renderMenu(['/shop']);
+    fireEvent.click(screen.getByRole('button', { name: 'e' }));
+    expect(screen.getByTestId('location').textContent).toBe('/home');
+    // It navigated rather than opening the fan-out in place.
+    expect(screen.queryByRole('menuitem', { name: 'Shop' })).toBeNull();
   });
 });
