@@ -22,9 +22,7 @@ describe('EMenu', () => {
     fireEvent.mouseEnter(screen.getByRole('button', { name: 'e' }));
     expect(screen.getByRole('menuitem', { name: 'Shop' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: 'Login' })).toBeTruthy();
-    expect(
-      screen.getByRole('menuitem', { name: 'Mailing list' })
-    ).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Mailing list' })).toBeTruthy();
   });
 
   test('the mouse leaving the e closes the menu again', () => {
