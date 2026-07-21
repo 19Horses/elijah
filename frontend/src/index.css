@@ -30,6 +30,15 @@ body {
 
 main {
   padding: 2rem;
+  transition: opacity 0.4s ease;
+}
+
+/* Applied imperatively (see EMenu.tsx) just before navigating away, so the
+   outgoing screen fades out as a block instead of hard-cutting to the next
+   page. Cleared automatically once the new page renders its own className. */
+main.main--leaving {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .site-header {
@@ -1497,7 +1506,8 @@ main.main--shop {
 @media (prefers-reduced-motion: reduce) {
   .landing__vignette,
   .splash-card,
-  .signup-form {
+  .signup-form,
+  main {
     transition: none;
   }
 

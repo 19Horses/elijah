@@ -10,13 +10,17 @@ function LocationDisplay() {
 
 // Defaults to the timeline screen itself, since most of these tests are
 // about the hover/toggle interaction rather than the cross-screen
-// navigate-back behavior (covered separately below).
+// navigate-back behavior (covered separately below). Wrapped in a real
+// <main>, since EMenu looks one up via document.querySelector to apply the
+// screen-fade class before navigating.
 function renderMenu(initialEntries: string[] = ['/home']) {
   const result = render(
     <MemoryRouter initialEntries={initialEntries}>
-      <Routes>
-        <Route path="*" element={<EMenu />} />
-      </Routes>
+      <main>
+        <Routes>
+          <Route path="*" element={<EMenu />} />
+        </Routes>
+      </main>
       <LocationDisplay />
     </MemoryRouter>
   );
@@ -24,7 +28,11 @@ function renderMenu(initialEntries: string[] = ['/home']) {
   if (!section) {
     throw new Error('Expected to find the .e-menu section wrapper');
   }
-  return { ...result, section };
+  const main = result.container.querySelector('main');
+  if (!main) {
+    throw new Error('Expected to find a main element');
+  }
+  return { ...result, section, main };
 }
 
 describe('EMenu', () => {
@@ -92,11 +100,30 @@ describe('EMenu', () => {
     expect(shopLink.getAttribute('href')).toBe('/shop');
   });
 
-  test('clicking the e on a non-timeline screen navigates back to the timeline instead of toggling', () => {
-    renderMenu(['/shop']);
+  test('clicking the e on a non-timeline screen fades the screen out, then navigates back to the timeline', () => {
+    const { main } = renderMenu(['/shop']);
     fireEvent.click(screen.getByRole('button', { name: 'e' }));
-    expect(screen.getByTestId('location').textContent).toBe('/home');
-    // It navigated rather than opening the fan-out in place.
+    // Still on /shop immediately - fading out first, not toggling in place.
+    expect(screen.getByTestId('location').textContent).toBe('/shop');
+    expect(main.classList.contains('main--leaving')).toBe(true);
     expect(screen.queryByRole('menuitem', { name: 'Shop' })).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(screen.getByTestId('location').textContent).toBe('/home');
+  });
+
+  test('clicking Shop fades the timeline out, then navigates to /shop', () => {
+    const { main } = renderMenu(['/home']);
+    fireEvent.click(screen.getByRole('button', { name: 'e' }));
+    const shopLink = screen.getByRole('menuitem', { name: 'Shop' });
+    fireEvent.click(shopLink);
+    // Still on /home immediately - fading out first.
+    expect(screen.getByTestId('location').textContent).toBe('/home');
+    expect(main.classList.contains('main--leaving')).toBe(true);
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(screen.getByTestId('location').textContent).toBe('/shop');
   });
 });

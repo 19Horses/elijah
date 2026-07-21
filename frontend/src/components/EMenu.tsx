@@ -8,10 +8,23 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 // the menu snapping shut mid-transit.
 const CLOSE_GRACE_MS = 300;
 
+// How long the outgoing screen fades out before we actually navigate. Must
+// match the `main` transition duration in index.css.
+const SCREEN_FADE_OUT_MS = 400;
+
+function prefersReducedMotion() {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
 function EMenu() {
   const [isVisible, setIsVisible] = useState(false);
   const [open, setOpen] = useState(false);
   const closeTimeoutRef = useRef<number | null>(null);
+  const fadeTimeoutRef = useRef<number | null>(null);
   const { pathname } = useLocation();
   const navigate = useNavigate();
   // On the timeline screen itself, clicking the e just toggles the fan-out
@@ -32,6 +45,9 @@ function EMenu() {
       if (closeTimeoutRef.current !== null) {
         window.clearTimeout(closeTimeoutRef.current);
       }
+      if (fadeTimeoutRef.current !== null) {
+        window.clearTimeout(fadeTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -40,6 +56,18 @@ function EMenu() {
       window.clearTimeout(closeTimeoutRef.current);
       closeTimeoutRef.current = null;
     }
+  };
+
+  // Fades the current screen out (whatever's rendered in <main>, be it the
+  // timeline canvas or the shop grid), then navigates once that finishes -
+  // the same "animate, then setTimeout before navigating" idiom Landing.tsx
+  // already uses for its own exit transition.
+  const fadeOutThenGo = (to: string) => {
+    document.querySelector('main')?.classList.add('main--leaving');
+    fadeTimeoutRef.current = window.setTimeout(
+      () => navigate(to),
+      prefersReducedMotion() ? 0 : SCREEN_FADE_OUT_MS
+    );
   };
 
   const handleMouseEnter = () => {
@@ -76,7 +104,7 @@ function EMenu() {
           if (isOnTimeline) {
             setOpen((current) => !current);
           } else {
-            navigate('/home');
+            fadeOutThenGo('/home');
           }
         }}
       >
@@ -88,6 +116,22 @@ function EMenu() {
           role="menuitem"
           className="e-menu__item e-menu__item--shop"
           tabIndex={open ? 0 : -1}
+          onClick={(event) => {
+            // Let modified/non-primary clicks (open in new tab, etc.)
+            // behave like a normal link; only intercept a plain click.
+            if (
+              event.defaultPrevented ||
+              event.button !== 0 ||
+              event.metaKey ||
+              event.ctrlKey ||
+              event.shiftKey ||
+              event.altKey
+            ) {
+              return;
+            }
+            event.preventDefault();
+            fadeOutThenGo('/shop');
+          }}
         >
           Shop
         </Link>
