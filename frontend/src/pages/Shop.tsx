@@ -8,26 +8,25 @@ function Shop() {
     queryFn: fetchProducts,
   });
 
-  if (isLoading) {
-    return <p>Loading products...</p>;
-  }
-
-  if (isError) {
-    return <p>Could not load products. Please try again later.</p>;
-  }
-
   const products = data ?? [];
 
-  if (products.length === 0) {
-    return <p>No products available yet.</p>;
-  }
-
   return (
-    <section className="product-grid">
-      {products.map((product) => (
-        <ProductCard key={product._id} product={product} />
-      ))}
-    </section>
+    <>
+      {isLoading && <p>Loading products...</p>}
+      {!isLoading && isError && (
+        <p>Could not load products. Please try again later.</p>
+      )}
+      {!isLoading && !isError && products.length === 0 && (
+        <p>No products available yet.</p>
+      )}
+      {!isLoading && !isError && products.length > 0 && (
+        <section className="product-grid">
+          {products.map((product) => (
+            <ProductCard key={product._id} product={product} />
+          ))}
+        </section>
+      )}
+    </>
   );
 }
 

@@ -24,7 +24,11 @@ import { DEBUG_TIMERS_EVENT } from '../services/debugTimers';
 import { getStoredUser } from '../services/userStorage';
 import type { ContentType } from '../types/content';
 
-function Home() {
+type HomeProps = {
+  onEntranceComplete?: () => void;
+};
+
+function Home({ onEntranceComplete }: HomeProps) {
   const queryClient = useQueryClient();
   const { data: timeline, isLoading, error } = useMainTimeline();
   const { data: collections } = useCollections();
@@ -178,6 +182,7 @@ function Home() {
         onContentUnfocus={handleContentUnfocus}
         onDetailLayoutStart={handleDetailLayoutStart}
         onDetailImageRect={handleDetailImageRect}
+        onEntranceComplete={onEntranceComplete}
       />
       <TimelineDetailOverlay
         detail={timelineDetail}

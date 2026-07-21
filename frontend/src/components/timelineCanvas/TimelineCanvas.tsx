@@ -30,6 +30,7 @@ function TimelineCanvas({
   onContentUnfocus,
   onDetailLayoutStart,
   onDetailImageRect,
+  onEntranceComplete,
 }: TimelineCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const interactionLockedRef = useRef(false);
@@ -41,6 +42,7 @@ function TimelineCanvas({
   const onContentUnfocusRef = useRef(onContentUnfocus);
   const onDetailLayoutStartRef = useRef(onDetailLayoutStart);
   const onDetailImageRectRef = useRef(onDetailImageRect);
+  const onEntranceCompleteRef = useRef(onEntranceComplete);
   const [branchFocus, setBranchFocus] = useState<BranchFocusInfo | null>(null);
   const onBranchFocusRef = useRef<
     ((info: BranchFocusInfo | null) => void) | undefined
@@ -82,6 +84,10 @@ function TimelineCanvas({
   useEffect(() => {
     onDetailImageRectRef.current = onDetailImageRect;
   }, [onDetailImageRect]);
+
+  useEffect(() => {
+    onEntranceCompleteRef.current = onEntranceComplete;
+  }, [onEntranceComplete]);
 
   useEffect(() => {
     const preventScrollWhileFocused = (event: WheelEvent) => {
@@ -162,6 +168,7 @@ function TimelineCanvas({
         onContentUnfocusRef,
         onDetailLayoutStartRef,
         onDetailImageRectRef,
+        onEntranceCompleteRef,
         onBranchFocusRef,
         onAudioStateChangeRef,
         resetViewRef,

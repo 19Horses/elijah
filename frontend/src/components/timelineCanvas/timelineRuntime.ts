@@ -50,6 +50,7 @@ export function createTimelineRuntime(): TimelineRuntime {
     branchIsolateActive: false,
     branchIsolate: 0,
     loadStartMs: 0,
+    entranceComplete: false,
     focusContentFade: 0,
     focusedItemIsFuture: false,
     detailPhase: 'none',

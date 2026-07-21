@@ -21,6 +21,7 @@ export type TimelineCanvasProps = {
   onContentUnfocus?: () => void;
   onDetailLayoutStart?: () => void;
   onDetailImageRect?: (rect: DetailImageRect) => void;
+  onEntranceComplete?: () => void;
 };
 
 export type DetailImageRect = {
@@ -171,6 +172,9 @@ export type TimelineRuntime = {
   branchIsolateActive: boolean;
   branchIsolate: number;
   loadStartMs: number;
+  // Set once the staggered entrance (images + connectors) has fully faded
+  // in, so the one-shot onEntranceComplete callback only fires once.
+  entranceComplete: boolean;
   focusContentFade: number;
   // Whether the currently/last focused item is dated after today, so the detail
   // view can invert to a white background. Retained through the unfocus fade.
@@ -203,6 +207,9 @@ export type TimelineSketchRefs = {
   onDetailImageRectRef: RefObject<
     ((rect: DetailImageRect) => void) | undefined
   >;
+  // Sketch → React: fires once, after the timeline's staggered entrance
+  // animation has fully finished.
+  onEntranceCompleteRef: RefObject<(() => void) | undefined>;
   // Sketch → React: reports which branch timeline is zoomed into (or null).
   onBranchFocusRef: RefObject<
     ((info: BranchFocusInfo | null) => void) | undefined

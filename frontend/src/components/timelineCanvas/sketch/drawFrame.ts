@@ -208,6 +208,18 @@ export function createDrawFrameHandler(
     const collectedConnectorBaseStart =
       connectorBaseStart +
       Math.max(0, deps.processed.length - 1) * LOAD_CONNECTOR_STAGGER_MS;
+    // The collected-lane connectors (or, if there are none, the main-lane
+    // connectors) are the last thing to fade in — once they're done, the
+    // whole entrance sequence is complete.
+    const totalEntranceMs =
+      collectedConnectorBaseStart +
+      Math.max(0, deps.processedCollected.length - 1) *
+        LOAD_CONNECTOR_STAGGER_MS +
+      LOAD_CONNECTOR_FADE_MS;
+    if (!runtime.entranceComplete && elapsed >= totalEntranceMs) {
+      runtime.entranceComplete = true;
+      deps.refs.onEntranceCompleteRef.current?.();
+    }
     const getImageLoadAlpha = (imageIndex: number) =>
       getStaggeredLoadAlpha(
         elapsed,

@@ -30,6 +30,15 @@ body {
 
 main {
   padding: 2rem;
+  transition: opacity 0.4s ease;
+}
+
+/* Applied imperatively (see EMenu.tsx) just before navigating away, so the
+   outgoing screen fades out as a block instead of hard-cutting to the next
+   page. Cleared automatically once the new page renders its own className. */
+main.main--leaving {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .site-header {
@@ -186,6 +195,17 @@ main.main--landing {
 main.main--home {
   height: 100vh;
   height: 100dvh;
+  overflow: hidden;
+  padding: 0;
+  width: 100%;
+}
+
+main.main--shop {
+  align-items: center;
+  display: flex;
+  height: 100vh;
+  height: 100dvh;
+  justify-content: center;
   overflow: hidden;
   padding: 0;
   width: 100%;
@@ -1383,15 +1403,155 @@ main.main--home {
   opacity: 0.6;
 }
 
+/* ── E menu ────────────────────────── */
+
+.e-menu {
+  bottom: 1.5rem;
+  position: fixed;
+  right: 1.5rem;
+  z-index: 12;
+  opacity: 0;
+}
+
+.e-menu--visible {
+  animation: e-menu-fade-in 0.8s ease forwards;
+}
+
+@keyframes e-menu-fade-in {
+  to {
+    opacity: 1;
+  }
+}
+
+.e-menu__trigger {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  display: block;
+  font-family: 'EB Garamond', 'Times New Roman', Times, serif;
+  font-size: 10rem;
+  line-height: 1;
+  padding: 0;
+  position: relative;
+  transition: color 0.15s ease;
+  user-select: none;
+  z-index: 1;
+}
+
+/* The e only acts as a link back to the timeline off the timeline itself
+   (see the e-menu--linkable modifier in EMenu.tsx) - only show the link
+   hover colour there, not while it's just the fan-out toggle. */
+.e-menu--linkable .e-menu__trigger:hover {
+  color: var(--selection-color);
+}
+
+.e-menu__items {
+  /* Anchored at the centre of the e's own box (not its corner), so items
+     collapse into and fan out from the middle of the glyph itself. */
+  bottom: 50%;
+  pointer-events: none;
+  position: absolute;
+  right: 50%;
+  /* Above the trigger's own z-index, so items win clicks/hover in the area
+     where the fanned-out pills overlap the e's large glyph box. */
+  z-index: 2;
+}
+
+.e-menu--open .e-menu__items {
+  pointer-events: auto;
+}
+
+.e-menu__item {
+  background: none;
+  border: none;
+  bottom: 0;
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  /* Same face as the timeline's own date labels (see DATE_FONT_SIZE in
+     timelineCanvas/constants.ts), sized up for legibility as a nav link. */
+  font-family: 'EB Garamond', 'Times New Roman', Times, serif;
+  font-size: 1.5rem;
+  opacity: 0;
+  padding: 0;
+  position: absolute;
+  right: 0;
+  text-decoration: none;
+  /* translate(50%, 50%) recentres the item on its own anchor point (it
+     would otherwise sit by its bottom-right corner), so items of different
+     text width still end up the same distance from the e - see the
+     per-item rules below, which add the actual offset on top of this. */
+  transform: translate(50%, 50%) scale(0.85);
+  transition: opacity 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), color 0.15s ease;
+  white-space: nowrap;
+}
+
+.e-menu__item:hover {
+  color: var(--selection-color);
+}
+
+/* Marks the Shop link as the current page while on /shop. */
+.e-menu__item--active {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* Each item sits the same radius from the e, spread across a wider arc up
+   and to the left (the only open quadrant, since the e sits in the
+   bottom-right corner) than the radius alone would suggest - shrinking the
+   radius without widening the angle crowds adjacent items together, since
+   the gap between them scales with the radius too. Cascades around the arc
+   in order. */
+.e-menu__item--mailing {
+  transition-delay: 0ms;
+}
+
+.e-menu__item--login {
+  transition-delay: 70ms;
+}
+
+.e-menu__item--shop {
+  transition-delay: 140ms;
+}
+
+/* Each item's offset below is the arc position plus a constant (18px left,
+   15px down) shift of the whole cluster, so it wraps around the e's actual
+   visual weight rather than its geometric box centre. */
+.e-menu--open .e-menu__item--mailing {
+  opacity: 1;
+  transform: translate(calc(50% - 103px), calc(50% + 8px)) scale(1);
+}
+
+.e-menu--open .e-menu__item--login {
+  opacity: 1;
+  transform: translate(calc(50% - 83px), calc(50% - 40px)) scale(1);
+}
+
+.e-menu--open .e-menu__item--shop {
+  opacity: 1;
+  transform: translate(calc(50% - 40px), calc(50% - 67px)) scale(1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .landing__vignette,
   .splash-card,
-  .signup-form {
+  .signup-form,
+  main {
     transition: none;
   }
 
   .user-card {
     animation: none;
+  }
+
+  .e-menu--visible {
+    animation: none;
+    opacity: 1;
+  }
+
+  .e-menu__item {
+    transition: none;
   }
 
   .landing--card-exit .splash-card {
