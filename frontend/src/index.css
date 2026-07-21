@@ -1477,9 +1477,9 @@ main.main--shop {
   white-space: nowrap;
 }
 
-/* Each item sits the same radius from the e, wrapping around it from
-   straight-left up to nearly-straight-up (the only open quadrant, since the
-   e sits in the bottom-right corner). Cascades around the arc in order. */
+/* Each item sits the same radius from the e, in a tight arc up and to the
+   left (the only open quadrant, since the e sits in the bottom-right
+   corner). Cascades around the arc in order. */
 .e-menu__item--mailing {
   transition-delay: 0ms;
 }
@@ -1494,17 +1494,17 @@ main.main--shop {
 
 .e-menu--open .e-menu__item--mailing {
   opacity: 1;
-  transform: translate(calc(50% - 150px), 50%) scale(1);
+  transform: translate(calc(50% - 113px), calc(50% - 20px)) scale(1);
 }
 
 .e-menu--open .e-menu__item--login {
   opacity: 1;
-  transform: translate(calc(50% - 115px), calc(50% - 96px)) scale(1);
+  transform: translate(calc(50% - 100px), calc(50% - 58px)) scale(1);
 }
 
 .e-menu--open .e-menu__item--shop {
   opacity: 1;
-  transform: translate(calc(50% - 26px), calc(50% - 148px)) scale(1);
+  transform: translate(calc(50% - 74px), calc(50% - 88px)) scale(1);
 }
 
 @media (prefers-reduced-motion: reduce) {
