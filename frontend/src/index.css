@@ -1434,6 +1434,7 @@ main.main--shop {
   line-height: 1;
   padding: 0;
   position: relative;
+  user-select: none;
   z-index: 1;
 }
 
@@ -1493,17 +1494,17 @@ main.main--shop {
 
 .e-menu--open .e-menu__item--mailing {
   opacity: 1;
-  transform: translate(calc(50% - 190px), 50%) scale(1);
+  transform: translate(calc(50% - 150px), 50%) scale(1);
 }
 
 .e-menu--open .e-menu__item--login {
   opacity: 1;
-  transform: translate(calc(50% - 146px), calc(50% - 122px)) scale(1);
+  transform: translate(calc(50% - 115px), calc(50% - 96px)) scale(1);
 }
 
 .e-menu--open .e-menu__item--shop {
   opacity: 1;
-  transform: translate(calc(50% - 33px), calc(50% - 187px)) scale(1);
+  transform: translate(calc(50% - 26px), calc(50% - 148px)) scale(1);
 }
 
 @media (prefers-reduced-motion: reduce) {
