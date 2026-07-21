@@ -194,9 +194,11 @@ main.main--home {
 main.main--shop {
   align-items: center;
   display: flex;
+  height: 100vh;
+  height: 100dvh;
   justify-content: center;
-  min-height: 100vh;
-  min-height: 100dvh;
+  overflow: hidden;
+  padding: 0;
   width: 100%;
 }
 
