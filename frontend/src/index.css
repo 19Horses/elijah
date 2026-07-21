@@ -1422,6 +1422,9 @@ main.main--home {
   pointer-events: none;
   position: absolute;
   right: 0;
+  /* Above the trigger's own z-index, so items win clicks/hover in the area
+     where the fanned-out pills overlap the e's large glyph box. */
+  z-index: 2;
 }
 
 .e-menu--open .e-menu__items {
