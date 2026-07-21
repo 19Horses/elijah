@@ -1457,10 +1457,10 @@ main.main--shop {
   bottom: 0;
   color: rgba(255, 255, 255, 0.92);
   cursor: pointer;
-  /* Same face and size as the timeline's own date labels (see
-     DATE_FONT_SIZE in timelineCanvas/constants.ts). */
+  /* Same face as the timeline's own date labels (see DATE_FONT_SIZE in
+     timelineCanvas/constants.ts), sized up for legibility as a nav link. */
   font-family: 'EB Garamond', 'Times New Roman', Times, serif;
-  font-size: 1rem;
+  font-size: 1.5rem;
   opacity: 0;
   padding: 0;
   position: absolute;
@@ -1493,17 +1493,17 @@ main.main--shop {
 
 .e-menu--open .e-menu__item--mailing {
   opacity: 1;
-  transform: translate(calc(50% - 110px), 50%) scale(1);
+  transform: translate(calc(50% - 190px), 50%) scale(1);
 }
 
 .e-menu--open .e-menu__item--login {
   opacity: 1;
-  transform: translate(calc(50% - 84px), calc(50% - 71px)) scale(1);
+  transform: translate(calc(50% - 146px), calc(50% - 122px)) scale(1);
 }
 
 .e-menu--open .e-menu__item--shop {
   opacity: 1;
-  transform: translate(calc(50% - 19px), calc(50% - 108px)) scale(1);
+  transform: translate(calc(50% - 33px), calc(50% - 187px)) scale(1);
 }
 
 @media (prefers-reduced-motion: reduce) {
