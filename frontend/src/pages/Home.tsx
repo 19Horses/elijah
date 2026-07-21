@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CollectionCountdown from '../components/CollectionCountdown';
 import CollectionViewer from '../components/CollectionViewer';
+import EMenu from '../components/EMenu';
 import TimelineCanvas from '../components/timelineCanvas';
 import type { DetailImageRect } from '../components/timelineCanvas/types';
 import TimelineDetailOverlay, {
@@ -40,6 +41,7 @@ function Home() {
   const [detailReady, setDetailReady] = useState(false);
   const [detailImageRect, setDetailImageRect] =
     useState<DetailImageRect | null>(null);
+  const [timelineReady, setTimelineReady] = useState(false);
   const userCardWrapRef = useRef<HTMLDivElement>(null);
   const isolateOwnBranchRef = useRef<(() => void) | undefined>(undefined);
 
@@ -69,6 +71,10 @@ function Home() {
 
   const handleDetailLayoutStart = useCallback(() => {
     setDetailReady(true);
+  }, []);
+
+  const handleEntranceComplete = useCallback(() => {
+    setTimelineReady(true);
   }, []);
 
   const handleDetailImageRect = useCallback((rect: DetailImageRect) => {
@@ -178,6 +184,7 @@ function Home() {
         onContentUnfocus={handleContentUnfocus}
         onDetailLayoutStart={handleDetailLayoutStart}
         onDetailImageRect={handleDetailImageRect}
+        onEntranceComplete={handleEntranceComplete}
       />
       <TimelineDetailOverlay
         detail={timelineDetail}
@@ -203,6 +210,7 @@ function Home() {
           onHoverChange={setOwnBranchHover}
         />
       </div>
+      {timelineReady && <EMenu />}
     </section>
   );
 }
