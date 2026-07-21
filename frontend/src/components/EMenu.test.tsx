@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import EMenu from './EMenu';
 
 function renderMenu() {
@@ -17,6 +17,14 @@ function renderMenu() {
 }
 
 describe('EMenu', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   test('the menu items are not exposed until the e is opened', () => {
     renderMenu();
     expect(screen.queryByRole('menuitem', { name: 'Shop' })).toBeNull();
@@ -30,18 +38,30 @@ describe('EMenu', () => {
     expect(screen.getByRole('menuitem', { name: 'Mailing list' })).toBeTruthy();
   });
 
-  test('the mouse leaving the section closes the menu again', () => {
+  test('the mouse leaving the section keeps it open through a short grace period, then closes it', () => {
     const { section } = renderMenu();
     fireEvent.mouseEnter(section);
     fireEvent.mouseLeave(section);
+    // Still open immediately after leaving - covers the moment the pointer
+    // is in transit toward an item, over empty space.
+    expect(screen.getByRole('menuitem', { name: 'Shop' })).toBeTruthy();
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
     expect(screen.queryByRole('menuitem', { name: 'Shop' })).toBeNull();
   });
 
-  test('moving from the e onto a menu item keeps the menu open', () => {
+  test('re-entering during the grace period cancels the close', () => {
     const { section } = renderMenu();
     fireEvent.mouseEnter(section);
-    const shopLink = screen.getByRole('menuitem', { name: 'Shop' });
-    fireEvent.mouseEnter(shopLink);
+    fireEvent.mouseLeave(section);
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    fireEvent.mouseEnter(section);
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
     expect(screen.getByRole('menuitem', { name: 'Shop' })).toBeTruthy();
   });
 

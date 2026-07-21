@@ -1410,7 +1410,7 @@ main.main--home {
   cursor: pointer;
   display: block;
   font-family: 'EB Garamond', 'Times New Roman', Times, serif;
-  font-size: 7rem;
+  font-size: 10rem;
   line-height: 1;
   padding: 0;
   position: relative;
@@ -1467,17 +1467,17 @@ main.main--home {
 
 .e-menu--open .e-menu__item--mailing {
   opacity: 1;
-  transform: translate(-170px, 0) scale(1);
+  transform: translate(-110px, 0) scale(1);
 }
 
 .e-menu--open .e-menu__item--login {
   opacity: 1;
-  transform: translate(-130px, -109px) scale(1);
+  transform: translate(-84px, -71px) scale(1);
 }
 
 .e-menu--open .e-menu__item--shop {
   opacity: 1;
-  transform: translate(-30px, -167px) scale(1);
+  transform: translate(-19px, -108px) scale(1);
 }
 
 @media (prefers-reduced-motion: reduce) {
