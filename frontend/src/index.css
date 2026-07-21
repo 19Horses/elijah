@@ -1496,17 +1496,17 @@ main.main--shop {
 
 .e-menu--open .e-menu__item--mailing {
   opacity: 1;
-  transform: translate(calc(50% - 98px), calc(50% - 17px)) scale(1);
+  transform: translate(calc(50% - 64px), calc(50% - 11px)) scale(1);
 }
 
 .e-menu--open .e-menu__item--login {
   opacity: 1;
-  transform: translate(calc(50% - 87px), calc(50% - 50px)) scale(1);
+  transform: translate(calc(50% - 56px), calc(50% - 33px)) scale(1);
 }
 
 .e-menu--open .e-menu__item--shop {
   opacity: 1;
-  transform: translate(calc(50% - 64px), calc(50% - 77px)) scale(1);
+  transform: translate(calc(50% - 42px), calc(50% - 50px)) scale(1);
 }
 
 @media (prefers-reduced-motion: reduce) {
