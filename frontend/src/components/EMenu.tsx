@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { prefersReducedMotion } from '../utils/motionPreference';
 
 // How long the menu stays open after the pointer leaves before it actually
 // closes. The items sit some distance from the e with empty space between
@@ -11,14 +12,6 @@ const CLOSE_GRACE_MS = 300;
 // How long the outgoing screen fades out before we actually navigate. Must
 // match the `main` transition duration in index.css.
 const SCREEN_FADE_OUT_MS = 400;
-
-function prefersReducedMotion() {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  );
-}
 
 function EMenu() {
   const [isVisible, setIsVisible] = useState(false);
