@@ -70,7 +70,7 @@ describe('CollectedBranchStrip', () => {
     expect(root.style.getPropertyValue('--branch-colour')).toBe('#abcdef');
   });
 
-  test('renders a coloured outer dot with a black inner dot for each item', () => {
+  test('renders a left-edge and right-edge dot (each with a black inner dot) for every item', () => {
     const items = [
       makeItem({ _id: 'a' }),
       makeItem({ _id: 'b' }),
@@ -80,10 +80,16 @@ describe('CollectedBranchStrip', () => {
     );
     expect(
       container.querySelectorAll('.collected-branch-strip__dot')
+    ).toHaveLength(4);
+    expect(
+      container.querySelectorAll('.collected-branch-strip__dot--left')
+    ).toHaveLength(2);
+    expect(
+      container.querySelectorAll('.collected-branch-strip__dot--right')
     ).toHaveLength(2);
     expect(
       container.querySelectorAll('.collected-branch-strip__dot-inner')
-    ).toHaveLength(2);
+    ).toHaveLength(4);
   });
 
   test('sets a per-node stagger index for the entrance animation', () => {
