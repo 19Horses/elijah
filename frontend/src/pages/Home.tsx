@@ -25,6 +25,14 @@ import { DEBUG_TIMERS_EVENT } from '../services/debugTimers';
 import { DEFAULT_COLOUR, getStoredColour } from '../services/userColor';
 import { getStoredUser } from '../services/userStorage';
 import type { ContentType } from '../types/content';
+import { prefersReducedMotion } from '../utils/motionPreference';
+
+// How long the timeline fades out before the collection view appears, and
+// how long the collection view fades out before the timeline reappears.
+// Matches EMenu's screen-fade transition duration (index.css's `main`/
+// `main--leaving`), so opening/closing a collection reads as the same kind
+// of transition as navigating between screens.
+const COLLECTION_FADE_MS = 400;
 
 type HomeProps = {
   onEntranceComplete?: () => void;
@@ -37,6 +45,15 @@ function Home({ onEntranceComplete }: HomeProps) {
   const { data: collectedRows, isLoading: isCollectedLoading } =
     useCollectedTimeline();
   const [viewerOpen, setViewerOpen] = useState(false);
+  // True from the moment the timeline starts fading out until the collection
+  // view is actually mounted, and again from the moment the collection view
+  // starts fading out until the timeline reappears — drives the canvas fade
+  // and hides the countdown for the whole transition, not just its endpoints.
+  const [canvasHidden, setCanvasHidden] = useState(false);
+  const [viewerLeaving, setViewerLeaving] = useState(false);
+  const collectionTransitionTimeoutRef = useRef<number | undefined>(
+    undefined
+  );
   const [alreadyCollected, setAlreadyCollected] = useState(false);
   const [statusChecked, setStatusChecked] = useState(false);
   const [collectedSignal, setCollectedSignal] = useState(0);
@@ -122,6 +139,37 @@ function Home({ onEntranceComplete }: HomeProps) {
     void queryClient.invalidateQueries({ queryKey: ['contentDetail'] });
   };
 
+  // Fades the timeline out, then reveals the collection view once that
+  // finishes — the same "animate, then reveal/navigate once it finishes"
+  // idiom EMenu.tsx uses for its own screen transition.
+  const openCollectionView = () => {
+    setCanvasHidden(true);
+    window.clearTimeout(collectionTransitionTimeoutRef.current);
+    collectionTransitionTimeoutRef.current = window.setTimeout(
+      () => setViewerOpen(true),
+      prefersReducedMotion() ? 0 : COLLECTION_FADE_MS
+    );
+  };
+
+  // Mirrors openCollectionView in reverse: fade the collection view out,
+  // then reveal the timeline again once that finishes.
+  const closeCollectionView = () => {
+    setViewerLeaving(true);
+    window.clearTimeout(collectionTransitionTimeoutRef.current);
+    collectionTransitionTimeoutRef.current = window.setTimeout(
+      () => {
+        setViewerOpen(false);
+        setViewerLeaving(false);
+        setCanvasHidden(false);
+      },
+      prefersReducedMotion() ? 0 : COLLECTION_FADE_MS
+    );
+  };
+
+  useEffect(() => {
+    return () => window.clearTimeout(collectionTransitionTimeoutRef.current);
+  }, []);
+
   useEffect(() => {
     const currentUser = getStoredUser();
     if (!currentUser || !activeCollection) {
@@ -176,7 +224,7 @@ function Home({ onEntranceComplete }: HomeProps) {
     <section className="home">
       <div
         className={`home__canvas-layer${
-          viewerOpen ? ' home__canvas-layer--hidden' : ''
+          canvasHidden ? ' home__canvas-layer--hidden' : ''
         }`}
       >
         <TimelineCanvas
@@ -209,14 +257,18 @@ function Home({ onEntranceComplete }: HomeProps) {
       {statusChecked &&
         activeCollection &&
         !alreadyCollected &&
-        !viewerOpen && (
+        !canvasHidden && (
           <CollectionCountdown
             collection={activeCollection}
-            onClick={() => setViewerOpen(true)}
+            onClick={openCollectionView}
           />
         )}
       {viewerOpen && activeCollection && (
-        <>
+        <div
+          className={`collection-view${
+            viewerLeaving ? ' collection-view--leaving' : ''
+          }`}
+        >
           <div className="collection-top-band">
             <CollectedBranchStrip
               items={collectedRow?.items ?? []}
@@ -225,10 +277,10 @@ function Home({ onEntranceComplete }: HomeProps) {
           </div>
           <CollectionViewer
             collection={activeCollection}
-            onClose={() => setViewerOpen(false)}
+            onClose={closeCollectionView}
             onCollected={handleCollected}
           />
-        </>
+        </div>
       )}
     </section>
   );
