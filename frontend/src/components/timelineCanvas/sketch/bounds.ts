@@ -203,9 +203,9 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
   };
 
   const slotLeft = (index: number): number => {
-    const { extra, extraBeforeFirst } = getGapExtraSlots();
+    const { extra } = getGapExtraSlots();
     const step = ITEM_WIDTH + ITEM_GAP;
-    let x = PADDING_X + step * extraBeforeFirst;
+    let x = PADDING_X;
     for (let gap = 0; gap < index; gap++) {
       x += step * (1 + (extra[gap] ?? 0));
     }
@@ -234,7 +234,11 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       return slotCenterX(items.length - 1) + step / 2;
     }
     if (firstFuture === 0) {
-      return slotCenterX(0) - step / 2;
+      // A chain rooted here grows rightward from this point (see
+      // getCollectedBounds), so a deep chain needs a head start further left
+      // of the first main item, not just a single step, to clear it entirely.
+      const { extraBeforeFirst } = getGapExtraSlots();
+      return slotCenterX(0) - step * extraBeforeFirst - step / 2;
     }
 
     const prev = firstFuture - 1;
