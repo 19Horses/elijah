@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import CollectedBranchStrip from '../components/CollectedBranchStrip';
 import CollectionCountdown from '../components/CollectionCountdown';
 import CollectionViewer from '../components/CollectionViewer';
 import TimelineCanvas from '../components/timelineCanvas';
@@ -21,6 +22,7 @@ import { useCollections } from '../queries/collection';
 import { useMainTimeline } from '../queries/mainTimeline';
 import { hasCollectedFrom } from '../services/collectItem';
 import { DEBUG_TIMERS_EVENT } from '../services/debugTimers';
+import { DEFAULT_COLOUR, getStoredColour } from '../services/userColor';
 import { getStoredUser } from '../services/userStorage';
 import type { ContentType } from '../types/content';
 
@@ -80,6 +82,9 @@ function Home({ onEntranceComplete }: HomeProps) {
   }, []);
 
   const currentUsername = useMemo(() => getStoredUser()?.username ?? null, []);
+  const branchColour = getStoredColour() ?? DEFAULT_COLOUR;
+  const collectedRow =
+    collectedRows?.find((row) => row.username === currentUsername) ?? null;
 
   const timelineDetail = useMemo((): TimelineDetailView | null => {
     if (!focusSlug || !detailReady || !contentDetail) {
@@ -169,45 +174,62 @@ function Home({ onEntranceComplete }: HomeProps) {
 
   return (
     <section className="home">
-      <TimelineCanvas
-        items={timeline.items}
-        collectedRows={collectedRows}
-        colour={timeline.colour}
-        currentUsername={currentUsername}
-        highlightedType={highlightedType}
-        hoverOwnBranch={ownBranchHover}
-        isolateControlRef={isolateOwnBranchRef}
-        onFocusFadeChange={handleFocusFadeChange}
-        onContentFocus={handleContentFocus}
-        onContentUnfocus={handleContentUnfocus}
-        onDetailLayoutStart={handleDetailLayoutStart}
-        onDetailImageRect={handleDetailImageRect}
-        onEntranceComplete={onEntranceComplete}
-      />
-      <TimelineDetailOverlay
-        detail={timelineDetail}
-        imageRect={detailImageRect}
-      />
-      {statusChecked && activeCollection && !alreadyCollected && (
-        <CollectionCountdown
-          collection={activeCollection}
-          onClick={() => setViewerOpen(true)}
+      <div
+        className={`home__canvas-layer${
+          viewerOpen ? ' home__canvas-layer--hidden' : ''
+        }`}
+      >
+        <TimelineCanvas
+          items={timeline.items}
+          collectedRows={collectedRows}
+          colour={timeline.colour}
+          currentUsername={currentUsername}
+          highlightedType={highlightedType}
+          hoverOwnBranch={ownBranchHover}
+          isolateControlRef={isolateOwnBranchRef}
+          onFocusFadeChange={handleFocusFadeChange}
+          onContentFocus={handleContentFocus}
+          onContentUnfocus={handleContentUnfocus}
+          onDetailLayoutStart={handleDetailLayoutStart}
+          onDetailImageRect={handleDetailImageRect}
+          onEntranceComplete={onEntranceComplete}
         />
-      )}
-      {viewerOpen && activeCollection && (
-        <CollectionViewer
-          collection={activeCollection}
-          onClose={() => setViewerOpen(false)}
-          onCollected={handleCollected}
+        <TimelineDetailOverlay
+          detail={timelineDetail}
+          imageRect={detailImageRect}
         />
-      )}
-      <div ref={userCardWrapRef}>
-        <UserCard
-          refreshSignal={collectedSignal}
-          onActivate={() => isolateOwnBranchRef.current?.()}
-          onHoverChange={setOwnBranchHover}
-        />
+        <div ref={userCardWrapRef}>
+          <UserCard
+            refreshSignal={collectedSignal}
+            onActivate={() => isolateOwnBranchRef.current?.()}
+            onHoverChange={setOwnBranchHover}
+          />
+        </div>
       </div>
+      {statusChecked &&
+        activeCollection &&
+        !alreadyCollected &&
+        !viewerOpen && (
+          <CollectionCountdown
+            collection={activeCollection}
+            onClick={() => setViewerOpen(true)}
+          />
+        )}
+      {viewerOpen && activeCollection && (
+        <>
+          <div className="collection-top-band">
+            <CollectedBranchStrip
+              items={collectedRow?.items ?? []}
+              colour={branchColour}
+            />
+          </div>
+          <CollectionViewer
+            collection={activeCollection}
+            onClose={() => setViewerOpen(false)}
+            onCollected={handleCollected}
+          />
+        </>
+      )}
     </section>
   );
 }
