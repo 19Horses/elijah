@@ -532,6 +532,18 @@ main.main--shop {
   pointer-events: none;
 }
 
+/* Same transition (duration, easing, properties) as `main`/`main--leaving`'s
+   screen-fade, so closing a collection reads as the same kind of transition
+   as navigating between screens. */
+.collection-view {
+  transition: opacity 0.4s ease;
+}
+
+.collection-view--leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .collection-top-band {
   align-items: center;
   display: flex;
@@ -556,20 +568,42 @@ main.main--shop {
 }
 
 .collected-branch-strip__line {
+  animation: collected-branch-strip-line-enter 0.4s ease forwards;
   background: var(--branch-colour, #ffffff);
   height: 2px;
   left: 4rem;
+  opacity: 0;
   position: absolute;
   right: 4rem;
   top: 50%;
   transform: translateY(-50%);
 }
 
+@keyframes collected-branch-strip-line-enter {
+  to {
+    opacity: 1;
+  }
+}
+
 .collected-branch-strip__node {
+  animation: collected-branch-strip-node-enter 0.55s
+    cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation-delay: calc(var(--node-index) * 90ms);
+  opacity: 0;
   position: relative;
+  transform: translateY(-16px);
   z-index: 1;
 }
 
+@keyframes collected-branch-strip-node-enter {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* A coloured outer ring with a black centre, matching the canvas's own
+   branch-connector dot (see connectors.ts's drawDot). */
 .collected-branch-strip__dot {
   background: var(--branch-colour, #ffffff);
   border-radius: 50%;
@@ -581,19 +615,32 @@ main.main--shop {
   width: 8px;
 }
 
+.collected-branch-strip__dot-inner {
+  background: #000000;
+  border-radius: 50%;
+  display: block;
+  height: 4px;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 4px;
+}
+
+/* Sharp corners, white border, contain-fit — matches how the canvas draws
+   every collected item's image (drawContainedImage + a 1px white rect). */
 .collected-branch-strip__thumb {
-  background: #111;
-  border: 2px solid var(--branch-colour, #ffffff);
-  border-radius: 8px;
-  height: 3.5rem;
+  background: #000000;
+  border: 1px solid #ffffff;
+  height: 5.5rem;
   overflow: hidden;
-  width: 3.5rem;
+  width: 6.5rem;
 }
 
 .collected-branch-strip__thumb img {
   display: block;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   width: 100%;
 }
 

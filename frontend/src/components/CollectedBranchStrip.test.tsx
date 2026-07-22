@@ -69,4 +69,35 @@ describe('CollectedBranchStrip', () => {
     ) as HTMLElement;
     expect(root.style.getPropertyValue('--branch-colour')).toBe('#abcdef');
   });
+
+  test('renders a coloured outer dot with a black inner dot for each item', () => {
+    const items = [
+      makeItem({ _id: 'a' }),
+      makeItem({ _id: 'b' }),
+    ] as CollectedRowItem[];
+    const { container } = render(
+      <CollectedBranchStrip items={items} colour="#123456" />
+    );
+    expect(
+      container.querySelectorAll('.collected-branch-strip__dot')
+    ).toHaveLength(2);
+    expect(
+      container.querySelectorAll('.collected-branch-strip__dot-inner')
+    ).toHaveLength(2);
+  });
+
+  test('sets a per-node stagger index for the entrance animation', () => {
+    const items = [
+      makeItem({ _id: 'a' }),
+      makeItem({ _id: 'b' }),
+    ] as CollectedRowItem[];
+    const { container } = render(
+      <CollectedBranchStrip items={items} colour="#123456" />
+    );
+    const nodes = container.querySelectorAll<HTMLElement>(
+      '.collected-branch-strip__node'
+    );
+    expect(nodes[0].style.getPropertyValue('--node-index')).toBe('0');
+    expect(nodes[1].style.getPropertyValue('--node-index')).toBe('1');
+  });
 });
