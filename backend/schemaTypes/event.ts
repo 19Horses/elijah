@@ -6,6 +6,14 @@ export const event = defineType({
   type: 'document',
   fields: [
     defineField({
+      name: 'bandsintownId',
+      title: 'Bandsintown ID',
+      type: 'string',
+      description: 'Set automatically when imported from Bandsintown.',
+      readOnly: true,
+      hidden: ({value}) => value === undefined,
+    }),
+    defineField({
       name: 'date',
       title: 'Date',
       type: 'datetime',
