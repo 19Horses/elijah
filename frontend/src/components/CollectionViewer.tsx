@@ -176,7 +176,7 @@ function CollectionViewer({
               collecting ? ' collection-viewer__track--collecting' : ''
             }`}
             style={{
-              transform: `translateX(calc(-1 * (${activeIndex} + 0.5) * var(--cv-slot)))`,
+              transform: `translateX(calc(-1 * ${activeIndex} * var(--cv-slot)))`,
             }}
           >
             {items.map((item, index) => (

@@ -523,6 +523,100 @@ main.main--shop {
   display: block;
 }
 
+.home__canvas-layer {
+  transition: opacity 0.4s ease;
+}
+
+.home__canvas-layer--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.collection-top-band {
+  align-items: center;
+  display: flex;
+  height: 15vh;
+  justify-content: center;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+  z-index: 15;
+}
+
+.collected-branch-strip {
+  align-items: center;
+  display: flex;
+  gap: 2.5rem;
+  height: 100%;
+  justify-content: center;
+  padding: 0 4rem;
+  position: relative;
+  width: 100%;
+}
+
+.collected-branch-strip__line {
+  background: var(--branch-colour, #ffffff);
+  height: 2px;
+  left: 4rem;
+  position: absolute;
+  right: 4rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.collected-branch-strip__node {
+  position: relative;
+  z-index: 1;
+}
+
+.collected-branch-strip__dot {
+  background: var(--branch-colour, #ffffff);
+  border-radius: 50%;
+  height: 8px;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 8px;
+}
+
+.collected-branch-strip__thumb {
+  background: #111;
+  border: 2px solid var(--branch-colour, #ffffff);
+  border-radius: 8px;
+  height: 3.5rem;
+  overflow: hidden;
+  width: 3.5rem;
+}
+
+.collected-branch-strip__thumb img {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.collected-branch-strip__thumb-fallback {
+  align-items: center;
+  color: rgba(255, 255, 255, 0.6);
+  display: flex;
+  font-size: 0.5rem;
+  height: 100%;
+  justify-content: center;
+  padding: 0.25rem;
+  text-align: center;
+  width: 100%;
+}
+
+.collected-branch-strip--empty {
+  border: 1px dashed var(--branch-colour, #ffffff);
+  border-radius: 8px;
+  height: calc(100% - 3rem);
+  margin: 1.5rem 4rem;
+  width: calc(100% - 8rem);
+}
+
 .collection-countdown {
   align-items: center;
   backdrop-filter: blur(12px);
@@ -582,14 +676,17 @@ main.main--shop {
 
 .collection-viewer__overlay {
   background: rgba(0, 0, 0, 0);
-  inset: 0;
+  top: 15vh;
+  right: 0;
+  bottom: 0;
+  left: 0;
   position: absolute;
   transition: background 0.4s ease;
   z-index: 20;
 }
 
 .collection-viewer__overlay--visible {
-  background: rgba(0, 0, 0, 0.72);
+  background: rgba(0, 0, 0, 0.35);
 }
 
 .collection-viewer__stage {
@@ -613,7 +710,7 @@ main.main--shop {
 .collection-viewer__track {
   align-items: center;
   display: flex;
-  left: 50%;
+  left: 4rem;
   position: relative;
   transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
 }
