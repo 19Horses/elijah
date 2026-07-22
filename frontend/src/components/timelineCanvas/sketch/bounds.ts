@@ -1,17 +1,25 @@
 import {
+  BRANCH_MERGE_TRANSITION_FACTOR,
+  BRANCH_MERGE_ZOOM_FACTOR,
   BRANCH_NODE_GAP,
-  COLLECTED_LANE_ABOVE_FIRST_ROW_TOP,
-  COLLECTED_LANE_TOP,
-  COLLECTED_ROW_HEIGHT,
+  COLLECTED_ROW_EXTRA_GAP,
   DATE_OFFSET,
   IMAGE_HEIGHT,
   ITEM_GAP,
   ITEM_WIDTH,
+  LANE_GAP,
+  LANE_GAP_GROWTH_POWER,
   MAIN_LINE_Y,
   PADDING_X,
+  PADDING_Y,
 } from '../constants';
 import { getBranchPoints, getSteppedBranchPoints } from '../connectors';
-import { getContentBounds, getFittedSize } from '../geometry';
+import {
+  getContentBounds,
+  getFittedSize,
+  zoomMergeProgress,
+  zoomOutGrowth,
+} from '../geometry';
 import type {
   ConnectorPoint,
   ContentBounds,
@@ -92,22 +100,43 @@ function crossesMainLine(from: ConnectorPoint, to: ConnectorPoint): boolean {
 
 // Branch rows alternate sides of the main line: even rows stack downward below
 // it, odd rows stack upward above it, so the main timeline sits in the middle.
-function rowTopForRowIndex(rowIndex: number): number {
+// `gap` (main line to nearest row) and `rowHeight` (between further rows)
+// grow as the camera zooms out, so the enlarged nodes/lines still clear each
+// other instead of crowding together (see the caller in getCollectedBounds).
+function rowTopForRowIndex(
+  rowIndex: number,
+  gap: number,
+  rowHeight: number
+): number {
   const sideSlot = Math.floor(rowIndex / 2);
   if (rowIndex % 2 === 1) {
-    return COLLECTED_LANE_ABOVE_FIRST_ROW_TOP - sideSlot * COLLECTED_ROW_HEIGHT;
+    return PADDING_Y - gap - IMAGE_HEIGHT - sideSlot * rowHeight;
   }
-  return COLLECTED_LANE_TOP + sideSlot * COLLECTED_ROW_HEIGHT;
+  return PADDING_Y + IMAGE_HEIGHT + gap + sideSlot * rowHeight;
 }
 
 export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
   const {
+    runtime,
     items,
     processed,
     processedCollected,
     itemOffsets,
     collectedOffsets,
   } = deps;
+
+  // Fan-out spacing for parallel branch nodes/lines eases down to 0 below
+  // BRANCH_MERGE_ZOOM_FACTOR (of the fit-to-screen zoom), so lines sharing the
+  // same route converge into what reads as a single line at low zoom, then
+  // ease back out to their normal fan as you zoom in past the threshold.
+  const branchOffsetScale = (): number =>
+    1 -
+    zoomMergeProgress(
+      runtime.zoom,
+      runtime.fitZoomLevel,
+      BRANCH_MERGE_ZOOM_FACTOR,
+      BRANCH_MERGE_TRANSITION_FACTOR
+    );
 
   const getAllBounds = () =>
     processed.map((item, index) =>
@@ -118,13 +147,23 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
 
   // Gaps that contain a chain of collected items are widened by the chain's
   // length so the chained items have room to sit side by side between two
-  // main-timeline items. Indexed by the gap's left main index.
-  let gapExtraSlotsCache: number[] | null = null;
-  const getGapExtraSlots = (): number[] => {
+  // main-timeline items. Indexed by the gap's left main index. A chain dated
+  // before the very first main item gets analogous treatment via
+  // `extraBeforeFirst`, pushed further left of that item's own position
+  // instead of overlapping it (see timeToWorldX) — unlike a chain after the
+  // last main item, which has nothing later to collide with and so is left
+  // alone.
+  let gapExtraSlotsCache: { extra: number[]; extraBeforeFirst: number } | null =
+    null;
+  const getGapExtraSlots = (): {
+    extra: number[];
+    extraBeforeFirst: number;
+  } => {
     if (gapExtraSlotsCache) {
       return gapExtraSlotsCache;
     }
     const extra = new Array<number>(Math.max(items.length, 1)).fill(0);
+    let extraBeforeFirst = 0;
     const depthCache = new Map<number, number>();
     const depthOf = (index: number): number => {
       const cached = depthCache.get(index);
@@ -138,8 +177,15 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     };
     processedCollected.forEach((item, index) => {
       const gap = getPreviousMainIndex(item.anchorTime);
+      if (gap === -1) {
+        const depth = depthOf(index);
+        if (depth > 1 && depth > extraBeforeFirst) {
+          extraBeforeFirst = depth;
+        }
+        return;
+      }
       // Only widen gaps that sit between two main items.
-      if (gap < 0 || gap >= items.length - 1) {
+      if (gap >= items.length - 1) {
         return;
       }
       const depth = depthOf(index);
@@ -152,14 +198,14 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
         extra[gap] = depth;
       }
     });
-    gapExtraSlotsCache = extra;
-    return extra;
+    gapExtraSlotsCache = { extra, extraBeforeFirst };
+    return gapExtraSlotsCache;
   };
 
   const slotLeft = (index: number): number => {
-    const extra = getGapExtraSlots();
+    const { extra, extraBeforeFirst } = getGapExtraSlots();
     const step = ITEM_WIDTH + ITEM_GAP;
-    let x = PADDING_X;
+    let x = PADDING_X + step * extraBeforeFirst;
     for (let gap = 0; gap < index; gap++) {
       x += step * (1 + (extra[gap] ?? 0));
     }
@@ -438,8 +484,12 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       // than one scaled to the item width) keeps the nodes clearly separated
       // even on the first main item, which collects many branches; the bundle
       // is allowed to extend past a narrow item rather than collapsing.
+      const offsetScale = branchOffsetScale();
       list.forEach((entry, k) => {
-        map.set(entry.key, center + (k - (n - 1) / 2) * BRANCH_NODE_GAP);
+        map.set(
+          entry.key,
+          center + (k - (n - 1) / 2) * BRANCH_NODE_GAP * offsetScale
+        );
       });
     });
 
@@ -553,6 +603,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     });
 
     const map = new Map<string, { x: number; y: number }>();
+    const offsetScale = branchOffsetScale();
     groups.forEach((list, groupKey) => {
       const itemIndex = Number(groupKey.slice(0, groupKey.indexOf(':')));
       const centerY = collectedBounds[itemIndex].centerY;
@@ -561,7 +612,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       list.forEach((entry, k) => {
         map.set(entry.key, {
           x: entry.x,
-          y: centerY + (k - (n - 1) / 2) * BRANCH_NODE_GAP,
+          y: centerY + (k - (n - 1) / 2) * BRANCH_NODE_GAP * offsetScale,
         });
       });
     });
@@ -757,6 +808,18 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
   };
 
   const getCollectedBounds = (): ContentBounds[] => {
+    // Grows the row spacing as the camera zooms out, faster than the
+    // nodes/lines themselves thicken (LANE_GAP_GROWTH_POWER > the line/node
+    // growth power), so rows keep pulling further apart at extreme zoom-out
+    // rather than just barely staying clear of the bigger nodes/lines.
+    const rowGrowth = zoomOutGrowth(
+      runtime.zoom,
+      runtime.fitZoomLevel,
+      LANE_GAP_GROWTH_POWER
+    );
+    const rowGap = LANE_GAP * rowGrowth;
+    const rowHeight = IMAGE_HEIGHT + COLLECTED_ROW_EXTRA_GAP * rowGrowth;
+
     const bounds: ContentBounds[] = new Array(processedCollected.length);
     const placedRow = new Array<number>(processedCollected.length).fill(-1);
     // Rightmost edge used so far per row, to keep items from overlapping.
@@ -808,7 +871,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       rowPrevRight.set(rowIndex, baseLeft + width);
       placedRow[index] = rowIndex;
 
-      const rowTop = rowTopForRowIndex(rowIndex);
+      const rowTop = rowTopForRowIndex(rowIndex, rowGap, rowHeight);
       const baseTop = rowTop + (IMAGE_HEIGHT - height) / 2;
       const offset = collectedOffsets[index];
       const left = baseLeft + offset.dx;

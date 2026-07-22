@@ -1,6 +1,6 @@
 import type p5 from 'p5';
-import { DOT_RADIUS, DRAG_THRESHOLD } from '../constants';
-import { screenToWorld } from '../geometry';
+import { DOT_RADIUS, DRAG_THRESHOLD, ZOOM_OUT_GROWTH_POWER } from '../constants';
+import { screenToWorld, zoomOutGrowth } from '../geometry';
 import type { FocusTarget, TimelineSketchDeps } from '../types';
 import type { BoundsContext } from './bounds';
 import type { GalleryController } from './galleryController';
@@ -18,7 +18,7 @@ export function createInputHandlers(
   mouseReleased: (event?: Event) => void;
   mouseWheel: (event?: WheelEvent) => boolean;
 } {
-  const { runtime, processed } = deps;
+  const { runtime } = deps;
 
   // p5 v2 binds pointer events on `window`, so clicks on DOM UI layered over
   // the canvas (e.g. the branch top-bar) also reach these handlers. Ignore any
@@ -114,11 +114,7 @@ export function createInputHandlers(
             Math.hypot(world.x - region.cx, world.y - region.cy) <= region.r
         );
       if (navHit && runtime.focusTarget) {
-        const focused =
-          runtime.focusTarget.lane === 'main'
-            ? processed[runtime.focusTarget.index]
-            : deps.processedCollected[runtime.focusTarget.index];
-        gallery.step(navHit.delta, focused?.galleryUrls.length ?? 0);
+        gallery.step(navHit.delta);
         runtime.dragLane = null;
         return;
       }
@@ -127,7 +123,12 @@ export function createInputHandlers(
       // item at the far end of that line. Matches the hover-label hit radius.
       if (runtime.focusTarget && runtime.nodeRegions.length > 0) {
         let hitTarget: FocusTarget | null = null;
-        let bestDist = DOT_RADIUS + 8 / runtime.zoom;
+        const growth = zoomOutGrowth(
+          runtime.zoom,
+          runtime.fitZoomLevel,
+          ZOOM_OUT_GROWTH_POWER
+        );
+        let bestDist = DOT_RADIUS * growth + 8 / runtime.zoom;
         for (const region of runtime.nodeRegions) {
           const dist = Math.hypot(world.x - region.x, world.y - region.y);
           if (dist <= bestDist) {
@@ -182,7 +183,14 @@ export function createInputHandlers(
       const deltaX = event.deltaX ?? 0;
       const deltaY =
         event.deltaY ?? (event as WheelEvent & { delta: number }).delta ?? 0;
-      view.scrollView(deltaX, deltaY);
+      // Browsers report both Ctrl+wheel and trackpad pinch-zoom gestures as a
+      // wheel event with ctrlKey set, regardless of whether Ctrl is actually
+      // held — the standard way to distinguish a zoom gesture from a pan.
+      if (event.ctrlKey) {
+        view.zoomViewAt(p.mouseX, p.mouseY, deltaY);
+      } else {
+        view.scrollView(deltaX, deltaY);
+      }
     }
     return false;
   };

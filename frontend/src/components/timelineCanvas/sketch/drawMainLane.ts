@@ -21,6 +21,7 @@ import {
   MAIN_USERNAME,
   PRIVATE_IMAGE_EFFECT,
   TYPE_HIGHLIGHT_BLUR,
+  ZOOM_OUT_GROWTH_POWER,
 } from '../constants';
 import {
   distanceToPolyline,
@@ -28,16 +29,16 @@ import {
   drawMainConnector,
   getMainConnectorPoints,
 } from '../connectors';
+import { zoomOutGrowth } from '../geometry';
 import { AUDIO_DISC_SPIN_SPEED, drawAudioDisc } from './drawAudioDisc';
 import {
   drawContainedImage,
   drawGalleryControls,
   drawGalleryStrip,
-  galleryFocusWidth,
 } from './drawGalleryControls';
 import type { GalleryController } from './galleryController';
 import { drawPlayPauseButton } from './drawPlayPauseButton';
-import { isFutureDatedItem } from '../timelineRuntime';
+import { formatDateForZoom, isFutureDatedItem } from '../timelineRuntime';
 import type { ContentType } from '../../../types/content';
 import type {
   ConnectorPoint,
@@ -284,6 +285,11 @@ export function drawMainLaneConnectors(
 ): void {
   const mainCtx = p.drawingContext as CanvasRenderingContext2D;
   const { bounds } = ctx;
+  const lineWeight = zoomOutGrowth(
+    deps.runtime.zoom,
+    deps.runtime.fitZoomLevel,
+    ZOOM_OUT_GROWTH_POWER
+  );
 
   for (let index = 0; index < deps.processed.length - 1; index++) {
     // Timeline lines stay visible during focus, so they ignore the focus fade.
@@ -320,7 +326,8 @@ export function drawMainLaneConnectors(
       { x: fromBounds.right, y: fromBounds.centerY },
       { x: toBounds.left, y: toBounds.centerY },
       isFutureDatedItem(deps.items[index]),
-      isFutureDatedItem(deps.items[index + 1])
+      isFutureDatedItem(deps.items[index + 1]),
+      lineWeight
     );
     resetCanvasEffects(mainCtx);
   }
@@ -495,11 +502,18 @@ export function drawMainLaneItems(
     }
 
     if (!hideDateLabel) {
+      const rawDate = deps.items[index]?.date;
       // Deferred so dates render above the connectors/nodes.
       ctx.dateLabels.push({
         x: imageLeft + width / 2,
         y: top - 12,
-        text: item.dateLabel,
+        text: rawDate
+          ? formatDateForZoom(
+              new Date(rawDate).getTime(),
+              deps.runtime.zoom,
+              deps.runtime.fitZoomLevel
+            )
+          : '',
         colour: 255,
         alpha:
           ctx.isTypeHighlightActive && !typeMatch
@@ -530,19 +544,13 @@ export function drawMainLaneItems(
       });
     }
 
-    // Gallery navigation arrows + dots, spanning the focused image's width.
+    // Gallery navigation arrows, fixed to the item's slot so they don't shift
+    // position as differently-shaped images are navigated to.
     if (galleryActive && galleryImages) {
-      const arrowWidth = galleryFocusWidth(
-        galleryImages,
-        gallery.getDisplayIndex(),
-        width,
-        height
-      );
       const regions = drawGalleryControls(
         p,
         mainCtx,
-        { left: imageLeft, top, width: arrowWidth, height },
-        gallery.getActiveIndex(),
+        { left: imageLeft, top, width, height },
         item.galleryUrls.length,
         visibilityAlpha
       );
@@ -559,6 +567,11 @@ export function drawMainLaneConnectorDots(
 ): void {
   const mainCtx = p.drawingContext as CanvasRenderingContext2D;
   const { bounds } = ctx;
+  const dotScale = zoomOutGrowth(
+    deps.runtime.zoom,
+    deps.runtime.fitZoomLevel,
+    ZOOM_OUT_GROWTH_POWER
+  );
 
   for (let index = 0; index < bounds.length - 1; index++) {
     // Timeline dots stay visible during focus, so they ignore the focus fade.
@@ -587,8 +600,8 @@ export function drawMainLaneConnectorDots(
       index + 1,
       bounds[index + 1]
     );
-    drawDot(p, fromBounds.right, fromBounds.centerY, '#ffffff');
-    drawDot(p, toBounds.left, toBounds.centerY, '#ffffff');
+    drawDot(p, fromBounds.right, fromBounds.centerY, '#ffffff', dotScale);
+    drawDot(p, toBounds.left, toBounds.centerY, '#ffffff', dotScale);
     if (ctx.isFocusActive) {
       // The dot on item `index` connects rightward to item `index + 1`, and the
       // dot on item `index + 1` connects leftward to item `index`.

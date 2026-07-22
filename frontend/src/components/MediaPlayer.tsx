@@ -3,19 +3,27 @@ import type { AudioPlayerState } from './timelineCanvas/types';
 type MediaPlayerProps = {
   state: AudioPlayerState;
   onToggle: () => void;
+  onJumpToItem: () => void;
 };
 
 // Persistent mini player shown once a track has been started and its own item
 // isn't focused, so playback stays controllable after clicking away.
-function MediaPlayer({ state, onToggle }: MediaPlayerProps) {
+function MediaPlayer({ state, onToggle, onJumpToItem }: MediaPlayerProps) {
   return (
     <div className="media-player" aria-label={`Now playing: ${state.title}`}>
-      {state.imageUrl ? (
-        <img className="media-player__art" src={state.imageUrl} alt="" />
-      ) : (
-        <div className="media-player__art media-player__art--empty" />
-      )}
-      <span className="media-player__title">{state.title}</span>
+      <button
+        type="button"
+        className="media-player__jump"
+        onClick={onJumpToItem}
+        aria-label={`Jump to ${state.title}`}
+      >
+        {state.imageUrl ? (
+          <img className="media-player__art" src={state.imageUrl} alt="" />
+        ) : (
+          <div className="media-player__art media-player__art--empty" />
+        )}
+        <span className="media-player__title">{state.title}</span>
+      </button>
       <button
         type="button"
         className="media-player__toggle"

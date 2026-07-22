@@ -347,23 +347,6 @@ main.main--shop {
   animation: timeline-detail-enter 0.5s ease-out forwards;
 }
 
-/* Future-dated items invert to black text (on the white detail background). */
-.timeline-detail--light {
-  color: #000000;
-}
-
-.timeline-detail--light .timeline-detail__date {
-  color: rgba(0, 0, 0, 0.55);
-}
-
-.timeline-detail--light .timeline-detail__link {
-  color: #000000;
-}
-
-.timeline-detail--light .timeline-detail__link:hover {
-  color: rgba(0, 0, 0, 0.7);
-}
-
 @keyframes timeline-detail-enter {
   from {
     opacity: 0;
@@ -403,8 +386,8 @@ main.main--shop {
   background: linear-gradient(
     to left,
     rgba(0, 0, 0, 0) 0%,
-    black 5%,
-    black 95%,
+    rgba(0, 0, 0, 0.55) 5%,
+    rgba(0, 0, 0, 0.55) 95%,
     rgba(0, 0, 0, 0) 100%
   );
   border-radius: 10px;
@@ -479,14 +462,6 @@ main.main--shop {
 
 .timeline-detail__collected-count {
   color: #ffffff;
-}
-
-.timeline-detail--light .timeline-detail__collected {
-  color: rgba(0, 0, 0, 0.55);
-}
-
-.timeline-detail--light .timeline-detail__collected-count {
-  color: #000000;
 }
 
 .timeline-detail__body {
@@ -1083,23 +1058,29 @@ main.main--shop {
 
 .media-player {
   align-items: center;
-  background: rgba(20, 20, 20, 0.85);
+  background: rgba(255, 255, 255, 1);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  /* Sits above the centred reset/test button (bottom: 1.5rem) so its controls
-     aren't covered. */
-  bottom: 5.5rem;
-  color: #ffffff;
+  color: #000000;
   display: flex;
   gap: 0.75rem;
-  left: 50%;
-  max-width: min(360px, calc(100vw - 32px));
   padding: 0.375rem;
-  position: fixed;
-  transform: translateX(-50%);
-  z-index: 21;
+}
+
+.media-player__jump {
+  align-items: center;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex: 1;
+  font: inherit;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
 }
 
 .media-player__art {
@@ -1165,21 +1146,33 @@ main.main--shop {
 
 /* ── User card ────────────────────────── */
 
+/* Fixed-positioned wrapper the user card and mini player both live in (flush,
+   gap: 0), so the mini player sits directly underneath the card regardless of
+   the card's actual height. */
+.top-right-stack {
+  /* Stretch (rather than right-align each to its own content width) so the
+     mini player matches the user card's width exactly, whichever is wider. */
+  align-items: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  position: fixed;
+  right: 1.5rem;
+  top: 1.5rem;
+  z-index: 21;
+}
+
 .user-card {
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-radius: 0;
-  top: 1.5rem;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.12);
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  left: 1.5rem;
   min-width: 180px;
   padding: 1rem 1.125rem;
-  position: fixed;
-  z-index: 10;
   animation: user-card-fade-in 0.6s ease backwards;
 }
 
@@ -1459,9 +1452,9 @@ main.main--shop {
 /* ── E menu ────────────────────────── */
 
 .e-menu {
-  bottom: 1.5rem;
+  top: 1.5rem;
+  left: 1.5rem;
   position: fixed;
-  right: 1.5rem;
   z-index: 12;
   opacity: 0;
 }
@@ -1484,7 +1477,10 @@ main.main--shop {
   display: block;
   font-family: 'EB Garamond', 'Times New Roman', Times, serif;
   font-size: 10rem;
-  line-height: 1;
+  /* Below 1 so the line box tightens around the lowercase glyph's actual ink
+     instead of reserving ascender/descender room it never uses, pulling the
+     empty space above the "e" (and the fan-out's centre anchor) in with it. */
+  line-height: 0.1;
   padding: 0;
   position: relative;
   transition: color 0.15s ease;
@@ -1550,9 +1546,9 @@ main.main--shop {
   text-underline-offset: 4px;
 }
 
-/* Each item sits the same radius from the e, spread across a wider arc up
-   and to the left (the only open quadrant, since the e sits in the
-   bottom-right corner) than the radius alone would suggest - shrinking the
+/* Each item sits the same radius from the e, spread across a wider arc down
+   and to the right (the only open quadrant, since the e sits in the
+   top-left corner) than the radius alone would suggest - shrinking the
    radius without widening the angle crowds adjacent items together, since
    the gap between them scales with the radius too. Cascades around the arc
    in order. */
@@ -1572,27 +1568,28 @@ main.main--shop {
   transition-delay: 210ms;
 }
 
-/* Each item's offset below is the arc position plus a constant (18px left,
-   15px down) shift of the whole cluster, so it wraps around the e's actual
-   visual weight rather than its geometric box centre. */
+/* Each item's offset below is the arc position (mirrored point-for-point from
+   the original up-left arc, so the same spread/order now fans down-right)
+   plus a constant shift of the whole cluster, so it wraps around the e's
+   actual visual weight rather than its geometric box centre. */
 .e-menu--open .e-menu__item--mailing {
   opacity: 1;
-  transform: translate(calc(50% - 103px), calc(50% + 8px)) scale(1);
+  transform: translate(calc(50% + 103px), calc(50% - 8px)) scale(1);
 }
 
 .e-menu--open .e-menu__item--login {
   opacity: 1;
-  transform: translate(calc(50% - 83px), calc(50% - 40px)) scale(1);
+  transform: translate(calc(50% + 83px), calc(50% + 40px)) scale(1);
 }
 
 .e-menu--open .e-menu__item--shop {
   opacity: 1;
-  transform: translate(calc(50% - 40px), calc(50% - 67px)) scale(1);
+  transform: translate(calc(50% + 40px), calc(50% + 67px)) scale(1);
 }
 
 .e-menu--open .e-menu__item--events {
   opacity: 1;
-  transform: translate(calc(50% + 2px), calc(50% - 65px)) scale(1);
+  transform: translate(calc(50% - 2px), calc(50% + 65px)) scale(1);
 }
 
 @media (prefers-reduced-motion: reduce) {

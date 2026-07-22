@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(grep -n \"const nodeRegions\\\\|const drawCtx\\\\|audioNodeX,\\\\|drawMainTimelineGlow\\(p\\\\|p.pop\\(\\);\\\\|import type {\" src/components/timelineCanvas/sketch/drawFrame.ts)"
+      "Bash(grep -n \"const nodeRegions\\\\|const drawCtx\\\\|audioNodeX,\\\\|drawMainTimelineGlow\\(p\\\\|p.pop\\(\\);\\\\|import type {\" src/components/timelineCanvas/sketch/drawFrame.ts)",
+      "Bash(python3 -)",
+      "Bash(awk 'NR>=1260 && NR<=1290' src/index.css)"
     ]
   }
 }

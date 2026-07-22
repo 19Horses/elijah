@@ -11,9 +11,10 @@ export type GalleryController = {
   getImage: (url: string) => p5.Image | null;
   ensureLoaded: (urls: string[]) => void;
   syncFocus: (key: string | null) => void;
-  getActiveIndex: () => number;
+  // Unbounded (not wrapped to the image count) — drawGalleryStrip wraps it via
+  // modulo, so displayIndex can ease past either end for a seamless loop.
   getDisplayIndex: () => number;
-  step: (delta: number, count: number) => void;
+  step: (delta: number) => void;
   animate: () => void;
   setNavRegions: (regions: GalleryNavRegion[]) => void;
   getNavRegions: () => GalleryNavRegion[];
@@ -60,13 +61,11 @@ export function createGalleryController(p: p5): GalleryController {
         displayIndex = 0;
       }
     },
-    getActiveIndex: () => activeIndex,
     getDisplayIndex: () => displayIndex,
-    step: (delta, count) => {
-      if (count > 0) {
-        // Slide to the neighbouring image, stopping at the ends.
-        activeIndex = Math.max(0, Math.min(count - 1, activeIndex + delta));
-      }
+    step: (delta) => {
+      // Unbounded, so stepping past either end keeps going instead of
+      // stopping — drawGalleryStrip wraps it back into range for looping.
+      activeIndex += delta;
     },
     animate: () => {
       displayIndex += (activeIndex - displayIndex) * SLIDE_LERP;

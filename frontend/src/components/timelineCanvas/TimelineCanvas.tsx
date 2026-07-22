@@ -1,7 +1,6 @@
 import p5 from 'p5';
 import { memo, useEffect, useRef, useState } from 'react';
 import type { ContentType } from '../../types/content';
-import MediaPlayer from '../MediaPlayer';
 import { DEFAULT_BACKGROUND } from './constants';
 import { createTimelineSketch } from './createTimelineSketch';
 import {
@@ -12,8 +11,8 @@ import { buildProcessedCollected, buildProcessedItems } from './processItems';
 import P5CanvasHost from './P5CanvasHost';
 import { createTimelineRuntime } from './timelineRuntime';
 import type {
-  AudioPlayerState,
   BranchFocusInfo,
+  FocusTarget,
   TimelineCanvasProps,
 } from './types';
 
@@ -25,6 +24,9 @@ function TimelineCanvas({
   highlightedType = null,
   hoverOwnBranch = false,
   isolateControlRef,
+  focusItemControlRef,
+  audioControlRef,
+  onAudioStateChange,
   onFocusFadeChange,
   onContentFocus,
   onContentUnfocus,
@@ -50,11 +52,16 @@ function TimelineCanvas({
   const resetViewRef = useRef<(() => void) | undefined>(undefined);
   const localIsolateRef = useRef<(() => void) | undefined>(undefined);
   const isolateOwnBranchRef = isolateControlRef ?? localIsolateRef;
-  const [audioState, setAudioState] = useState<AudioPlayerState | null>(null);
-  const onAudioStateChangeRef = useRef<
-    ((state: AudioPlayerState | null) => void) | undefined
-  >(setAudioState);
-  // Points at the live controller so the mini player can toggle playback.
+  const localFocusItemRef = useRef<
+    ((target: FocusTarget) => void) | undefined
+  >(undefined);
+  const focusItemRef = focusItemControlRef ?? localFocusItemRef;
+  const onAudioStateChangeRef = useRef(onAudioStateChange);
+  const localAudioControlRef = useRef<((src: string) => void) | undefined>(
+    undefined
+  );
+  const audioToggleRef = audioControlRef ?? localAudioControlRef;
+  // Points at the live controller so the toggle ref can control playback.
   const audioRef = useRef<AudioController | null>(null);
 
   useEffect(() => {
@@ -88,6 +95,10 @@ function TimelineCanvas({
   useEffect(() => {
     onEntranceCompleteRef.current = onEntranceComplete;
   }, [onEntranceComplete]);
+
+  useEffect(() => {
+    onAudioStateChangeRef.current = onAudioStateChange;
+  }, [onAudioStateChange]);
 
   useEffect(() => {
     const preventScrollWhileFocused = (event: WheelEvent) => {
@@ -147,7 +158,8 @@ function TimelineCanvas({
     const runtime = createTimelineRuntime();
     const audio = createAudioController();
     audioRef.current = audio;
-    setAudioState(null);
+    audioToggleRef.current = (src) => audioRef.current?.toggle(src);
+    onAudioStateChangeRef.current?.(null);
 
     const sketch = createTimelineSketch({
       runtime,
@@ -173,6 +185,7 @@ function TimelineCanvas({
         onAudioStateChangeRef,
         resetViewRef,
         isolateOwnBranchRef,
+        focusItemRef,
       },
     });
 
@@ -197,7 +210,7 @@ function TimelineCanvas({
       interactionLockedRef.current = false;
       audio.dispose();
       audioRef.current = null;
-      setAudioState(null);
+      onAudioStateChangeRef.current?.(null);
       p5InstanceRef.current?.remove();
       p5InstanceRef.current = null;
       container.replaceChildren();
@@ -225,12 +238,6 @@ function TimelineCanvas({
         </div>
       )}
       <P5CanvasHost containerRef={containerRef} />
-      {audioState && (
-        <MediaPlayer
-          state={audioState}
-          onToggle={() => audioRef.current?.toggle(audioState.src)}
-        />
-      )}
     </div>
   );
 }

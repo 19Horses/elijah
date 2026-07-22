@@ -19,6 +19,8 @@ export function createTimelineSketch(
     // User-card click → isolate the viewer's own branch into a straight line.
     deps.refs.isolateOwnBranchRef.current = () =>
       view.toggleOwnBranchIsolation();
+    // Mini-player click → jump to (focus) the item that track belongs to.
+    deps.refs.focusItemRef.current = (target) => view.focusItem(target);
     const loadedImages: (p5.Image | null)[] = new Array(
       deps.processed.length
     ).fill(null);

@@ -1,4 +1,6 @@
 import {
+  DATE_FORMAT_FULL_ZOOM_FACTOR,
+  DATE_FORMAT_NUMERIC_ZOOM_FACTOR,
   DETAIL_LAYOUT_LERP,
   HIGHLIGHT_FADE_OUT_LERP,
   HIGHLIGHT_FADE_SNAP,
@@ -25,11 +27,15 @@ export function createTimelineRuntime(): TimelineRuntime {
     targetCameraX: 0,
     targetCameraY: 0,
     targetZoom: 1,
-    snapping: false,
-    snapTargetCameraX: 0,
-    snapTargetCameraY: 0,
-    lastWheelMs: 0,
-    snapStepReadyMs: 0,
+    panTargetCameraX: 0,
+    panTargetCameraY: 0,
+    panning: false,
+    zoomTargetZoom: 1,
+    zoomAnchorWorldX: 0,
+    zoomAnchorWorldY: 0,
+    zoomAnchorScreenX: 0,
+    zoomAnchorScreenY: 0,
+    zooming: false,
     focusTarget: null,
     focusedBranchRow: null,
     viewAnimating: false,
@@ -52,7 +58,6 @@ export function createTimelineRuntime(): TimelineRuntime {
     loadStartMs: 0,
     entranceComplete: false,
     focusContentFade: 0,
-    focusedItemIsFuture: false,
     detailPhase: 'none',
     detailLayout: 0,
     audioDiscAngle: 0,
@@ -172,4 +177,37 @@ export function isFutureDatedItem(
     return false;
   }
   return time > Date.now();
+}
+
+// The on-canvas date label switches to a more/less compact format as the
+// camera zooms in/out, so it stays readable without taking up more room than
+// the current zoom level can spare.
+export function formatDateForZoom(
+  time: number,
+  zoom: number,
+  fitZoomLevel: number
+): string {
+  const date = new Date(time);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  const relativeZoom = fitZoomLevel > 0 ? zoom / fitZoomLevel : 1;
+  if (relativeZoom >= DATE_FORMAT_FULL_ZOOM_FACTOR) {
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  }
+  if (relativeZoom >= DATE_FORMAT_NUMERIC_ZOOM_FACTOR) {
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  }
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'numeric',
+  });
 }

@@ -81,3 +81,41 @@ export function lerpPoint(
 ): ConnectorPoint {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
 }
+
+// Multiplier (>=1) that grows as the camera zooms out below the timeline's
+// default fit-to-screen level, and stays 1 at/above it. World-space sizes
+// (node radius, connector stroke weight, branch-row spacing) are multiplied
+// by this so they read as larger — not just less shrunken — the further out
+// you zoom, instead of shrinking to illegibility along with everything else.
+export function zoomOutGrowth(
+  zoom: number,
+  fitZoomLevel: number,
+  power: number
+): number {
+  if (zoom <= 0 || fitZoomLevel <= 0) {
+    return 1;
+  }
+  return Math.max(1, fitZoomLevel / zoom) ** power;
+}
+
+// How "merged" the branch-line bundling effect is: 0 at/above `thresholdFactor`
+// (times fitZoomLevel), easing up to 1 a further `transitionFactor` below that
+// as the camera zooms out — the shared basis for both the branch fan-out
+// collapse (bounds.ts) and any other zoom-out-merge-linked effect (e.g. the
+// date label shrinking slightly once branches have merged).
+export function zoomMergeProgress(
+  zoom: number,
+  fitZoomLevel: number,
+  thresholdFactor: number,
+  transitionFactor: number
+): number {
+  const threshold = fitZoomLevel * thresholdFactor;
+  const transition = fitZoomLevel * transitionFactor;
+  if (transition <= 0) {
+    return zoom >= threshold ? 0 : 1;
+  }
+  return (
+    1 -
+    Math.max(0, Math.min(1, (zoom - (threshold - transition)) / transition))
+  );
+}
