@@ -25,13 +25,13 @@ function CollectedBranchStrip({ items, colour }: CollectedBranchStripProps) {
           key={content._id}
           style={{ '--node-index': index } as React.CSSProperties}
         >
+          <span className="collected-branch-strip__dot collected-branch-strip__dot--left">
+            <span className="collected-branch-strip__dot-inner" />
+          </span>
+          <span className="collected-branch-strip__dot collected-branch-strip__dot--right">
+            <span className="collected-branch-strip__dot-inner" />
+          </span>
           <div className="collected-branch-strip__thumb">
-            <span className="collected-branch-strip__dot collected-branch-strip__dot--left">
-              <span className="collected-branch-strip__dot-inner" />
-            </span>
-            <span className="collected-branch-strip__dot collected-branch-strip__dot--right">
-              <span className="collected-branch-strip__dot-inner" />
-            </span>
             {content.imageUrl ? (
               <img src={content.imageUrl} alt={content.title} />
             ) : (

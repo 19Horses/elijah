@@ -136,6 +136,14 @@ function CollectionViewer({
     }
   };
 
+  const goToPrevious = () => {
+    setActiveIndex((index) => Math.max(0, index - 1));
+  };
+
+  const goToNext = () => {
+    setActiveIndex((index) => Math.min(items.length - 1, index + 1));
+  };
+
   const handleCollect = () => {
     if (!currentUser || collecting) return;
     const activeItem = items[activeIndex];
@@ -191,6 +199,31 @@ function CollectionViewer({
               />
             ))}
           </div>
+
+          {items.length > 1 && (
+            <>
+              <button
+                type="button"
+                className="collection-viewer__nav collection-viewer__nav--prev"
+                onClick={goToPrevious}
+                onMouseDown={(e) => e.stopPropagation()}
+                disabled={activeIndex === 0}
+                aria-label="Previous item"
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                className="collection-viewer__nav collection-viewer__nav--next"
+                onClick={goToNext}
+                onMouseDown={(e) => e.stopPropagation()}
+                disabled={activeIndex === items.length - 1}
+                aria-label="Next item"
+              >
+                ›
+              </button>
+            </>
+          )}
 
           <button
             type="button"

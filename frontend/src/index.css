@@ -557,7 +557,7 @@ main.main--shop {
 }
 
 .collected-branch-strip {
-  --strip-gap: 2.5rem;
+  --strip-gap: 6rem;
   align-items: center;
   display: flex;
   gap: var(--strip-gap);
@@ -638,7 +638,6 @@ main.main--shop {
   border: 1px solid #ffffff;
   height: 11rem;
   overflow: hidden;
-  position: relative;
   width: 13rem;
 }
 
@@ -743,11 +742,12 @@ main.main--shop {
 
 .collection-viewer__stage {
   --cv-slot: 38vw;
-  align-items: center;
+  align-items: flex-start;
   display: flex;
   height: 100%;
   opacity: 0;
   overflow: hidden;
+  padding-top: 1rem;
   pointer-events: none;
   position: relative;
   transition: opacity 0.3s ease;
@@ -931,6 +931,37 @@ main.main--shop {
 
 .collection-viewer__close:hover {
   color: #fff;
+}
+
+.collection-viewer__nav {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  font-size: 2.5rem;
+  line-height: 1;
+  padding: 0.5rem 1rem;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+}
+
+.collection-viewer__nav:hover:not(:disabled) {
+  color: #ffffff;
+}
+
+.collection-viewer__nav:disabled {
+  color: rgba(255, 255, 255, 0.15);
+  cursor: default;
+}
+
+.collection-viewer__nav--prev {
+  left: 1.5rem;
+}
+
+.collection-viewer__nav--next {
+  right: 1.5rem;
 }
 
 .collection-viewer__empty {
