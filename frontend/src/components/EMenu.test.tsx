@@ -49,7 +49,7 @@ describe('EMenu', () => {
     expect(screen.queryByRole('menuitem', { name: 'Shop' })).toBeNull();
   });
 
-  test('hovering the e reveals all three menu items', () => {
+  test('hovering the e reveals the menu items', () => {
     const { section } = renderMenu();
     fireEvent.mouseEnter(section);
     expect(screen.getByRole('menuitem', { name: 'Shop' })).toBeTruthy();

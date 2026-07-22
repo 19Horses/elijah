@@ -68,7 +68,6 @@ function ScrollFadeText({
 }
 
 export type TimelineDetailView = {
-  contentId: string;
   title: string;
   dateLabel: string;
   description: string;
@@ -81,16 +80,11 @@ export type TimelineDetailView = {
   isFuture: boolean;
   // Number of other people (besides the viewer) who have collected this item.
   collectedByOthers: number;
-  // Whether this is an event the signed-in viewer can mark as attended.
-  canAttend: boolean;
-  // Whether the signed-in viewer has already marked this event as attended.
-  alreadyAttended: boolean;
 };
 
 type TimelineDetailOverlayProps = {
   detail: TimelineDetailView | null;
   imageRect?: DetailImageRect | null;
-  onAttend?: () => void;
 };
 
 // Gap between the image and the text placed above/below/beside it.
@@ -101,7 +95,6 @@ const EDGE_PADDING_PX = 48;
 function TimelineDetailOverlay({
   detail,
   imageRect = null,
-  onAttend,
 }: TimelineDetailOverlayProps) {
   if (!detail || !imageRect) {
     return null;
@@ -200,22 +193,6 @@ function TimelineDetailOverlay({
             <ScrollFadeText className="timeline-detail__description">
               {detail.description}
             </ScrollFadeText>
-          ) : null}
-          {detail.canAttend && !detail.alreadyAttended && (
-            <button
-              type="button"
-              className="timeline-detail__attend"
-              onClick={(event) => {
-                event.stopPropagation();
-                onAttend?.();
-              }}
-              aria-label={`Mark that you were at ${detail.title}`}
-            >
-              + I was there
-            </button>
-          )}
-          {detail.alreadyAttended ? (
-            <p className="timeline-detail__attended">You were there</p>
           ) : null}
           {linkNode}
         </div>

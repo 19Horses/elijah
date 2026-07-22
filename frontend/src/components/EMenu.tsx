@@ -142,6 +142,33 @@ function EMenu() {
         >
           Shop
         </Link>
+        <Link
+          to="/events"
+          role="menuitem"
+          className={`e-menu__item e-menu__item--events${
+            pathname === '/events' ? ' e-menu__item--active' : ''
+          }`}
+          aria-current={pathname === '/events' ? 'page' : undefined}
+          tabIndex={open ? 0 : -1}
+          onClick={(event) => {
+            // Let modified/non-primary clicks (open in new tab, etc.)
+            // behave like a normal link; only intercept a plain click.
+            if (
+              event.defaultPrevented ||
+              event.button !== 0 ||
+              event.metaKey ||
+              event.ctrlKey ||
+              event.shiftKey ||
+              event.altKey
+            ) {
+              return;
+            }
+            event.preventDefault();
+            fadeOutThenGo('/events');
+          }}
+        >
+          Events
+        </Link>
         {/* Login and Mailing list are intentional inert placeholders; no destination decided yet. */}
         <button
           type="button"

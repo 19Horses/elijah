@@ -5,6 +5,7 @@ import DebugPanel from './components/DebugPanel';
 import EMenu from './components/EMenu';
 import Header from './components/Header';
 import Content from './pages/Content';
+import Events from './pages/Events';
 import Home from './pages/Home';
 import Landing from './pages/Landing';
 import Shop from './pages/Shop';
@@ -17,7 +18,8 @@ const AppRoutes = () => {
   const isLanding = pathname === '/';
   const isHome = pathname === '/home';
   const isShop = pathname === '/shop';
-  const showHeader = !isLanding && !isHome && !isShop;
+  const isEvents = pathname === '/events';
+  const showHeader = !isLanding && !isHome && !isShop && !isEvents;
   // Gates the e nav's very first appearance on the timeline's own entrance
   // animation. Rendered as a sibling of <main> (not inside it) so it's
   // unaffected by <main>'s fade-out/in during screen transitions, and
@@ -50,9 +52,10 @@ const AppRoutes = () => {
           />
           <Route path="/content/:slug" element={<Content />} />
           <Route path="/shop" element={<Shop />} />
+          <Route path="/events" element={<Events />} />
         </Routes>
       </main>
-      {timelineReady && (isHome || isShop) && <EMenu />}
+      {timelineReady && (isHome || isShop || isEvents) && <EMenu />}
       <DebugPanel />
     </>
   );

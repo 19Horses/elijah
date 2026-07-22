@@ -51,12 +51,3 @@ export async function collectItem(
     collectedItems: arrayUnion(item),
   });
 }
-
-// Marking "I was there" on an event isn't tied to a physical collection, so
-// the event is its own collectedFrom source.
-export async function attendEvent(
-  userId: string,
-  eventId: string
-): Promise<void> {
-  await collectItem(userId, eventId, eventId);
-}

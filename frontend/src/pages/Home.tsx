@@ -19,7 +19,7 @@ import {
 import { useCollectedTimeline } from '../queries/collectedContent';
 import { useCollections } from '../queries/collection';
 import { useMainTimeline } from '../queries/mainTimeline';
-import { attendEvent, hasCollectedFrom } from '../services/collectItem';
+import { hasCollectedFrom } from '../services/collectItem';
 import { DEBUG_TIMERS_EVENT } from '../services/debugTimers';
 import { getStoredUser } from '../services/userStorage';
 import type { ContentType } from '../types/content';
@@ -79,8 +79,7 @@ function Home({ onEntranceComplete }: HomeProps) {
     setDetailImageRect(rect);
   }, []);
 
-  const currentUser = useMemo(() => getStoredUser(), []);
-  const currentUsername = currentUser?.username ?? null;
+  const currentUsername = useMemo(() => getStoredUser()?.username ?? null, []);
 
   const timelineDetail = useMemo((): TimelineDetailView | null => {
     if (!focusSlug || !detailReady || !contentDetail) {
@@ -94,14 +93,7 @@ function Home({ onEntranceComplete }: HomeProps) {
         row.items.some((entry) => entry.content.slug === focusSlug)
     ).length;
 
-    const alreadyAttended = (collectedRows ?? []).some(
-      (row) =>
-        row.userId === currentUser?.id &&
-        row.items.some((entry) => entry.content.slug === focusSlug)
-    );
-
     return {
-      contentId: contentDetail._id,
       title: contentDetail.title,
       dateLabel: getContentDetailDateLabel(contentDetail),
       description: getContentDetailDescription(contentDetail),
@@ -112,17 +104,8 @@ function Home({ onEntranceComplete }: HomeProps) {
         ? new Date(contentDetail.date).getTime() > Date.now()
         : false,
       collectedByOthers,
-      canAttend: contentDetail._type === 'event' && Boolean(currentUser),
-      alreadyAttended,
     };
-  }, [
-    contentDetail,
-    detailReady,
-    focusSlug,
-    collectedRows,
-    currentUsername,
-    currentUser,
-  ]);
+  }, [contentDetail, detailReady, focusSlug, collectedRows, currentUsername]);
 
   const activeCollection = collections?.[0] ?? null;
 
@@ -133,23 +116,6 @@ function Home({ onEntranceComplete }: HomeProps) {
     void queryClient.invalidateQueries({ queryKey: ['mainTimeline'] });
     void queryClient.invalidateQueries({ queryKey: ['contentDetail'] });
   };
-
-  const handleAttend = useCallback(
-    (contentId: string) => {
-      if (!currentUser) return;
-      void attendEvent(currentUser.id, contentId)
-        .then(() => {
-          setCollectedSignal((signal) => signal + 1);
-          void queryClient.invalidateQueries({
-            queryKey: ['collectedTimeline'],
-          });
-        })
-        .catch((error) => {
-          console.error('Failed to mark event attendance', error);
-        });
-    },
-    [currentUser, queryClient]
-  );
 
   useEffect(() => {
     const currentUser = getStoredUser();
@@ -221,11 +187,6 @@ function Home({ onEntranceComplete }: HomeProps) {
       <TimelineDetailOverlay
         detail={timelineDetail}
         imageRect={detailImageRect}
-        onAttend={
-          timelineDetail
-            ? () => handleAttend(timelineDetail.contentId)
-            : undefined
-        }
       />
       {statusChecked && activeCollection && !alreadyCollected && (
         <CollectionCountdown
