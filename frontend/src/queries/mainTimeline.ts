@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { SanityImageSource } from '@sanity/image-url';
 import { getApiUrl, getSanityImageUrl } from '../sanityIntegration';
 import { getMyCollectedIds } from '../services/collectItem';
-import { fetchBandsintownEvents } from './bandsintownEvents';
+import { fetchAllEvents, isFutureEvent } from './events';
 import type {
   AudioAsset,
   Event,
@@ -81,33 +81,13 @@ export const CONTENT_PROJECTION = `_id,
 
 const MAIN_TIMELINE_QUERY = `{
   "colour": *[_type == "mainTimeline"][0].colour,
-  "items": (
-  coalesce(*[_type == "mainTimeline"][0].items, [])[defined(content)] {
+  "items": coalesce(*[_type == "mainTimeline"][0].items, [])[defined(content)] {
     unlockTime,
     expiryTime,
     ...content-> {
       ${CONTENT_PROJECTION}
     }
-  }
-) + (
-  *[_type == "event"] {
-    "unlockTime": null,
-    "expiryTime": null,
-    _id,
-    _type,
-    date,
-    "created_at": _createdAt,
-    "slug": slug.current,
-    title,
-    description,
-    link,
-    image,
-    public,
-    "isPrivate": public == false && !(_id in $collectedIds),
-    "imageUrl": image.asset->url,
-    "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio}
-  }
-) | order(date asc)
+  } | order(date asc)
 }`;
 
 const TIMELINE_IMAGE_WIDTH = 400;
@@ -159,27 +139,19 @@ function timelineItemTime(item: MainTimelineItem): number {
   return item.date ? new Date(item.date).getTime() : -Infinity;
 }
 
-async function fetchBandsintownTimelineEvents(): Promise<MainTimelineEvent[]> {
-  try {
-    return await fetchBandsintownEvents();
-  } catch (error) {
-    console.error('Failed to fetch Bandsintown events', error);
-    return [];
-  }
-}
-
 export async function fetchMainTimeline(): Promise<MainTimelineData> {
   const collectedIds = await getMyCollectedIds();
-  const [response, bandsintownEvents] = await Promise.all([
+  const [response, events] = await Promise.all([
     fetch(getApiUrl(MAIN_TIMELINE_QUERY, { collectedIds })),
-    fetchBandsintownTimelineEvents(),
+    fetchAllEvents(),
   ]);
   if (!response.ok) {
     throw new Error(`Failed to fetch main timeline: ${response.status}`);
   }
   const data: SanityResponse<MainTimelineData> = await response.json();
   const result = data.result ?? { colour: null, items: [] };
-  const items = [...result.items, ...bandsintownEvents].sort(
+  const futureEvents = events.filter(isFutureEvent);
+  const items = [...result.items, ...futureEvents].sort(
     (a, b) => timelineItemTime(a) - timelineItemTime(b)
   );
   return { ...result, items };

@@ -72,6 +72,59 @@ main.main--leaving {
   max-width: 960px;
 }
 
+/* A wide canvas with a deliberately narrow text column, generous top
+   breathing room, and a tight row rhythm — the chronological-log layout. */
+.events {
+  margin: 0 auto;
+  max-width: 2000px;
+  padding-top: 6rem;
+  width: 100%;
+}
+
+.events__status {
+  margin: 0;
+}
+
+.events__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.events__row {
+  align-items: baseline;
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: 6rem minmax(0, 500px);
+}
+
+/* Muted secondary label next to the primary (full-strength) entry text. */
+.events__date {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.875rem;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.events__title {
+  font-size: 1rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.events__link {
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.events__link:hover {
+  text-decoration: underline;
+}
+
 @keyframes product-fade-in {
   from {
     opacity: 0;
@@ -401,38 +454,6 @@ main.main--shop {
   font-size: 0.875rem;
   margin: 0;
   white-space: nowrap;
-}
-
-.timeline-detail__attend {
-  background: none;
-  border: none;
-  color: #ffffff;
-  cursor: pointer;
-  flex-shrink: 0;
-  font-size: 0.875rem;
-  margin-top: 1.25rem;
-  padding: 0;
-  text-align: left;
-  transition: opacity 0.2s ease;
-}
-
-.timeline-detail__attend:hover {
-  opacity: 0.7;
-}
-
-.timeline-detail--light .timeline-detail__attend {
-  color: #000000;
-}
-
-.timeline-detail__attended {
-  color: rgba(255, 255, 255, 0.55);
-  flex-shrink: 0;
-  font-size: 0.8125rem;
-  margin-top: 1.25rem;
-}
-
-.timeline-detail--light .timeline-detail__attended {
-  color: rgba(0, 0, 0, 0.55);
 }
 
 .timeline-detail__description {
@@ -1547,6 +1568,10 @@ main.main--shop {
   transition-delay: 140ms;
 }
 
+.e-menu__item--events {
+  transition-delay: 210ms;
+}
+
 /* Each item's offset below is the arc position plus a constant (18px left,
    15px down) shift of the whole cluster, so it wraps around the e's actual
    visual weight rather than its geometric box centre. */
@@ -1563,6 +1588,11 @@ main.main--shop {
 .e-menu--open .e-menu__item--shop {
   opacity: 1;
   transform: translate(calc(50% - 40px), calc(50% - 67px)) scale(1);
+}
+
+.e-menu--open .e-menu__item--events {
+  opacity: 1;
+  transform: translate(calc(50% + 2px), calc(50% - 65px)) scale(1);
 }
 
 @media (prefers-reduced-motion: reduce) {
