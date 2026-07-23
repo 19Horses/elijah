@@ -1,5 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import CollectedBranchStrip, {
+  type BranchStripPreviewItem,
+} from '../components/CollectedBranchStrip';
 import CollectionCountdown from '../components/CollectionCountdown';
 import CollectionViewer from '../components/CollectionViewer';
 import MediaPlayer from '../components/MediaPlayer';
@@ -26,8 +29,17 @@ import { useCollections } from '../queries/collection';
 import { useMainTimeline } from '../queries/mainTimeline';
 import { hasCollectedFrom } from '../services/collectItem';
 import { DEBUG_TIMERS_EVENT } from '../services/debugTimers';
+import { DEFAULT_COLOUR, getStoredColour } from '../services/userColor';
 import { getStoredUser } from '../services/userStorage';
-import type { ContentType } from '../types/content';
+import type { CollectionContent, ContentType } from '../types/content';
+import { prefersReducedMotion } from '../utils/motionPreference';
+
+// How long the timeline fades out before the collection view appears, and
+// how long the collection view fades out before the timeline reappears.
+// Matches EMenu's screen-fade transition duration (index.css's `main`/
+// `main--leaving`), so opening/closing a collection reads as the same kind
+// of transition as navigating between screens.
+const COLLECTION_FADE_MS = 400;
 
 type HomeProps = {
   onEntranceComplete?: () => void;
@@ -40,6 +52,16 @@ function Home({ onEntranceComplete }: HomeProps) {
   const { data: collectedRows, isLoading: isCollectedLoading } =
     useCollectedTimeline();
   const [viewerOpen, setViewerOpen] = useState(false);
+  // True from the moment the timeline starts fading out until the collection
+  // view is actually mounted, and again from the moment the collection view
+  // starts fading out until the timeline reappears — drives the canvas fade
+  // and hides the countdown for the whole transition, not just its endpoints.
+  const [canvasHidden, setCanvasHidden] = useState(false);
+  const [viewerLeaving, setViewerLeaving] = useState(false);
+  const [previewItem, setPreviewItem] = useState<BranchStripPreviewItem | null>(
+    null
+  );
+  const collectionTransitionTimeoutRef = useRef<number | undefined>(undefined);
   const [alreadyCollected, setAlreadyCollected] = useState(false);
   const [statusChecked, setStatusChecked] = useState(false);
   const [collectedSignal, setCollectedSignal] = useState(0);
@@ -92,6 +114,9 @@ function Home({ onEntranceComplete }: HomeProps) {
   }, []);
 
   const currentUsername = useMemo(() => getStoredUser()?.username ?? null, []);
+  const branchColour = getStoredColour() ?? DEFAULT_COLOUR;
+  const collectedRow =
+    collectedRows?.find((row) => row.username === currentUsername) ?? null;
 
   const timelineDetail = useMemo((): TimelineDetailView | null => {
     if (!focusSlug || !detailReady || !contentDetail) {
@@ -125,6 +150,54 @@ function Home({ onEntranceComplete }: HomeProps) {
     void queryClient.invalidateQueries({ queryKey: ['mainTimeline'] });
     void queryClient.invalidateQueries({ queryKey: ['contentDetail'] });
   };
+
+  // Fades the timeline out, then reveals the collection view once that
+  // finishes — the same "animate, then reveal/navigate once it finishes"
+  // idiom EMenu.tsx uses for its own screen transition.
+  const openCollectionView = () => {
+    setCanvasHidden(true);
+    window.clearTimeout(collectionTransitionTimeoutRef.current);
+    collectionTransitionTimeoutRef.current = window.setTimeout(
+      () => setViewerOpen(true),
+      prefersReducedMotion() ? 0 : COLLECTION_FADE_MS
+    );
+  };
+
+  // Mirrors openCollectionView in reverse: fade the collection view out,
+  // then reveal the timeline again once that finishes.
+  const closeCollectionView = () => {
+    setViewerLeaving(true);
+    window.clearTimeout(collectionTransitionTimeoutRef.current);
+    collectionTransitionTimeoutRef.current = window.setTimeout(
+      () => {
+        setViewerOpen(false);
+        setViewerLeaving(false);
+        setCanvasHidden(false);
+        setPreviewItem(null);
+      },
+      prefersReducedMotion() ? 0 : COLLECTION_FADE_MS
+    );
+  };
+
+  const handleFocusItemChange = useCallback(
+    (item: CollectionContent | null) => {
+      setPreviewItem(
+        item
+          ? {
+              id: item._id,
+              title: item.title,
+              imageUrl: item.imageUrl,
+              date: item.date,
+            }
+          : null
+      );
+    },
+    []
+  );
+
+  useEffect(() => {
+    return () => window.clearTimeout(collectionTransitionTimeoutRef.current);
+  }, []);
 
   useEffect(() => {
     const currentUser = getStoredUser();
@@ -178,59 +251,82 @@ function Home({ onEntranceComplete }: HomeProps) {
 
   return (
     <section className="home">
-      <TimelineCanvas
-        items={timeline.items}
-        collectedRows={collectedRows}
-        colour={timeline.colour}
-        currentUsername={currentUsername}
-        highlightedType={highlightedType}
-        hoverOwnBranch={ownBranchHover}
-        isolateControlRef={isolateOwnBranchRef}
-        focusItemControlRef={focusItemControlRef}
-        audioControlRef={audioControlRef}
-        onAudioStateChange={setAudioState}
-        onFocusFadeChange={handleFocusFadeChange}
-        onContentFocus={handleContentFocus}
-        onContentUnfocus={handleContentUnfocus}
-        onDetailLayoutStart={handleDetailLayoutStart}
-        onDetailImageRect={handleDetailImageRect}
-        onEntranceComplete={onEntranceComplete}
-      />
-      <TimelineDetailOverlay
-        detail={timelineDetail}
-        imageRect={detailImageRect}
-      />
-      {statusChecked && activeCollection && !alreadyCollected && (
-        <CollectionCountdown
-          collection={activeCollection}
-          onClick={() => setViewerOpen(true)}
+      <div
+        className={`home__canvas-layer${
+          canvasHidden ? ' home__canvas-layer--hidden' : ''
+        }`}
+      >
+        <TimelineCanvas
+          items={timeline.items}
+          collectedRows={collectedRows}
+          colour={timeline.colour}
+          currentUsername={currentUsername}
+          highlightedType={highlightedType}
+          hoverOwnBranch={ownBranchHover}
+          isolateControlRef={isolateOwnBranchRef}
+          focusItemControlRef={focusItemControlRef}
+          audioControlRef={audioControlRef}
+          onAudioStateChange={setAudioState}
+          onFocusFadeChange={handleFocusFadeChange}
+          onContentFocus={handleContentFocus}
+          onContentUnfocus={handleContentUnfocus}
+          onDetailLayoutStart={handleDetailLayoutStart}
+          onDetailImageRect={handleDetailImageRect}
+          onEntranceComplete={onEntranceComplete}
         />
-      )}
-      {viewerOpen && activeCollection && (
-        <CollectionViewer
-          collection={activeCollection}
-          onClose={() => setViewerOpen(false)}
-          onCollected={handleCollected}
+        <TimelineDetailOverlay
+          detail={timelineDetail}
+          imageRect={detailImageRect}
         />
-      )}
-      <div className="top-right-stack">
-        <div ref={userCardWrapRef}>
-          <UserCard
-            refreshSignal={collectedSignal}
-            onActivate={() => isolateOwnBranchRef.current?.()}
-            onHoverChange={setOwnBranchHover}
-          />
+        <div className="top-right-stack">
+          <div ref={userCardWrapRef}>
+            <UserCard
+              refreshSignal={collectedSignal}
+              onActivate={() => isolateOwnBranchRef.current?.()}
+              onHoverChange={setOwnBranchHover}
+            />
+          </div>
+          {audioState && (
+            <MediaPlayer
+              state={audioState}
+              onToggle={() => audioControlRef.current?.(audioState.src)}
+              onJumpToItem={() =>
+                focusItemControlRef.current?.(audioState.focusTarget)
+              }
+            />
+          )}
         </div>
-        {audioState && (
-          <MediaPlayer
-            state={audioState}
-            onToggle={() => audioControlRef.current?.(audioState.src)}
-            onJumpToItem={() =>
-              focusItemControlRef.current?.(audioState.focusTarget)
-            }
+      </div>
+      {statusChecked &&
+        activeCollection &&
+        !alreadyCollected &&
+        !canvasHidden && (
+          <CollectionCountdown
+            collection={activeCollection}
+            onClick={openCollectionView}
           />
         )}
-      </div>
+      {viewerOpen && activeCollection && (
+        <div
+          className={`collection-view${
+            viewerLeaving ? ' collection-view--leaving' : ''
+          }`}
+        >
+          <div className="collection-top-band">
+            <CollectedBranchStrip
+              items={collectedRow?.items ?? []}
+              colour={branchColour}
+              previewItem={previewItem}
+            />
+          </div>
+          <CollectionViewer
+            collection={activeCollection}
+            onClose={closeCollectionView}
+            onCollected={handleCollected}
+            onFocusItemChange={handleFocusItemChange}
+          />
+        </div>
+      )}
     </section>
   );
 }

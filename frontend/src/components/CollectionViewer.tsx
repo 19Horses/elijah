@@ -8,6 +8,10 @@ type CollectionViewerProps = {
   collection: Collection;
   onClose: () => void;
   onCollected?: () => void;
+  // Reports whichever item is currently focused in the carousel (or null
+  // when there's nothing to focus), so the caller can preview where it'd
+  // land in the user's own timeline before it's actually collected.
+  onFocusItemChange?: (item: CollectionContent | null) => void;
 };
 
 function CollectionItem({
@@ -104,6 +108,7 @@ function CollectionViewer({
   collection,
   onClose,
   onCollected,
+  onFocusItemChange,
 }: CollectionViewerProps) {
   const items = collection.content ?? [];
   const [activeIndex, setActiveIndex] = useState(0);
@@ -123,6 +128,11 @@ function CollectionViewer({
   }, []);
 
   useEffect(() => {
+    onFocusItemChange?.(items[activeIndex] ?? null);
+    return () => onFocusItemChange?.(null);
+  }, [activeIndex, items, onFocusItemChange]);
+
+  useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
@@ -134,6 +144,14 @@ function CollectionViewer({
     if (e.target === overlayRef.current) {
       onClose();
     }
+  };
+
+  const goToPrevious = () => {
+    setActiveIndex((index) => Math.max(0, index - 1));
+  };
+
+  const goToNext = () => {
+    setActiveIndex((index) => Math.min(items.length - 1, index + 1));
   };
 
   const handleCollect = () => {
@@ -176,7 +194,7 @@ function CollectionViewer({
               collecting ? ' collection-viewer__track--collecting' : ''
             }`}
             style={{
-              transform: `translateX(calc(-1 * (${activeIndex} + 0.5) * var(--cv-slot)))`,
+              transform: `translateX(calc(-1 * ${activeIndex} * var(--cv-slot)))`,
             }}
           >
             {items.map((item, index) => (
@@ -191,6 +209,31 @@ function CollectionViewer({
               />
             ))}
           </div>
+
+          {items.length > 1 && (
+            <>
+              <button
+                type="button"
+                className="collection-viewer__nav collection-viewer__nav--prev"
+                onClick={goToPrevious}
+                onMouseDown={(e) => e.stopPropagation()}
+                disabled={activeIndex === 0}
+                aria-label="Previous item"
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                className="collection-viewer__nav collection-viewer__nav--next"
+                onClick={goToNext}
+                onMouseDown={(e) => e.stopPropagation()}
+                disabled={activeIndex === items.length - 1}
+                aria-label="Next item"
+              >
+                ›
+              </button>
+            </>
+          )}
 
           <button
             type="button"

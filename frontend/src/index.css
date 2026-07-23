@@ -498,6 +498,166 @@ main.main--shop {
   display: block;
 }
 
+.home__canvas-layer {
+  transition: opacity 0.4s ease;
+}
+
+.home__canvas-layer--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Same transition (duration, easing, properties) as `main`/`main--leaving`'s
+   screen-fade, so closing a collection reads as the same kind of transition
+   as navigating between screens. */
+.collection-view {
+  transition: opacity 0.4s ease;
+}
+
+.collection-view--leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.collection-top-band {
+  align-items: center;
+  display: flex;
+  height: 20vh;
+  justify-content: flex-start;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+  z-index: 15;
+}
+
+.collected-branch-strip {
+  --strip-gap: 6rem;
+  align-items: center;
+  display: flex;
+  gap: var(--strip-gap);
+  height: 100%;
+  justify-content: flex-start;
+  padding: 0 2rem 0 4rem;
+  position: relative;
+  width: 100%;
+}
+
+.collected-branch-strip__node {
+  animation: collected-branch-strip-node-enter 0.55s
+    cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation-delay: calc(var(--node-index) * 90ms);
+  opacity: 0;
+  position: relative;
+  transform: translateY(-16px);
+}
+
+/* The connecting line only spans the gap between two adjacent nodes (node
+   to node), not the full width of the strip. */
+.collected-branch-strip__node:not(:first-child)::before {
+  background: var(--branch-colour, #ffffff);
+  content: '';
+  height: 2px;
+  left: calc(-1 * var(--strip-gap));
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: var(--strip-gap);
+}
+
+/* The link into/out of a not-yet-collected preview item is dashed rather
+   than solid, marking it as provisional. */
+.collected-branch-strip__node--dashed-connector:not(:first-child)::before {
+  background: none;
+  border-top: 2px dashed var(--branch-colour, #ffffff);
+  height: 0;
+}
+
+@keyframes collected-branch-strip-node-enter {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* A coloured outer ring with a black centre, matching the canvas's own
+   branch-connector dot (see connectors.ts's drawDot) — sat right on the
+   image's edge, matching where the canvas attaches a branch's connectors. */
+.collected-branch-strip__dot {
+  background: var(--branch-colour, #ffffff);
+  border-radius: 50%;
+  height: 10px;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  z-index: 1;
+}
+
+.collected-branch-strip__dot--left {
+  left: 0;
+}
+
+.collected-branch-strip__dot--right {
+  left: 100%;
+}
+
+.collected-branch-strip__dot-inner {
+  background: #000000;
+  border-radius: 50%;
+  display: block;
+  height: 5px;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 5px;
+}
+
+/* Sharp corners, white border, contain-fit — matches how the canvas draws
+   every collected item's image (drawContainedImage + a 1px white rect). */
+.collected-branch-strip__thumb {
+  background: #000000;
+  border: 1px solid #ffffff;
+  height: 11rem;
+  overflow: hidden;
+  width: 13rem;
+}
+
+/* Marks a not-yet-collected item previewed at its by-date position: dashed
+   and dimmed, distinguishing it from the solid, already-collected chain. */
+.collected-branch-strip__node--preview .collected-branch-strip__thumb {
+  border-style: dashed;
+  opacity: 0.6;
+}
+
+.collected-branch-strip__thumb img {
+  display: block;
+  height: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
+.collected-branch-strip__thumb-fallback {
+  align-items: center;
+  color: rgba(255, 255, 255, 0.6);
+  display: flex;
+  font-size: 0.5rem;
+  height: 100%;
+  justify-content: center;
+  padding: 0.25rem;
+  text-align: center;
+  width: 100%;
+}
+
+.collected-branch-strip--empty {
+  border: 1px dashed var(--branch-colour, #ffffff);
+  border-radius: 8px;
+  height: calc(100% - 3rem);
+  margin: 1.5rem 4rem;
+  width: calc(100% - 8rem);
+}
+
 .collection-countdown {
   align-items: center;
   backdrop-filter: blur(12px);
@@ -557,23 +717,27 @@ main.main--shop {
 
 .collection-viewer__overlay {
   background: rgba(0, 0, 0, 0);
-  inset: 0;
+  top: 20vh;
+  right: 0;
+  bottom: 0;
+  left: 0;
   position: absolute;
   transition: background 0.4s ease;
   z-index: 20;
 }
 
 .collection-viewer__overlay--visible {
-  background: rgba(0, 0, 0, 0.72);
+  background: rgba(0, 0, 0, 0.35);
 }
 
 .collection-viewer__stage {
   --cv-slot: 38vw;
-  align-items: center;
+  align-items: flex-start;
   display: flex;
   height: 100%;
   opacity: 0;
   overflow: hidden;
+  padding-top: 1rem;
   pointer-events: none;
   position: relative;
   transition: opacity 0.3s ease;
@@ -588,7 +752,7 @@ main.main--shop {
 .collection-viewer__track {
   align-items: center;
   display: flex;
-  left: 50%;
+  left: 4rem;
   position: relative;
   transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -646,6 +810,7 @@ main.main--shop {
 .collection-viewer__media {
   display: block;
   position: relative;
+  transition: box-shadow 0.3s ease;
   width: fit-content;
 }
 
@@ -667,9 +832,16 @@ main.main--shop {
   opacity: 0;
 }
 
+.collection-viewer__item--active .collection-viewer__media {
+  box-shadow: 0 0 16px 2px rgba(255, 255, 255, 0.35),
+    0 0 40px 8px rgba(255, 255, 255, 0.18);
+}
+
 .collection-viewer__image {
   display: block;
-  height: 58vh;
+  height: auto;
+  max-height: 58vh;
+  max-width: var(--cv-slot);
   width: auto;
 }
 
@@ -757,6 +929,37 @@ main.main--shop {
 
 .collection-viewer__close:hover {
   color: #fff;
+}
+
+.collection-viewer__nav {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  font-size: 2.5rem;
+  line-height: 1;
+  padding: 0.5rem 1rem;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+}
+
+.collection-viewer__nav:hover:not(:disabled) {
+  color: #ffffff;
+}
+
+.collection-viewer__nav:disabled {
+  color: rgba(255, 255, 255, 0.15);
+  cursor: default;
+}
+
+.collection-viewer__nav--prev {
+  left: 1.5rem;
+}
+
+.collection-viewer__nav--next {
+  right: 1.5rem;
 }
 
 .collection-viewer__empty {
