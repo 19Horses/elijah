@@ -547,7 +547,7 @@ main.main--shop {
 .collection-top-band {
   align-items: center;
   display: flex;
-  height: 30vh;
+  height: 20vh;
   justify-content: flex-start;
   left: 0;
   position: absolute;
@@ -727,7 +727,7 @@ main.main--shop {
 
 .collection-viewer__overlay {
   background: rgba(0, 0, 0, 0);
-  top: 30vh;
+  top: 20vh;
   right: 0;
   bottom: 0;
   left: 0;
@@ -843,7 +843,9 @@ main.main--shop {
 
 .collection-viewer__image {
   display: block;
-  height: 58vh;
+  height: auto;
+  max-height: 58vh;
+  max-width: var(--cv-slot);
   width: auto;
 }
 
