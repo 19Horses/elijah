@@ -5,6 +5,7 @@ import {
   DETAIL_TEXT_GAP_PX,
   DETAIL_TEXT_VIEWPORT_LEFT,
   FIT_VIEW_PADDING,
+  FIT_VIEW_TOP_CLEARANCE_PX,
   FIT_ZOOM_SCALAR,
   MAIN_LINE_Y,
   MAX_ZOOM_LEVEL,
@@ -156,11 +157,17 @@ export function createViewContext(
       runtime.targetZoom = (p.width / paddedWidth) * FIT_ZOOM_SCALAR;
       const centerX = (minX + maxX) / 2;
       runtime.targetCameraX = centerX - p.width / (2 * runtime.targetZoom);
-      runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
+      runtime.targetCameraY =
+        MAIN_LINE_Y -
+        p.height / (2 * runtime.targetZoom) -
+        FIT_VIEW_TOP_CLEARANCE_PX / runtime.targetZoom;
     } else {
       runtime.targetZoom = 1;
       runtime.targetCameraX = 0;
-      runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
+      runtime.targetCameraY =
+        MAIN_LINE_Y -
+        p.height / (2 * runtime.targetZoom) -
+        FIT_VIEW_TOP_CLEARANCE_PX / runtime.targetZoom;
     }
     runtime.fitZoomLevel = runtime.targetZoom;
   };

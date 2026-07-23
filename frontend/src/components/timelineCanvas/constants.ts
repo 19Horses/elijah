@@ -39,6 +39,10 @@ export const FIT_VIEW_PADDING = 80;
 // Multiplies the fit-to-view zoom. 1.0 frames the whole timeline edge-to-edge,
 // centred, with every item visible; >1 zooms in (content runs off the edges).
 export const FIT_ZOOM_SCALAR = 1.0;
+// Screen px the default fit view shifts everything down by, so branches above
+// the main line clear the fixed user-card/mini-player stack (top-right)
+// instead of running up under it.
+export const FIT_VIEW_TOP_CLEARANCE_PX = 140;
 export const TODAY_LABEL_BOTTOM_OFFSET = 24;
 export const TODAY_LABEL_GAP = 8;
 // Width (screen px) of the fade-to-background gradient at each screen edge, so
