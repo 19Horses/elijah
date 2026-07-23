@@ -4,9 +4,7 @@ import CollectedBranchStrip from './CollectedBranchStrip';
 import type { CollectedRowItem } from '../queries/collectedContent';
 import type { MainTimelineItem } from '../queries/mainTimeline';
 
-function makeItem(
-  overrides: Partial<MainTimelineItem> = {}
-): CollectedRowItem {
+function makeItem(overrides: Partial<MainTimelineItem> = {}): CollectedRowItem {
   return {
     collectedAt: '2026-01-01T00:00:00.000Z',
     content: {
@@ -43,9 +41,7 @@ describe('CollectedBranchStrip', () => {
     const { container } = render(
       <CollectedBranchStrip items={items} colour="#00ff00" />
     );
-    const nodes = container.querySelectorAll(
-      '.collected-branch-strip__node'
-    );
+    const nodes = container.querySelectorAll('.collected-branch-strip__node');
     expect(nodes).toHaveLength(2);
     expect(screen.getByAltText('First')).toBeTruthy();
     expect(screen.getByAltText('Second')).toBeTruthy();
@@ -132,9 +128,11 @@ describe('CollectedBranchStrip', () => {
         }}
       />
     );
-    const titles = [...container.querySelectorAll('.collected-branch-strip__thumb-fallback, img')].map(
-      (el) => (el instanceof HTMLImageElement ? el.alt : el.textContent)
-    );
+    const titles = [
+      ...container.querySelectorAll(
+        '.collected-branch-strip__thumb-fallback, img'
+      ),
+    ].map((el) => (el instanceof HTMLImageElement ? el.alt : el.textContent));
     expect(titles).toEqual(['January', 'February', 'March']);
   });
 
@@ -167,7 +165,9 @@ describe('CollectedBranchStrip', () => {
       ...container.querySelectorAll('.collected-branch-strip__node'),
     ];
     expect(
-      nodes.map((n) => n.classList.contains('collected-branch-strip__node--preview'))
+      nodes.map((n) =>
+        n.classList.contains('collected-branch-strip__node--preview')
+      )
     ).toEqual([false, true, false]);
     expect(
       nodes.map((n) =>

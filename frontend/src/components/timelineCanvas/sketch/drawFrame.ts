@@ -30,11 +30,7 @@ import {
   ZOOM_OUT_GROWTH_POWER,
 } from '../constants';
 import { drawDot } from '../connectors';
-import {
-  screenToWorld,
-  zoomMergeProgress,
-  zoomOutGrowth,
-} from '../geometry';
+import { screenToWorld, zoomMergeProgress, zoomOutGrowth } from '../geometry';
 import { drawCollectedSourcesLabel, drawUserLabel } from '../labels';
 import {
   animateDetailReveal,

@@ -1,5 +1,9 @@
 import type p5 from 'p5';
-import { DOT_RADIUS, DRAG_THRESHOLD, ZOOM_OUT_GROWTH_POWER } from '../constants';
+import {
+  DOT_RADIUS,
+  DRAG_THRESHOLD,
+  ZOOM_OUT_GROWTH_POWER,
+} from '../constants';
 import { screenToWorld, zoomOutGrowth } from '../geometry';
 import type { FocusTarget, TimelineSketchDeps } from '../types';
 import type { BoundsContext } from './bounds';

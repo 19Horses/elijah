@@ -61,9 +61,7 @@ function Home({ onEntranceComplete }: HomeProps) {
   const [previewItem, setPreviewItem] = useState<BranchStripPreviewItem | null>(
     null
   );
-  const collectionTransitionTimeoutRef = useRef<number | undefined>(
-    undefined
-  );
+  const collectionTransitionTimeoutRef = useRef<number | undefined>(undefined);
   const [alreadyCollected, setAlreadyCollected] = useState(false);
   const [statusChecked, setStatusChecked] = useState(false);
   const [collectedSignal, setCollectedSignal] = useState(0);
@@ -185,7 +183,12 @@ function Home({ onEntranceComplete }: HomeProps) {
     (item: CollectionContent | null) => {
       setPreviewItem(
         item
-          ? { id: item._id, title: item.title, imageUrl: item.imageUrl, date: item.date }
+          ? {
+              id: item._id,
+              title: item.title,
+              imageUrl: item.imageUrl,
+              date: item.date,
+            }
           : null
       );
     },

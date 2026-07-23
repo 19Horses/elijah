@@ -67,12 +67,17 @@ function CollectedBranchStrip({
       {entries.map((entry, index) => {
         // The link into a preview node, or out of one, is drawn dashed —
         // marking it as "not collected yet" rather than an established link.
-        const dashedConnector = entry.isPreview || entries[index - 1]?.isPreview;
+        const dashedConnector =
+          entry.isPreview || entries[index - 1]?.isPreview;
         return (
           <div
             className={`collected-branch-strip__node${
               entry.isPreview ? ' collected-branch-strip__node--preview' : ''
-            }${dashedConnector ? ' collected-branch-strip__node--dashed-connector' : ''}`}
+            }${
+              dashedConnector
+                ? ' collected-branch-strip__node--dashed-connector'
+                : ''
+            }`}
             key={entry.id}
             style={{ '--node-index': index } as React.CSSProperties}
           >
