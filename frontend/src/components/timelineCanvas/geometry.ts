@@ -115,7 +115,6 @@ export function zoomMergeProgress(
     return zoom >= threshold ? 0 : 1;
   }
   return (
-    1 -
-    Math.max(0, Math.min(1, (zoom - (threshold - transition)) / transition))
+    1 - Math.max(0, Math.min(1, (zoom - (threshold - transition)) / transition))
   );
 }
