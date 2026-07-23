@@ -16,6 +16,7 @@ import {
   LOAD_ALPHA_SNAP,
   PRIVATE_IMAGE_EFFECT,
   TYPE_HIGHLIGHT_BLUR,
+  ZOOM_OUT_GROWTH_POWER,
 } from '../constants';
 import {
   distanceToPolyline,
@@ -24,6 +25,7 @@ import {
   getBranchPoints,
   getSteppedBranchPoints,
 } from '../connectors';
+import { zoomOutGrowth } from '../geometry';
 import type {
   CollectedSource,
   ConnectorPoint,
@@ -37,11 +39,11 @@ import {
   drawContainedImage,
   drawGalleryControls,
   drawGalleryStrip,
-  galleryFocusWidth,
 } from './drawGalleryControls';
 import type { GalleryController } from './galleryController';
 import { drawPlayPauseButton } from './drawPlayPauseButton';
 import type { MainLaneDrawContext } from './drawMainLane';
+import { formatDateForZoom } from '../timelineRuntime';
 
 export type CollectedLaneDrawResult = {
   hoveredCollected: number;
@@ -143,6 +145,11 @@ export function drawCollectedLaneConnectors(
   hover: CollectedLaneDrawResult
 ): void {
   const collectedCtx = p.drawingContext as CanvasRenderingContext2D;
+  const lineWeight = zoomOutGrowth(
+    deps.runtime.zoom,
+    deps.runtime.fitZoomLevel,
+    ZOOM_OUT_GROWTH_POWER
+  );
 
   deps.processedCollected.forEach((item, index) => {
     // Branching lines stay visible during focus, so they ignore the focus fade.
@@ -189,7 +196,8 @@ export function drawCollectedLaneConnectors(
           shiftAudioNode(from, ctx),
           shiftAudioNode(to, ctx),
           branchColour,
-          stepped
+          stepped,
+          lineWeight
         )
       );
       resetCanvasEffects(collectedCtx);
@@ -403,7 +411,11 @@ export function drawCollectedLaneItems(
       ctx.dateLabels.push({
         x: imageLeft + width / 2,
         y: top - 12,
-        text: item.dateLabel,
+        text: formatDateForZoom(
+          item.anchorTime,
+          deps.runtime.zoom,
+          deps.runtime.fitZoomLevel
+        ),
         colour: 255,
         alpha:
           (ctx.isTypeHighlightActive && !typeMatch
@@ -434,19 +446,13 @@ export function drawCollectedLaneItems(
       });
     }
 
-    // Gallery navigation arrows + dots, spanning the focused image's width.
+    // Gallery navigation arrows, fixed to the item's slot so they don't shift
+    // position as differently-shaped images are navigated to.
     if (galleryActive && galleryImages) {
-      const arrowWidth = galleryFocusWidth(
-        galleryImages,
-        gallery.getDisplayIndex(),
-        width,
-        height
-      );
       const regions = drawGalleryControls(
         p,
         collectedCtx,
-        { left: imageLeft, top, width: arrowWidth, height },
-        gallery.getActiveIndex(),
+        { left: imageLeft, top, width, height },
         item.galleryUrls.length,
         visibilityAlpha
       );
@@ -465,6 +471,11 @@ export function drawCollectedLaneConnectorDots(
   hover: CollectedLaneDrawResult
 ): void {
   const collectedCtx = p.drawingContext as CanvasRenderingContext2D;
+  const dotScale = zoomOutGrowth(
+    deps.runtime.zoom,
+    deps.runtime.fitZoomLevel,
+    ZOOM_OUT_GROWTH_POWER
+  );
 
   deps.processedCollected.forEach((item, index) => {
     // Branching lines stay visible during focus, so they ignore the focus fade.
@@ -511,8 +522,8 @@ export function drawCollectedLaneConnectorDots(
         }) => {
           const sFrom = shiftAudioNode(from, ctx);
           const sTo = shiftAudioNode(to, ctx);
-          drawDot(p, sFrom.x, sFrom.y, branchColour);
-          drawDot(p, sTo.x, sTo.y, branchColour);
+          drawDot(p, sFrom.x, sFrom.y, branchColour, dotScale);
+          drawDot(p, sTo.x, sTo.y, branchColour, dotScale);
           if (ctx.isFocusActive) {
             // The `from` dot connects along the line to the item at `to`; the
             // `to` dot connects back to the item at `from`.

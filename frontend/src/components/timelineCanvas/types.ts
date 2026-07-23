@@ -16,6 +16,17 @@ export type TimelineCanvasProps = {
   // Populated by the canvas with a toggle for isolating the viewer's own branch,
   // so an outside control (the user card) can invoke it.
   isolateControlRef?: MutableRefObject<(() => void) | undefined>;
+  // Populated by the canvas with a jump-to-item focuser, so an outside control
+  // (the mini player, rendered by the caller) can invoke it.
+  focusItemControlRef?: MutableRefObject<
+    ((target: FocusTarget) => void) | undefined
+  >;
+  // Populated by the canvas with a play/pause toggle (by track src), so an
+  // outside control (the mini player) can invoke it.
+  audioControlRef?: MutableRefObject<((src: string) => void) | undefined>;
+  // Reports the mini-player state (or null to hide it) so the caller can
+  // render it alongside its own UI (e.g. stacked under the user card).
+  onAudioStateChange?: (state: AudioPlayerState | null) => void;
   onFocusFadeChange?: (fade: number) => void;
   onContentFocus?: (slug: string) => void;
   onContentUnfocus?: () => void;
@@ -45,6 +56,8 @@ export type AudioPlayerState = {
   title: string;
   imageUrl: string | null;
   playing: boolean;
+  // The item this track belongs to, so the mini player can jump back to it.
+  focusTarget: FocusTarget;
 };
 
 export type CollectedSource = {
@@ -57,7 +70,6 @@ export type ProcessedCollected = {
   contentId: string;
   slug: string | null;
   imageUrl: string | null;
-  dateLabel: string;
   contentType: ContentType;
   title: string;
   bodyContent: string | null;
@@ -73,7 +85,6 @@ export type ProcessedCollected = {
 export type ProcessedItem = {
   imageUrl: string | null;
   slug: string | null;
-  dateLabel: string;
   contentType: ContentType;
   title: string;
   bodyContent: string | null;
@@ -141,11 +152,20 @@ export type TimelineRuntime = {
   targetCameraX: number;
   targetCameraY: number;
   targetZoom: number;
-  snapping: boolean;
-  snapTargetCameraX: number;
-  snapTargetCameraY: number;
-  lastWheelMs: number;
-  snapStepReadyMs: number;
+  // Camera position a drag or scroll-wheel pan is easing toward.
+  panTargetCameraX: number;
+  panTargetCameraY: number;
+  // Whether the camera is still catching up to the pan target.
+  panning: boolean;
+  // Zoom level a wheel-zoom gesture is easing toward.
+  zoomTargetZoom: number;
+  // World/screen point kept fixed under the cursor while the zoom eases in.
+  zoomAnchorWorldX: number;
+  zoomAnchorWorldY: number;
+  zoomAnchorScreenX: number;
+  zoomAnchorScreenY: number;
+  // Whether the zoom is still catching up to the zoom target.
+  zooming: boolean;
   focusTarget: FocusTarget | null;
   // Collector row the view is zoomed into via a branch click, or null.
   focusedBranchRow: number | null;
@@ -176,9 +196,6 @@ export type TimelineRuntime = {
   // in, so the one-shot onEntranceComplete callback only fires once.
   entranceComplete: boolean;
   focusContentFade: number;
-  // Whether the currently/last focused item is dated after today, so the detail
-  // view can invert to a white background. Retained through the unfocus fade.
-  focusedItemIsFuture: boolean;
   detailPhase: DetailPhase;
   detailLayout: number;
   // Accumulated rotation (radians) of the focused audio track's CD. Only
@@ -223,6 +240,8 @@ export type TimelineSketchRefs = {
   // React → sketch: user-card click toggles isolating the viewer's own branch
   // into a straight, centred timeline.
   isolateOwnBranchRef: MutableRefObject<(() => void) | undefined>;
+  // React → sketch: mini-player click (image/title) jumps/focuses that item.
+  focusItemRef: MutableRefObject<((target: FocusTarget) => void) | undefined>;
 };
 
 export type TimelineSketchDeps = {

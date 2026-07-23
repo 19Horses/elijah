@@ -4,8 +4,15 @@ export const IMAGE_HEIGHT = 144;
 export const PADDING_X = 48;
 export const PADDING_Y = 48;
 export const DATE_OFFSET = 24;
-// Font size (world px) of the date labels above items.
+// Screen-space font size (px, independent of zoom) of the date labels above
+// items.
 export const DATE_FONT_SIZE = 16;
+// Date label format switches with zoom, relative to the fit-to-screen level:
+// below DATE_FORMAT_NUMERIC_ZOOM_FACTOR shows "10/2025"; from there up to
+// DATE_FORMAT_FULL_ZOOM_FACTOR shows "Oct 14 2025"; above that, the full
+// "October 14 2025".
+export const DATE_FORMAT_NUMERIC_ZOOM_FACTOR = 0.6;
+export const DATE_FORMAT_FULL_ZOOM_FACTOR = 1.3;
 export const DOT_RADIUS = 3;
 // Hovering a connector node grows its dot: extra diameter as a fraction of the
 // base (1.5 = up to 2.5× size), eased in/out at this rate.
@@ -13,6 +20,17 @@ export const NODE_HOVER_GROW = 0.3;
 export const NODE_GROW_LERP = 0.25;
 // Spacing between adjacent branch nodes on a main item's underside.
 export const BRANCH_NODE_GAP = 9;
+// Below this zoom (as a fraction of the fit-to-screen level), parallel branch
+// lines sharing the same route ease their fan-out spacing down to 0 so they
+// merge into a single line for readability; above it they fan back out. The
+// transition spans this same fraction below the threshold, so it eases
+// smoothly rather than popping at a hard cutoff.
+export const BRANCH_MERGE_ZOOM_FACTOR = 0.8;
+export const BRANCH_MERGE_TRANSITION_FACTOR = 0.25;
+// How much the date label's font size shrinks once branches have fully
+// merged (0 = no change, 0.2 = 20% smaller at full merge), easing with the
+// same threshold/transition as the branch merge above.
+export const DATE_FONT_MERGE_SHRINK = 0.2;
 // Alpha for main-timeline connectors a focused/hovered branch doesn't travel.
 export const MAIN_CONNECTOR_DIM_ALPHA = 0.2;
 export const DEFAULT_BACKGROUND = '#000000';
@@ -26,14 +44,12 @@ export const TODAY_LABEL_GAP = 8;
 // Width (screen px) of the fade-to-background gradient at each screen edge, so
 // the timeline dissolves into the background instead of hard-cutting at the border.
 export const EDGE_GRADIENT_PX = 140;
+// Base gap between the main line and the nearest branch row, and between
+// adjacent branch rows beyond that. Both grow with ZOOM_OUT_GROWTH_POWER at
+// draw time (see bounds.ts) to keep pace with the enlarged nodes/lines.
 export const LANE_GAP = 50;
+export const COLLECTED_ROW_EXTRA_GAP = 30;
 export const MAIN_LINE_Y = PADDING_Y + IMAGE_HEIGHT / 2;
-export const COLLECTED_LANE_TOP = PADDING_Y + IMAGE_HEIGHT + LANE_GAP;
-// First branch row above the main line, mirrored around it: its bottom sits
-// LANE_GAP above the main item's top, matching the first row below.
-export const COLLECTED_LANE_ABOVE_FIRST_ROW_TOP =
-  PADDING_Y - LANE_GAP - IMAGE_HEIGHT;
-export const COLLECTED_ROW_HEIGHT = IMAGE_HEIGHT + 30;
 export const CONNECTOR_HOVER_THRESHOLD = 6;
 export const MAIN_USERNAME = 'dialE';
 export const MAIN_GLOW_COLOUR = '#ff0000';
@@ -67,15 +83,32 @@ export const FOCUS_VIEWPORT_FILL = 0.52;
 export const VIEW_ANIMATION_LERP = 0.12;
 export const VIEW_UNFOCUS_ANIMATION_LERP = 0.15;
 export const VIEW_SNAP_THRESHOLD = 0.001;
-export const WHEEL_ZOOM_SENSITIVITY = 0.001;
-export const SCROLL_STEP_MIN_DELTA = 1;
-export const SCROLL_GESTURE_GAP_MS = 80;
-export const SCROLL_STEP_COOLDOWN_MS = 260;
-export const SCROLL_ON_STOP_PX = 4;
-export const SCROLL_SNAP_LERP = 0.18;
-export const SCROLL_SNAP_THRESHOLD_PX = 0.5;
+export const WHEEL_ZOOM_SENSITIVITY = 0.0025;
+// How quickly the camera eases toward the pan target each frame (drag or
+// scroll wheel), 0-1 per frame; higher = snappier, lower = smoother/more
+// trailing.
+export const PAN_LERP = 0.18;
+// Below this on-screen distance (px) a pan is considered settled, so the next
+// drag/wheel gesture rebases its target from the live camera position.
+export const PAN_SETTLE_THRESHOLD_PX = 0.5;
+// How quickly the zoom eases toward the wheel-zoom target each frame (same
+// shape as PAN_LERP).
+export const ZOOM_LERP = 0.18;
+// Below this zoom-unit distance a wheel-zoom is considered settled.
+export const ZOOM_SETTLE_THRESHOLD = 0.0005;
 export const MIN_ZOOM_FACTOR = 0.25;
-export const MAX_ZOOM_FACTOR = 4;
+// Absolute zoom level the user can zoom in to, independent of the fit-to-screen
+// zoom (which shrinks as the timeline grows) — so items reach the same max
+// on-screen size no matter how many items the timeline has.
+export const MAX_ZOOM_LEVEL = 1.5;
+// How strongly nodes and connector lines grow as the camera zooms out below
+// the default fit level. 1 = they merely hold their on-screen size instead of
+// shrinking; >1 = they actively grow larger the further out you zoom.
+export const ZOOM_OUT_GROWTH_POWER = 1.3;
+// Same idea, but for the gap between branch rows — higher than
+// ZOOM_OUT_GROWTH_POWER so rows spread apart faster than the nodes/lines
+// thicken, keeping them comfortably clear of each other at extreme zoom-out.
+export const LANE_GAP_GROWTH_POWER = 1.8;
 export const MAX_VISIBLE_COLLECTOR_LABELS = 3;
 export const OTHERS_LABEL_BG = '#9ca3af';
 export const HIGHLIGHT_FADE_OUT_LERP = 0.08;

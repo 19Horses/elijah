@@ -39,11 +39,12 @@ export function getMainConnectorPoints(
 function drawPolylineSegment(
   p: p5,
   points: ConnectorPoint[],
-  dashed: boolean
+  dashed: boolean,
+  weight = 1
 ): void {
   const ctx = p.drawingContext as CanvasRenderingContext2D;
   p.stroke(255);
-  p.strokeWeight(1);
+  p.strokeWeight(weight);
   p.noFill();
   if (dashed) {
     ctx.setLineDash(DASH_PATTERN);
@@ -64,11 +65,12 @@ export function drawMainConnector(
   from: ConnectorPoint,
   to: ConnectorPoint,
   startFuture: boolean,
-  endFuture: boolean
+  endFuture: boolean,
+  weight = 1
 ): void {
   const points = getMainConnectorPoints(from, to);
   // A connector touching a future item is dashed for its whole length.
-  drawPolylineSegment(p, points, startFuture || endFuture);
+  drawPolylineSegment(p, points, startFuture || endFuture, weight);
 }
 
 export function getBranchPoints(
@@ -172,7 +174,8 @@ export function drawBranchConnector(
   from: ConnectorPoint,
   to: ConnectorPoint,
   colour: string,
-  stepped = false
+  stepped = false,
+  weight = 1
 ): void {
   const ctx = p.drawingContext as CanvasRenderingContext2D;
   const points = stepped
@@ -180,22 +183,31 @@ export function drawBranchConnector(
     : getBranchPoints(from, to);
   ctx.setLineDash([]);
   p.stroke(colour);
-  p.strokeWeight(1);
+  p.strokeWeight(weight);
   p.noFill();
   p.beginShape();
   points.forEach((point) => p.vertex(point.x, point.y));
   p.endShape();
 }
 
-export function drawDot(p: p5, x: number, y: number, colour: string): void {
+// `scale` grows the dot beyond its base radius (e.g. when zoomed out — see
+// zoomOutGrowth) so nodes stay legible instead of shrinking with the world.
+export function drawDot(
+  p: p5,
+  x: number,
+  y: number,
+  colour: string,
+  scale = 1
+): void {
   const ctx = p.drawingContext as CanvasRenderingContext2D;
+  const radius = DOT_RADIUS * scale;
   p.noStroke();
   p.fill(colour);
-  p.circle(x, y, DOT_RADIUS * 2);
+  p.circle(x, y, radius * 2);
 
   const prevBlur = ctx.shadowBlur;
   ctx.shadowBlur = 0;
-  p.fill(0);
-  p.circle(x, y, DOT_RADIUS);
+  p.fill(255);
+  p.circle(x, y, radius);
   ctx.shadowBlur = prevBlur;
 }

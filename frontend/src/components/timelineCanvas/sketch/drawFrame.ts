@@ -2,11 +2,13 @@ import type p5 from 'p5';
 import {
   getStaggeredLoadAlpha,
   getTypeDimAlpha,
-  mixHex,
   resetCanvasEffects,
 } from '../canvasEffects';
 import {
   BRANCH_DIM_LERP,
+  BRANCH_MERGE_TRANSITION_FACTOR,
+  BRANCH_MERGE_ZOOM_FACTOR,
+  DATE_FONT_MERGE_SHRINK,
   HIGHLIGHT_FADE_SNAP,
   LOAD_ALPHA_SNAP,
   LOAD_CONNECTOR_DELAY_MS,
@@ -25,9 +27,14 @@ import {
   PRIVATE_BADGE_COLOUR,
   PRIVATE_BADGE_TEXT,
   DATE_FONT_SIZE,
+  ZOOM_OUT_GROWTH_POWER,
 } from '../constants';
 import { drawDot } from '../connectors';
-import { screenToWorld } from '../geometry';
+import {
+  screenToWorld,
+  zoomMergeProgress,
+  zoomOutGrowth,
+} from '../geometry';
 import { drawCollectedSourcesLabel, drawUserLabel } from '../labels';
 import {
   animateDetailReveal,
@@ -139,6 +146,7 @@ export function createDrawFrameHandler(
           title: meta.title,
           imageUrl: meta.imageUrl,
           playing: current.playing,
+          focusTarget: { lane: meta.lane, index: meta.index },
         };
       }
     }
@@ -151,7 +159,8 @@ export function createDrawFrameHandler(
 
   return () => {
     view.animateView();
-    view.animateScrollSnap();
+    view.animatePan();
+    view.animateZoom();
     animateDetailReveal(runtime);
     updateHighlightFade(runtime, deps);
     syncInteractionLock(deps);
@@ -209,6 +218,13 @@ export function createDrawFrameHandler(
       runtime.focusTarget !== null && !runtime.viewUnfocusing;
     const isDetailLayoutActive = runtime.detailPhase !== 'none';
     const otherContentAlpha = 1 - runtime.focusContentFade;
+    // Nodes/lines grow beyond their base size the further the camera is
+    // zoomed out below the default fit level, so they stay legible.
+    const zoomGrowth = zoomOutGrowth(
+      runtime.zoom,
+      runtime.fitZoomLevel,
+      ZOOM_OUT_GROWTH_POWER
+    );
 
     // Branch isolation: straighten the viewer's own branch onto the main line
     // and fade everything else out, eased by `isolate` (0-1).
@@ -256,16 +272,7 @@ export function createDrawFrameHandler(
       return base;
     };
 
-    // Focusing an item dated after today inverts the view to a white
-    // background, eased in/out by the focus fade.
-    const bgWhiteMix = runtime.focusedItemIsFuture
-      ? runtime.focusContentFade
-      : 0;
-    p.background(
-      bgWhiteMix > 0
-        ? mixHex(deps.backgroundColour, '#ffffff', bgWhiteMix)
-        : deps.backgroundColour
-    );
+    p.background(deps.backgroundColour);
     p.push();
     p.scale(runtime.zoom);
     p.translate(-runtime.cameraX, -runtime.cameraY);
@@ -508,7 +515,7 @@ export function createDrawFrameHandler(
       ctx2.globalAlpha = isolate;
       ctx2.setLineDash([]);
       p.stroke(255);
-      p.strokeWeight(1);
+      p.strokeWeight(zoomGrowth);
       p.noFill();
       for (let k = 0; k < isolatedOrdered.length - 1; k++) {
         const a = isolatedOrdered[k].rect;
@@ -516,18 +523,29 @@ export function createDrawFrameHandler(
         p.line(a.right, a.centerY, b.left, b.centerY);
       }
       for (const { rect } of isolatedOrdered) {
-        drawDot(p, rect.left, rect.centerY, '#ffffff');
-        drawDot(p, rect.right, rect.centerY, '#ffffff');
+        drawDot(p, rect.left, rect.centerY, '#ffffff', zoomGrowth);
+        drawDot(p, rect.right, rect.centerY, '#ffffff', zoomGrowth);
       }
       resetCanvasEffects(ctx2);
     }
 
     // Date labels drawn last (still inside the world transform) so they sit
-    // above the connectors and nodes.
+    // above the connectors and nodes. Divide by zoom so the world-space size
+    // (which the transform's scale multiplies back out) reads as a constant
+    // screen-space size regardless of zoom level — except it shrinks slightly
+    // once branches have merged (same threshold as the branch-line merge),
+    // easing the crowded, overlapping labels down a touch at extreme zoom-out.
     if (dateLabels.length > 0) {
+      const dateMergeProgress = zoomMergeProgress(
+        runtime.zoom,
+        runtime.fitZoomLevel,
+        BRANCH_MERGE_ZOOM_FACTOR,
+        BRANCH_MERGE_TRANSITION_FACTOR
+      );
+      const dateFontScale = 1 - dateMergeProgress * DATE_FONT_MERGE_SHRINK;
       const dateCtx = p.drawingContext as CanvasRenderingContext2D;
       p.noStroke();
-      p.textSize(DATE_FONT_SIZE);
+      p.textSize((DATE_FONT_SIZE * dateFontScale) / runtime.zoom);
       p.textAlign(p.CENTER, p.BOTTOM);
       for (const label of dateLabels) {
         dateCtx.globalAlpha = label.alpha;
@@ -611,7 +629,7 @@ export function createDrawFrameHandler(
     // links to at the far end of the line.
     if (isFocusActive) {
       let hoveredNode: NodeHoverRegion | null = null;
-      let bestDist = DOT_RADIUS * runtime.zoom + 8;
+      let bestDist = DOT_RADIUS * runtime.zoom * zoomGrowth + 8;
       for (const region of nodeRegions) {
         const sx = (region.x - runtime.cameraX) * runtime.zoom;
         const sy = (region.y - runtime.cameraY) * runtime.zoom;
@@ -641,11 +659,12 @@ export function createDrawFrameHandler(
           DOT_RADIUS *
           2 *
           runtime.zoom *
+          zoomGrowth *
           (1 + runtime.hoverNodeScale * NODE_HOVER_GROW);
         p.noStroke();
         p.fill(runtime.hoverNodeColour);
         p.circle(sx, sy, diameter);
-        p.fill(0);
+        p.fill(255);
         p.circle(sx, sy, diameter / 2);
       }
 

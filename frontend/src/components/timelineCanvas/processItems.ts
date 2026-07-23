@@ -1,6 +1,5 @@
 import type { CollectedUserRow } from '../../queries/collectedContent';
 import {
-  formatMainTimelineDate,
   getMainTimelineImageUrl,
   type MainTimelineItem,
 } from '../../queries/mainTimeline';
@@ -37,7 +36,6 @@ export function buildProcessedItems(
   return items.map((item) => ({
     imageUrl: getMainTimelineImageUrl(item),
     slug: item.slug ?? null,
-    dateLabel: formatMainTimelineDate(item.date),
     contentType: item._type,
     title: item.title,
     bodyContent: item._type === 'newsletter' ? item.content ?? null : null,
@@ -82,7 +80,6 @@ export function buildProcessedCollected(
         contentId,
         slug: item.content.slug ?? null,
         imageUrl: getMainTimelineImageUrl(item.content),
-        dateLabel: formatMainTimelineDate(item.content.date),
         contentType: item.content._type,
         title: item.content.title,
         bodyContent:

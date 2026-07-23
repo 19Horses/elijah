@@ -7,23 +7,20 @@ import {
   FIT_VIEW_PADDING,
   FIT_ZOOM_SCALAR,
   MAIN_LINE_Y,
-  MAX_ZOOM_FACTOR,
+  MAX_ZOOM_LEVEL,
   MIN_ZOOM_FACTOR,
-  SCROLL_GESTURE_GAP_MS,
-  SCROLL_ON_STOP_PX,
-  SCROLL_SNAP_LERP,
-  SCROLL_SNAP_THRESHOLD_PX,
-  SCROLL_STEP_COOLDOWN_MS,
-  SCROLL_STEP_MIN_DELTA,
+  PAN_LERP,
+  PAN_SETTLE_THRESHOLD_PX,
   VIEW_ANIMATION_LERP,
   VIEW_SNAP_THRESHOLD,
   VIEW_UNFOCUS_ANIMATION_LERP,
   WHEEL_ZOOM_SENSITIVITY,
+  ZOOM_LERP,
+  ZOOM_SETTLE_THRESHOLD,
 } from '../constants';
 import { hitTest } from '../geometry';
 import {
   getFocusedSlug,
-  isFutureDatedItem,
   isPrivateTarget,
   isViewInteractionLocked,
   notifyFocusFade,
@@ -58,7 +55,8 @@ export type ViewContext = {
   scrollView: (deltaX: number, deltaY: number) => void;
   fitView: () => void;
   animateView: () => void;
-  animateScrollSnap: () => void;
+  animatePan: () => void;
+  animateZoom: () => void;
   findClickedItem: (worldX: number, worldY: number) => FocusTarget | null;
   findClickedBranch: (worldX: number, worldY: number) => number | null;
   focusItem: (target: FocusTarget) => void;
@@ -277,102 +275,85 @@ export function createViewContext(
     );
   };
 
+  // Nudges the eased pan target by a screen-space delta (clamped to the
+  // content), shared by drag-panning and scroll-wheel panning so both ease
+  // toward their target identically via animatePan. Rebases the target from
+  // the live camera first if nothing is currently mid-ease — either the
+  // previous pan has settled, or the camera moved via zoom/focus/fit since —
+  // so a fresh gesture never resumes from a stale, abandoned target.
+  const nudgePanTarget = (deltaX: number, deltaY: number) => {
+    if (!runtime.panning) {
+      runtime.panTargetCameraX = runtime.cameraX;
+      runtime.panTargetCameraY = runtime.cameraY;
+    }
+    // A pan gesture takes over from any in-flight wheel-zoom so the two
+    // eases don't fight over the camera.
+    runtime.zooming = false;
+
+    runtime.panTargetCameraX += deltaX / runtime.zoom;
+    runtime.panTargetCameraY += deltaY / runtime.zoom;
+
+    const extent = getContentExtent();
+    if (extent) {
+      const viewW = p.width / runtime.zoom;
+      const viewH = p.height / runtime.zoom;
+      runtime.panTargetCameraX = clampAxis(
+        runtime.panTargetCameraX,
+        viewW,
+        extent.minX,
+        extent.maxX
+      );
+      runtime.panTargetCameraY = clampAxis(
+        runtime.panTargetCameraY,
+        viewH,
+        extent.minY,
+        extent.maxY
+      );
+    }
+
+    runtime.panning = true;
+  };
+
+  // Dragging the canvas eases toward the drag target just like scroll-wheel
+  // panning, via animatePan.
   const panView = (deltaScreenX: number, deltaScreenY: number) => {
-    runtime.cameraX -= deltaScreenX / runtime.zoom;
-    runtime.cameraY -= deltaScreenY / runtime.zoom;
-    clampCameraToContent();
-    runtime.snapping = false;
-    syncViewTargets();
+    nudgePanTarget(-deltaScreenX, -deltaScreenY);
   };
 
-  // Ordered list of discrete snap stops (one per item, sorted along the
-  // timeline) that scrolling steps between.
-  const getSnapStops = (): { x: number; y: number }[] =>
-    [...bounds.getAllBounds(), ...bounds.getCollectedBounds()]
-      .map((b) => ({ x: (b.left + b.right) / 2, y: b.top + b.height / 2 }))
-      .sort((a, b) => a.x - b.x || a.y - b.y);
-
-  const setSnapTarget = (stop: { x: number; y: number }) => {
-    runtime.snapTargetCameraX = stop.x - p.width / (2 * runtime.zoom);
-    runtime.snapTargetCameraY = stop.y - p.height / (2 * runtime.zoom);
-    runtime.snapping = true;
-  };
-
-  // Discrete navigation: each scroll gesture steps to the next/previous snap
-  // stop rather than panning freely. Axis is locked to the dominant wheel
-  // delta so movement is never diagonal.
+  // Free continuous panning across the timeline: each wheel event nudges the
+  // same eased pan target as dragging (clamped to the content), and animatePan
+  // eases the actual camera toward it every frame so the motion is smoothed
+  // rather than jumping straight to each delta.
   const scrollView = (deltaX: number, deltaY: number) => {
     if (isViewInteractionLocked(runtime)) {
       return;
     }
-
-    const delta = Math.abs(deltaX) >= Math.abs(deltaY) ? deltaX : deltaY;
-    if (Math.abs(delta) < SCROLL_STEP_MIN_DELTA) {
-      return;
-    }
-
-    const now = p.millis();
-    const newGesture = now - runtime.lastWheelMs > SCROLL_GESTURE_GAP_MS;
-    runtime.lastWheelMs = now;
-    // Within one continuous gesture, only advance once per cooldown so a
-    // trackpad fling doesn't blow through every stop at once.
-    if (!newGesture && now < runtime.snapStepReadyMs) {
-      return;
-    }
-
-    const stops = getSnapStops();
-    if (stops.length === 0) {
-      return;
-    }
-
-    const viewCenterX = runtime.cameraX + p.width / (2 * runtime.zoom);
-    const viewCenterY = runtime.cameraY + p.height / (2 * runtime.zoom);
-    let nearest = 0;
-    let bestDistance = Infinity;
-    stops.forEach((stop, index) => {
-      const distance = Math.hypot(stop.x - viewCenterX, stop.y - viewCenterY);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        nearest = index;
-      }
-    });
-
-    const direction = delta > 0 ? 1 : -1;
-    // If we aren't already parked on a stop, the first scroll just snaps onto
-    // the nearest one; otherwise it steps to the neighbour.
-    const onStop = bestDistance * runtime.zoom <= SCROLL_ON_STOP_PX;
-    const targetIndex = onStop
-      ? Math.max(0, Math.min(stops.length - 1, nearest + direction))
-      : nearest;
-
+    nudgePanTarget(deltaX, deltaY);
     resetCanvasFocus(runtime);
-    setSnapTarget(stops[targetIndex]);
-    syncViewTargets();
-    runtime.snapStepReadyMs = now + SCROLL_STEP_COOLDOWN_MS;
   };
 
-  const animateScrollSnap = () => {
-    if (!runtime.snapping) {
+  const animatePan = () => {
+    if (!runtime.panning) {
       return;
     }
 
     const nextX =
       runtime.cameraX +
-      (runtime.snapTargetCameraX - runtime.cameraX) * SCROLL_SNAP_LERP;
+      (runtime.panTargetCameraX - runtime.cameraX) * PAN_LERP;
     const nextY =
       runtime.cameraY +
-      (runtime.snapTargetCameraY - runtime.cameraY) * SCROLL_SNAP_LERP;
+      (runtime.panTargetCameraY - runtime.cameraY) * PAN_LERP;
 
     const settled =
-      Math.abs(runtime.snapTargetCameraX - nextX) * runtime.zoom <
-        SCROLL_SNAP_THRESHOLD_PX &&
-      Math.abs(runtime.snapTargetCameraY - nextY) * runtime.zoom <
-        SCROLL_SNAP_THRESHOLD_PX;
+      Math.abs(runtime.panTargetCameraX - nextX) * runtime.zoom <
+        PAN_SETTLE_THRESHOLD_PX &&
+      Math.abs(runtime.panTargetCameraY - nextY) * runtime.zoom <
+        PAN_SETTLE_THRESHOLD_PX;
 
     if (settled) {
-      runtime.cameraX = runtime.snapTargetCameraX;
-      runtime.cameraY = runtime.snapTargetCameraY;
-      runtime.snapping = false;
+      runtime.cameraX = runtime.panTargetCameraX;
+      runtime.cameraY = runtime.panTargetCameraY;
+      runtime.panning = false;
     } else {
       runtime.cameraX = nextX;
       runtime.cameraY = nextY;
@@ -380,35 +361,82 @@ export function createViewContext(
     syncViewTargets();
   };
 
+  // Wheel/pinch zoom: each tick nudges an eased zoom target, anchored on the
+  // point currently under the cursor. animateZoom eases the actual zoom
+  // toward that target every frame, recomputing the camera each frame so the
+  // anchor point stays fixed on screen as it zooms in/out. Zooming out is
+  // capped relative to the fit-to-screen level (so you can't zoom out past
+  // seeing the whole timeline); zooming in is capped at a fixed absolute
+  // level (MAX_ZOOM_LEVEL) so the closest zoom looks the same regardless of
+  // how zoomed-out the default fit view is for a given timeline's size —
+  // but never tighter than the fit level itself, so a sparse timeline (whose
+  // fit zoom already exceeds MAX_ZOOM_LEVEL) isn't immediately over the cap.
   const zoomViewAt = (screenX: number, screenY: number, delta: number) => {
     if (isViewInteractionLocked(runtime)) {
       return;
     }
-    const worldX = screenX / runtime.zoom + runtime.cameraX;
-    const worldY = screenY / runtime.zoom + runtime.cameraY;
-    const minZoom = runtime.fitZoomLevel * MIN_ZOOM_FACTOR;
-    const maxZoom = runtime.fitZoomLevel * MAX_ZOOM_FACTOR;
-    const zoomFactor = Math.exp(-delta * WHEEL_ZOOM_SENSITIVITY);
-    const newZoom = Math.max(
-      minZoom,
-      Math.min(maxZoom, runtime.zoom * zoomFactor)
-    );
 
-    runtime.cameraX = worldX - screenX / newZoom;
-    runtime.cameraY = worldY - screenY / newZoom;
-    runtime.zoom = newZoom;
-    clampCameraToContent();
+    const minZoom = runtime.fitZoomLevel * MIN_ZOOM_FACTOR;
+    const maxZoom = Math.max(MAX_ZOOM_LEVEL, runtime.fitZoomLevel);
+    const zoomFactor = Math.exp(-delta * WHEEL_ZOOM_SENSITIVITY);
+    // Rebase from the live zoom if nothing is currently mid-ease, same
+    // rebase pattern as nudgePanTarget.
+    const base = runtime.zooming ? runtime.zoomTargetZoom : runtime.zoom;
+    runtime.zoomTargetZoom = Math.max(minZoom, Math.min(maxZoom, base * zoomFactor));
+
+    // Re-anchor on the cursor's current world point every tick, so the
+    // pinned point tracks the cursor even if it drifts slightly mid-gesture.
+    runtime.zoomAnchorWorldX = screenX / runtime.zoom + runtime.cameraX;
+    runtime.zoomAnchorWorldY = screenY / runtime.zoom + runtime.cameraY;
+    runtime.zoomAnchorScreenX = screenX;
+    runtime.zoomAnchorScreenY = screenY;
+
+    // A zoom gesture takes over from any in-flight pan so the two eases
+    // don't fight over the camera.
+    runtime.panning = false;
+    runtime.panTargetCameraX = runtime.cameraX;
+    runtime.panTargetCameraY = runtime.cameraY;
     resetCanvasFocus(runtime);
+    runtime.zooming = true;
+  };
+
+  const animateZoom = () => {
+    if (!runtime.zooming) {
+      return;
+    }
+
+    const nextZoom =
+      runtime.zoom + (runtime.zoomTargetZoom - runtime.zoom) * ZOOM_LERP;
+    const settled =
+      Math.abs(runtime.zoomTargetZoom - nextZoom) < ZOOM_SETTLE_THRESHOLD;
+    const appliedZoom = settled ? runtime.zoomTargetZoom : nextZoom;
+
+    runtime.cameraX =
+      runtime.zoomAnchorWorldX - runtime.zoomAnchorScreenX / appliedZoom;
+    runtime.cameraY =
+      runtime.zoomAnchorWorldY - runtime.zoomAnchorScreenY / appliedZoom;
+    runtime.zoom = appliedZoom;
+    clampCameraToContent();
+    // Keep the pan target in sync so a following drag/scroll starts smoothly
+    // from here instead of the pre-zoom position.
+    runtime.panTargetCameraX = runtime.cameraX;
+    runtime.panTargetCameraY = runtime.cameraY;
     syncViewTargets();
+
+    if (settled) {
+      runtime.zooming = false;
+    }
   };
 
   const fitView = () => {
     clearBranchFocus();
-    runtime.snapping = false;
-    runtime.snapStepReadyMs = 0;
+    runtime.panning = false;
+    runtime.zooming = false;
     resetCanvasFocus(runtime);
     computeFitViewTargets();
     applyViewTargets();
+    runtime.panTargetCameraX = runtime.cameraX;
+    runtime.panTargetCameraY = runtime.cameraY;
     runtime.viewAnimating = false;
     runtime.viewUnfocusing = false;
   };
@@ -467,7 +495,7 @@ export function createViewContext(
         runtime.targetCameraY - runtime.cameraY
       ) *
         runtime.targetZoom >
-      SCROLL_SNAP_THRESHOLD_PX
+      PAN_SETTLE_THRESHOLD_PX
     ) {
       // Zoom has settled but the camera hasn't: ease it straight to the target.
       // This is the path when switching between two items framed at the same
@@ -604,8 +632,8 @@ export function createViewContext(
     deps.refs.onContentUnfocusRef.current?.();
     runtime.focusContentFade = 0;
     notifyFocusFade(deps);
-    runtime.snapping = false;
-    runtime.snapStepReadyMs = 0;
+    runtime.panning = false;
+    runtime.zooming = false;
     runtime.viewUnfocusing = false;
     syncInteractionLock(deps);
 
@@ -615,7 +643,7 @@ export function createViewContext(
     }
     // Don't zoom past the manual zoom ceiling for a tiny branch; keep the
     // framed centre.
-    const maxZoom = runtime.fitZoomLevel * MAX_ZOOM_FACTOR;
+    const maxZoom = Math.max(MAX_ZOOM_LEVEL, runtime.fitZoomLevel);
     if (runtime.targetZoom > maxZoom) {
       runtime.targetZoom = maxZoom;
       runtime.targetCameraX =
@@ -634,17 +662,13 @@ export function createViewContext(
       return;
     }
     clearBranchFocus();
-    runtime.snapping = false;
-    runtime.snapStepReadyMs = 0;
+    runtime.panning = false;
+    runtime.zooming = false;
     runtime.detailPhase = 'none';
     runtime.detailLayout = 0;
     runtime.focusContentFade = 0;
     notifyFocusFade(deps);
     runtime.focusTarget = target;
-    runtime.focusedItemIsFuture =
-      target.lane === 'main'
-        ? isFutureDatedItem(deps.items[target.index])
-        : (deps.processedCollected[target.index]?.anchorTime ?? 0) > Date.now();
     runtime.viewUnfocusing = false;
     syncInteractionLock(deps);
     const slug = getFocusedSlug(target, deps.items, deps.processedCollected);
@@ -669,6 +693,8 @@ export function createViewContext(
     resetCanvasFocus(runtime);
     deps.refs.onContentUnfocusRef.current?.();
     computeFitViewTargets();
+    runtime.panning = false;
+    runtime.zooming = false;
     runtime.viewUnfocusing = true;
     syncInteractionLock(deps);
     beginViewAnimation(
@@ -745,6 +771,8 @@ export function createViewContext(
     deps.refs.onContentUnfocusRef.current?.();
     runtime.focusContentFade = 0;
     notifyFocusFade(deps);
+    runtime.panning = false;
+    runtime.zooming = false;
     runtime.viewUnfocusing = false;
     runtime.branchIsolateRow = ownRow;
     runtime.branchIsolateActive = true;
@@ -753,7 +781,7 @@ export function createViewContext(
     const paddedWidth = maxX - minX + FIT_VIEW_PADDING * 2;
     runtime.targetZoom = (p.width / paddedWidth) * FIT_ZOOM_SCALAR;
     // Don't zoom past the manual zoom ceiling for a tiny branch.
-    const maxZoom = runtime.fitZoomLevel * MAX_ZOOM_FACTOR;
+    const maxZoom = Math.max(MAX_ZOOM_LEVEL, runtime.fitZoomLevel);
     runtime.targetZoom = Math.min(runtime.targetZoom, maxZoom);
     const centerX = (minX + maxX) / 2;
     runtime.targetCameraX = centerX - p.width / (2 * runtime.targetZoom);
@@ -775,7 +803,8 @@ export function createViewContext(
     scrollView,
     fitView,
     animateView,
-    animateScrollSnap,
+    animatePan,
+    animateZoom,
     findClickedItem,
     findClickedBranch,
     focusItem,

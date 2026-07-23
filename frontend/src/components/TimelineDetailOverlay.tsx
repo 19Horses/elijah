@@ -76,8 +76,6 @@ export type TimelineDetailView = {
   // A solitary image is laid out like a newsletter (description beside the
   // image) even though it has no newsletter content of its own.
   presentAsNewsletter: boolean;
-  // Dated after today: the detail view inverts to black text on white.
-  isFuture: boolean;
   // Number of other people (besides the viewer) who have collected this item.
   collectedByOthers: number;
 };
@@ -147,9 +145,7 @@ function TimelineDetailOverlay({
 
   return (
     <aside
-      className={`timeline-detail timeline-detail--visible${
-        detail.isFuture ? ' timeline-detail--light' : ''
-      }`}
+      className="timeline-detail timeline-detail--visible"
       aria-label={detail.title}
       style={{
         left: `${imageRect.left}px`,

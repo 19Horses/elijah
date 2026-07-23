@@ -5,8 +5,13 @@ import CollectedBranchStrip, {
 } from '../components/CollectedBranchStrip';
 import CollectionCountdown from '../components/CollectionCountdown';
 import CollectionViewer from '../components/CollectionViewer';
+import MediaPlayer from '../components/MediaPlayer';
 import TimelineCanvas from '../components/timelineCanvas';
-import type { DetailImageRect } from '../components/timelineCanvas/types';
+import type {
+  AudioPlayerState,
+  DetailImageRect,
+  FocusTarget,
+} from '../components/timelineCanvas/types';
 import TimelineDetailOverlay, {
   type TimelineDetailView,
 } from '../components/TimelineDetailOverlay';
@@ -70,6 +75,13 @@ function Home({ onEntranceComplete }: HomeProps) {
     useState<DetailImageRect | null>(null);
   const userCardWrapRef = useRef<HTMLDivElement>(null);
   const isolateOwnBranchRef = useRef<(() => void) | undefined>(undefined);
+  const focusItemControlRef = useRef<
+    ((target: FocusTarget) => void) | undefined
+  >(undefined);
+  const audioControlRef = useRef<((src: string) => void) | undefined>(
+    undefined
+  );
+  const [audioState, setAudioState] = useState<AudioPlayerState | null>(null);
 
   const { data: contentDetail } = useContentDetail(focusSlug, timeline?.items);
 
@@ -127,9 +139,6 @@ function Home({ onEntranceComplete }: HomeProps) {
       link: getContentDetailLink(contentDetail),
       newsletterContent: getContentDetailNewsletterContent(contentDetail),
       presentAsNewsletter: getContentDetailIsSingleImage(contentDetail),
-      isFuture: contentDetail.date
-        ? new Date(contentDetail.date).getTime() > Date.now()
-        : false,
       collectedByOthers,
     };
   }, [contentDetail, detailReady, focusSlug, collectedRows, currentUsername]);
@@ -252,6 +261,9 @@ function Home({ onEntranceComplete }: HomeProps) {
           highlightedType={highlightedType}
           hoverOwnBranch={ownBranchHover}
           isolateControlRef={isolateOwnBranchRef}
+          focusItemControlRef={focusItemControlRef}
+          audioControlRef={audioControlRef}
+          onAudioStateChange={setAudioState}
           onFocusFadeChange={handleFocusFadeChange}
           onContentFocus={handleContentFocus}
           onContentUnfocus={handleContentUnfocus}
@@ -263,12 +275,23 @@ function Home({ onEntranceComplete }: HomeProps) {
           detail={timelineDetail}
           imageRect={detailImageRect}
         />
-        <div ref={userCardWrapRef}>
-          <UserCard
-            refreshSignal={collectedSignal}
-            onActivate={() => isolateOwnBranchRef.current?.()}
-            onHoverChange={setOwnBranchHover}
-          />
+        <div className="top-right-stack">
+          <div ref={userCardWrapRef}>
+            <UserCard
+              refreshSignal={collectedSignal}
+              onActivate={() => isolateOwnBranchRef.current?.()}
+              onHoverChange={setOwnBranchHover}
+            />
+          </div>
+          {audioState && (
+            <MediaPlayer
+              state={audioState}
+              onToggle={() => audioControlRef.current?.(audioState.src)}
+              onJumpToItem={() =>
+                focusItemControlRef.current?.(audioState.focusTarget)
+              }
+            />
+          )}
         </div>
       </div>
       {statusChecked &&

@@ -83,55 +83,18 @@ export function drawContainedImage(
   ctx.restore();
 }
 
-// Constant gap between gallery slides, as a fraction of the focused box width.
-const GALLERY_GAP_FRACTION = 0.06;
-
-/** Size an image contained within a box, preserving aspect ratio. */
-export function containedSize(
-  img: p5.Image | null,
-  boxWidth: number,
-  boxHeight: number
-): { w: number; h: number } {
-  if (!img || img.width <= 0 || img.height <= 0) {
-    return { w: boxWidth, h: boxHeight };
-  }
-  const imgAr = img.width / img.height;
-  const boxAr = boxWidth / boxHeight;
-  return imgAr > boxAr
-    ? { w: boxWidth, h: boxWidth / imgAr }
-    : { w: boxHeight * imgAr, h: boxHeight };
-}
+// True modulo (unlike `%`, always non-negative), so an unbounded displayIndex
+// wraps cleanly into a valid array index in either direction.
+const wrapIndex = (index: number, count: number): number =>
+  ((index % count) + count) % count;
 
 /**
- * Width of the image currently at the focus (node) position, interpolated as
- * the strip slides, so the arrows can span the focused image exactly.
- */
-export function galleryFocusWidth(
-  images: (p5.Image | null)[],
-  displayIndex: number,
-  boxWidth: number,
-  boxHeight: number
-): number {
-  if (images.length === 0) {
-    return boxWidth;
-  }
-  const lower = Math.max(
-    0,
-    Math.min(images.length - 1, Math.floor(displayIndex))
-  );
-  const upper = Math.min(images.length - 1, lower + 1);
-  const frac = displayIndex - lower;
-  const wLower = containedSize(images[lower], boxWidth, boxHeight).w;
-  const wUpper = containedSize(images[upper], boxWidth, boxHeight).w;
-  return wLower + (wUpper - wLower) * frac;
-}
-
-/**
- * Draws the gallery as a horizontal row of all its images. Each image keeps its
- * own width (contained to the focused box height) and the gap between images is
- * constant, so the spacing is uniform regardless of their shapes. `displayIndex`
- * (fractional) shifts the whole row; images are left-aligned so the active one's
- * left edge meets the node, and vertical positioning stays centered.
+ * Draws only the current gallery image, contained within the box. While
+ * navigating (fractional `displayIndex`), the outgoing and incoming images
+ * crossfade in place — every other image in the gallery stays fully hidden
+ * (opacity 0) rather than being laid out in a scrolling strip. `displayIndex`
+ * is unbounded (not clamped to the array) so stepping past either end wraps
+ * around to the other, looping the slideshow.
  */
 export function drawGalleryStrip(
   p: p5,
@@ -139,49 +102,44 @@ export function drawGalleryStrip(
   images: (p5.Image | null)[],
   displayIndex: number
 ): void {
-  const gap = box.width * GALLERY_GAP_FRACTION;
-
-  // Left offset of each image within the row (constant gap between them).
-  const sizes = images.map((img) => containedSize(img, box.width, box.height));
-  const lefts: number[] = [];
-  let acc = 0;
-  sizes.forEach((size, i) => {
-    lefts[i] = acc;
-    acc += size.w + gap;
-  });
-  if (lefts.length === 0) {
+  const count = images.length;
+  if (count === 0) {
     return;
   }
 
-  // Interpolate the scroll position between whole-image offsets.
-  const lower = Math.max(
-    0,
-    Math.min(images.length - 1, Math.floor(displayIndex))
-  );
-  const upper = Math.min(images.length - 1, lower + 1);
+  const lower = Math.floor(displayIndex);
   const frac = displayIndex - lower;
-  const scrollOffset = lefts[lower] + (lefts[upper] - lefts[lower]) * frac;
 
-  images.forEach((img, i) => {
-    if (!img) {
+  const ctx = p.drawingContext as CanvasRenderingContext2D;
+  const baseAlpha = ctx.globalAlpha;
+
+  const drawAt = (index: number, alpha: number) => {
+    const img = images[wrapIndex(index, count)];
+    if (!img || alpha <= 0) {
       return;
     }
-    const { w, h } = sizes[i];
-    const x = box.left - scrollOffset + lefts[i];
-    const dy = box.top + (box.height - h) / 2;
-    p.image(img, x, dy, w, h);
-  });
+    ctx.globalAlpha = baseAlpha * alpha;
+    drawContainedImage(p, img, box);
+  };
+
+  if (frac <= 0 || count === 1) {
+    drawAt(lower, 1);
+  } else {
+    drawAt(lower, 1 - frac);
+    drawAt(lower + 1, frac);
+  }
+
+  ctx.globalAlpha = baseAlpha;
 }
 
 /**
- * Draws prev/next arrows and dot indicators for the gallery, and returns the
- * world-space hit regions for the arrows.
+ * Draws prev/next arrows for the gallery, and returns the world-space hit
+ * regions for them.
  */
 export function drawGalleryControls(
   p: p5,
   ctx: CanvasRenderingContext2D,
   box: Rect,
-  activeIndex: number,
   count: number,
   alpha: number
 ): GalleryNavRegion[] {
@@ -212,18 +170,6 @@ export function drawGalleryControls(
 
   drawArrow(prevCx, true);
   drawArrow(nextCx, false);
-
-  // Dot indicators along the bottom.
-  const dotR = Math.max(2, Math.min(box.width, box.height) * 0.012);
-  const gap = dotR * 3;
-  const totalWidth = (count - 1) * gap;
-  const startX = box.left + box.width / 2 - totalWidth / 2;
-  const dotY = box.top + box.height - dotR * 4;
-  for (let i = 0; i < count; i++) {
-    p.noStroke();
-    p.fill(255, i === activeIndex ? 255 : 110);
-    p.circle(startX + i * gap, dotY, dotR * 2);
-  }
 
   resetCanvasEffects(ctx);
 
