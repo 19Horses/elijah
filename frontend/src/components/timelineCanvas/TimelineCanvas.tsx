@@ -52,9 +52,9 @@ function TimelineCanvas({
   const resetViewRef = useRef<(() => void) | undefined>(undefined);
   const localIsolateRef = useRef<(() => void) | undefined>(undefined);
   const isolateOwnBranchRef = isolateControlRef ?? localIsolateRef;
-  const localFocusItemRef = useRef<((target: FocusTarget) => void) | undefined>(
-    undefined
-  );
+  const localFocusItemRef = useRef<
+    ((target: FocusTarget) => void) | undefined
+  >(undefined);
   const focusItemRef = focusItemControlRef ?? localFocusItemRef;
   const onAudioStateChangeRef = useRef(onAudioStateChange);
   const localAudioControlRef = useRef<((src: string) => void) | undefined>(

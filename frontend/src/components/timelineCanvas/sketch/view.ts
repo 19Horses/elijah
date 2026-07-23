@@ -338,9 +338,11 @@ export function createViewContext(
     }
 
     const nextX =
-      runtime.cameraX + (runtime.panTargetCameraX - runtime.cameraX) * PAN_LERP;
+      runtime.cameraX +
+      (runtime.panTargetCameraX - runtime.cameraX) * PAN_LERP;
     const nextY =
-      runtime.cameraY + (runtime.panTargetCameraY - runtime.cameraY) * PAN_LERP;
+      runtime.cameraY +
+      (runtime.panTargetCameraY - runtime.cameraY) * PAN_LERP;
 
     const settled =
       Math.abs(runtime.panTargetCameraX - nextX) * runtime.zoom <
@@ -380,10 +382,7 @@ export function createViewContext(
     // Rebase from the live zoom if nothing is currently mid-ease, same
     // rebase pattern as nudgePanTarget.
     const base = runtime.zooming ? runtime.zoomTargetZoom : runtime.zoom;
-    runtime.zoomTargetZoom = Math.max(
-      minZoom,
-      Math.min(maxZoom, base * zoomFactor)
-    );
+    runtime.zoomTargetZoom = Math.max(minZoom, Math.min(maxZoom, base * zoomFactor));
 
     // Re-anchor on the cursor's current world point every tick, so the
     // pinned point tracks the cursor even if it drifts slightly mid-gesture.
