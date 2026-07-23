@@ -8,6 +8,10 @@ type CollectionViewerProps = {
   collection: Collection;
   onClose: () => void;
   onCollected?: () => void;
+  // Reports whichever item is currently focused in the carousel (or null
+  // when there's nothing to focus), so the caller can preview where it'd
+  // land in the user's own timeline before it's actually collected.
+  onFocusItemChange?: (item: CollectionContent | null) => void;
 };
 
 function CollectionItem({
@@ -104,6 +108,7 @@ function CollectionViewer({
   collection,
   onClose,
   onCollected,
+  onFocusItemChange,
 }: CollectionViewerProps) {
   const items = collection.content ?? [];
   const [activeIndex, setActiveIndex] = useState(0);
@@ -121,6 +126,11 @@ function CollectionViewer({
       window.clearTimeout(t2);
     };
   }, []);
+
+  useEffect(() => {
+    onFocusItemChange?.(items[activeIndex] ?? null);
+    return () => onFocusItemChange?.(null);
+  }, [activeIndex, items, onFocusItemChange]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {

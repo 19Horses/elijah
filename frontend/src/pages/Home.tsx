@@ -1,6 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import CollectedBranchStrip from '../components/CollectedBranchStrip';
+import CollectedBranchStrip, {
+  type BranchStripPreviewItem,
+} from '../components/CollectedBranchStrip';
 import CollectionCountdown from '../components/CollectionCountdown';
 import CollectionViewer from '../components/CollectionViewer';
 import TimelineCanvas from '../components/timelineCanvas';
@@ -24,7 +26,7 @@ import { hasCollectedFrom } from '../services/collectItem';
 import { DEBUG_TIMERS_EVENT } from '../services/debugTimers';
 import { DEFAULT_COLOUR, getStoredColour } from '../services/userColor';
 import { getStoredUser } from '../services/userStorage';
-import type { ContentType } from '../types/content';
+import type { CollectionContent, ContentType } from '../types/content';
 import { prefersReducedMotion } from '../utils/motionPreference';
 
 // How long the timeline fades out before the collection view appears, and
@@ -51,6 +53,9 @@ function Home({ onEntranceComplete }: HomeProps) {
   // and hides the countdown for the whole transition, not just its endpoints.
   const [canvasHidden, setCanvasHidden] = useState(false);
   const [viewerLeaving, setViewerLeaving] = useState(false);
+  const [previewItem, setPreviewItem] = useState<BranchStripPreviewItem | null>(
+    null
+  );
   const collectionTransitionTimeoutRef = useRef<number | undefined>(
     undefined
   );
@@ -161,10 +166,22 @@ function Home({ onEntranceComplete }: HomeProps) {
         setViewerOpen(false);
         setViewerLeaving(false);
         setCanvasHidden(false);
+        setPreviewItem(null);
       },
       prefersReducedMotion() ? 0 : COLLECTION_FADE_MS
     );
   };
+
+  const handleFocusItemChange = useCallback(
+    (item: CollectionContent | null) => {
+      setPreviewItem(
+        item
+          ? { id: item._id, title: item.title, imageUrl: item.imageUrl, date: item.date }
+          : null
+      );
+    },
+    []
+  );
 
   useEffect(() => {
     return () => window.clearTimeout(collectionTransitionTimeoutRef.current);
@@ -273,12 +290,14 @@ function Home({ onEntranceComplete }: HomeProps) {
             <CollectedBranchStrip
               items={collectedRow?.items ?? []}
               colour={branchColour}
+              previewItem={previewItem}
             />
           </div>
           <CollectionViewer
             collection={activeCollection}
             onClose={closeCollectionView}
             onCollected={handleCollected}
+            onFocusItemChange={handleFocusItemChange}
           />
         </div>
       )}

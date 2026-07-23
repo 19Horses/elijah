@@ -106,4 +106,83 @@ describe('CollectedBranchStrip', () => {
     expect(nodes[0].style.getPropertyValue('--node-index')).toBe('0');
     expect(nodes[1].style.getPropertyValue('--node-index')).toBe('1');
   });
+
+  test('positions a preview item by date among the real collected items', () => {
+    const items = [
+      makeItem({
+        _id: 'jan',
+        title: 'January',
+        date: '2026-01-01T00:00:00.000Z',
+      }),
+      makeItem({
+        _id: 'mar',
+        title: 'March',
+        date: '2026-03-01T00:00:00.000Z',
+      }),
+    ] as CollectedRowItem[];
+    const { container } = render(
+      <CollectedBranchStrip
+        items={items}
+        colour="#123456"
+        previewItem={{
+          id: 'feb',
+          title: 'February',
+          imageUrl: null,
+          date: '2026-02-01T00:00:00.000Z',
+        }}
+      />
+    );
+    const titles = [...container.querySelectorAll('.collected-branch-strip__thumb-fallback, img')].map(
+      (el) => (el instanceof HTMLImageElement ? el.alt : el.textContent)
+    );
+    expect(titles).toEqual(['January', 'February', 'March']);
+  });
+
+  test('marks the preview node and its neighbouring connector as dashed', () => {
+    const items = [
+      makeItem({
+        _id: 'jan',
+        title: 'January',
+        date: '2026-01-01T00:00:00.000Z',
+      }),
+      makeItem({
+        _id: 'mar',
+        title: 'March',
+        date: '2026-03-01T00:00:00.000Z',
+      }),
+    ] as CollectedRowItem[];
+    const { container } = render(
+      <CollectedBranchStrip
+        items={items}
+        colour="#123456"
+        previewItem={{
+          id: 'feb',
+          title: 'February',
+          imageUrl: null,
+          date: '2026-02-01T00:00:00.000Z',
+        }}
+      />
+    );
+    const nodes = [
+      ...container.querySelectorAll('.collected-branch-strip__node'),
+    ];
+    expect(
+      nodes.map((n) => n.classList.contains('collected-branch-strip__node--preview'))
+    ).toEqual([false, true, false]);
+    expect(
+      nodes.map((n) =>
+        n.classList.contains('collected-branch-strip__node--dashed-connector')
+      )
+    ).toEqual([false, true, true]);
+  });
+
+  test('renders no preview node when previewItem is absent', () => {
+    const items = [makeItem({ _id: 'a' })] as CollectedRowItem[];
+    const { container } = render(
+      <CollectedBranchStrip items={items} colour="#123456" />
+    );
+    expect(
+      container.querySelectorAll('.collected-branch-strip__node--preview')
+    ).toHaveLength(0);
+  });
 });

@@ -590,6 +590,14 @@ main.main--shop {
   width: var(--strip-gap);
 }
 
+/* The link into/out of a not-yet-collected preview item is dashed rather
+   than solid, marking it as provisional. */
+.collected-branch-strip__node--dashed-connector:not(:first-child)::before {
+  background: none;
+  border-top: 2px dashed var(--branch-colour, #ffffff);
+  height: 0;
+}
+
 @keyframes collected-branch-strip-node-enter {
   to {
     opacity: 1;
@@ -639,6 +647,13 @@ main.main--shop {
   height: 11rem;
   overflow: hidden;
   width: 13rem;
+}
+
+/* Marks a not-yet-collected item previewed at its by-date position: dashed
+   and dimmed, distinguishing it from the solid, already-collected chain. */
+.collected-branch-strip__node--preview .collected-branch-strip__thumb {
+  border-style: dashed;
+  opacity: 0.6;
 }
 
 .collected-branch-strip__thumb img {
@@ -820,6 +835,7 @@ main.main--shop {
 .collection-viewer__media {
   display: block;
   position: relative;
+  transition: box-shadow 0.3s ease;
   width: fit-content;
 }
 
@@ -839,6 +855,11 @@ main.main--shop {
 
 .collection-viewer__item--active .collection-viewer__media::after {
   opacity: 0;
+}
+
+.collection-viewer__item--active .collection-viewer__media {
+  box-shadow: 0 0 16px 2px rgba(255, 255, 255, 0.35),
+    0 0 40px 8px rgba(255, 255, 255, 0.18);
 }
 
 .collection-viewer__image {
