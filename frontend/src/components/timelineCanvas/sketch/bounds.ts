@@ -68,7 +68,11 @@ export type BoundsContext = {
   // gap). The rest of the main line — before, after, and gaps it skips over —
   // is left untouched.
   getBranchDetouredGaps: (rowIndex: number) => Set<number>;
-  getCollectedBounds: () => ContentBounds[];
+  // Row spacing grows as the camera zooms out (see getCollectedBounds), so
+  // collected-item Y positions are zoom-dependent. Pass rowGrowthOverride (1 =
+  // settled) to get the positions at a fixed growth instead of the live zoom —
+  // needed when framing a focus target, since the focus zoom settles growth to 1.
+  getCollectedBounds: (rowGrowthOverride?: number) => ContentBounds[];
   // The evenly-spaced straight-line layout for an isolated branch: all main
   // items plus that branch's collected items, ordered chronologically, laid out
   // on the main line at a fixed step. Keyed `${lane}:${index}` → target centre X.
@@ -811,16 +815,18 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     return gaps;
   };
 
-  const getCollectedBounds = (): ContentBounds[] => {
+  const getCollectedBounds = (
+    rowGrowthOverride?: number
+  ): ContentBounds[] => {
     // Grows the row spacing as the camera zooms out, faster than the
     // nodes/lines themselves thicken (LANE_GAP_GROWTH_POWER > the line/node
     // growth power), so rows keep pulling further apart at extreme zoom-out
-    // rather than just barely staying clear of the bigger nodes/lines.
-    const rowGrowth = zoomOutGrowth(
-      runtime.zoom,
-      runtime.fitZoomLevel,
-      LANE_GAP_GROWTH_POWER
-    );
+    // rather than just barely staying clear of the bigger nodes/lines. A
+    // caller can pin the growth (e.g. 1 = settled) rather than tracking the
+    // live zoom.
+    const rowGrowth =
+      rowGrowthOverride ??
+      zoomOutGrowth(runtime.zoom, runtime.fitZoomLevel, LANE_GAP_GROWTH_POWER);
     const rowGap = LANE_GAP * rowGrowth;
     const rowHeight = IMAGE_HEIGHT + COLLECTED_ROW_EXTRA_GAP * rowGrowth;
 

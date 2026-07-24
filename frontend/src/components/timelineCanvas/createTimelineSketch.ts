@@ -57,7 +57,7 @@ export function createTimelineSketch(
         }
       );
       p.textSize(12);
-      view.fitView();
+      view.playEntranceAnimation();
       deps.runtime.loadStartMs = p.millis();
 
       p.loadImage(

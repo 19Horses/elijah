@@ -1,12 +1,16 @@
 import type p5 from 'p5';
 import {
+  DATE_OFFSET,
   DETAIL_IMAGE_HEIGHT_VH,
   DETAIL_IMAGE_LEFT_PX,
   DETAIL_TEXT_GAP_PX,
   DETAIL_TEXT_VIEWPORT_LEFT,
+  ENTRANCE_ZOOM_START_FACTOR,
   FIT_VIEW_PADDING,
   FIT_VIEW_TOP_CLEARANCE_PX,
   FIT_ZOOM_SCALAR,
+  ITEM_GAP,
+  ITEM_WIDTH,
   MAIN_LINE_Y,
   MAX_ZOOM_LEVEL,
   MIN_ZOOM_FACTOR,
@@ -55,6 +59,7 @@ export type ViewContext = {
   zoomViewAt: (screenX: number, screenY: number, delta: number) => void;
   scrollView: (deltaX: number, deltaY: number) => void;
   fitView: () => void;
+  playEntranceAnimation: () => void;
   animateView: () => void;
   animatePan: () => void;
   animateZoom: () => void;
@@ -157,17 +162,15 @@ export function createViewContext(
       runtime.targetZoom = (p.width / paddedWidth) * FIT_ZOOM_SCALAR;
       const centerX = (minX + maxX) / 2;
       runtime.targetCameraX = centerX - p.width / (2 * runtime.targetZoom);
-      runtime.targetCameraY =
-        MAIN_LINE_Y -
-        p.height / (2 * runtime.targetZoom) -
-        FIT_VIEW_TOP_CLEARANCE_PX / runtime.targetZoom;
+      // Keeps the main line exactly vertically centred on initial load; the
+      // extra top clearance for the user card only applies to how far branches
+      // can be dragged/zoomed toward it (see getContentExtent), not the
+      // default framing.
+      runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
     } else {
       runtime.targetZoom = 1;
       runtime.targetCameraX = 0;
-      runtime.targetCameraY =
-        MAIN_LINE_Y -
-        p.height / (2 * runtime.targetZoom) -
-        FIT_VIEW_TOP_CLEARANCE_PX / runtime.targetZoom;
+      runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
     }
     runtime.fitZoomLevel = runtime.targetZoom;
   };
@@ -191,11 +194,94 @@ export function createViewContext(
     runtime.targetCameraY = focusBounds.top - targetTopScreen / zoom;
   };
 
+  // The even-spaced straightened layout for an isolated branch: its collected
+  // items laid out on the main line at a fixed step, centred on their centroid
+  // — matching the ease target in drawFrame's getDetailDrawBoundsIso. Returns
+  // each item's final straight rect plus the framing extents, or null if the
+  // row has no items.
+  const isolatedBranchLayout = (
+    rowIndex: number
+  ): {
+    straight: Map<number, ContentBounds>;
+    centroid: number;
+    minX: number;
+    maxX: number;
+  } | null => {
+    const cb = bounds.getCollectedBounds();
+    const items = deps.processedCollected
+      .map((item, index) => ({ item, index, b: cb[index] }))
+      .filter(
+        ({ item, b }) => b && item.sources.some((s) => s.rowIndex === rowIndex)
+      )
+      .map(({ index, b }) => ({
+        index,
+        cx: (b.left + b.right) / 2,
+        width: b.width,
+        height: b.height,
+      }))
+      .sort((a, b) => a.cx - b.cx);
+    if (items.length === 0) {
+      return null;
+    }
+    const n = items.length;
+    const step = ITEM_WIDTH + ITEM_GAP;
+    const centroid = items.reduce((sum, e) => sum + e.cx, 0) / n;
+    const startX = centroid - ((n - 1) * step) / 2;
+    const straight = new Map<number, ContentBounds>();
+    let minX = Infinity;
+    let maxX = -Infinity;
+    items.forEach((e, k) => {
+      const cx = startX + k * step;
+      straight.set(e.index, {
+        left: cx - e.width / 2,
+        right: cx + e.width / 2,
+        width: e.width,
+        height: e.height,
+        top: MAIN_LINE_Y - e.height / 2,
+        centerY: MAIN_LINE_Y,
+        dateBottom: MAIN_LINE_Y + e.height / 2 + DATE_OFFSET,
+      });
+      minX = Math.min(minX, cx - e.width / 2);
+      maxX = Math.max(maxX, cx + e.width / 2);
+    });
+    return { straight, centroid, minX, maxX };
+  };
+
+  // Sets the camera targets to frame an isolated branch's even-spaced layout
+  // (main line edge-to-edge, vertically centred), and returns its centroid for
+  // the zoom-animation anchor — or null if the row has no items.
+  const frameIsolatedBranch = (rowIndex: number): number | null => {
+    const layout = isolatedBranchLayout(rowIndex);
+    if (!layout) {
+      return null;
+    }
+    const paddedWidth = layout.maxX - layout.minX + FIT_VIEW_PADDING * 2;
+    runtime.targetZoom = (p.width / paddedWidth) * FIT_ZOOM_SCALAR;
+    const maxZoom = Math.max(MAX_ZOOM_LEVEL, runtime.fitZoomLevel);
+    runtime.targetZoom = Math.min(runtime.targetZoom, maxZoom);
+    runtime.targetCameraX = layout.centroid - p.width / (2 * runtime.targetZoom);
+    runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
+    return layout.centroid;
+  };
+
   const getFocusBounds = (target: FocusTarget): ContentBounds => {
     if (target.lane === 'main') {
       return bounds.getAllBounds()[target.index];
     }
-    return bounds.getCollectedBounds()[target.index];
+    // While isolating, an item is drawn at its straightened even-spaced
+    // position, so the focus must aim there (not its branch position).
+    if (runtime.branchIsolateRow !== null) {
+      const straight = isolatedBranchLayout(runtime.branchIsolateRow)?.straight;
+      const rect = straight?.get(target.index);
+      if (rect) {
+        return rect;
+      }
+    }
+    // Settled (row-growth 1) position: focusing zooms in past the fit level,
+    // where the collected rows have eased back to their base spacing, so the
+    // camera must aim where the item ends up — not its spread-out position at
+    // the current zoomed-out level, which would leave the focus on empty space.
+    return bounds.getCollectedBounds(1)[target.index];
   };
 
   const applyViewTargets = () => {
@@ -236,16 +322,26 @@ export function createViewContext(
     if (!Number.isFinite(minX)) {
       return null;
     }
+    // Extra headroom on top of the usual padding on every side, so
+    // dragging/zooming can't pull content up underneath the fixed
+    // user-card/mini-player stack (or flush against any other edge) — matches
+    // the clearance the default fit view already leaves on top.
+    const extraClearance = FIT_VIEW_TOP_CLEARANCE_PX / runtime.zoom;
     return {
-      minX: minX - FIT_VIEW_PADDING,
-      maxX: maxX + FIT_VIEW_PADDING,
-      minY: minY - FIT_VIEW_PADDING,
-      maxY: maxY + FIT_VIEW_PADDING,
+      minX: minX - FIT_VIEW_PADDING - extraClearance,
+      maxX: maxX + FIT_VIEW_PADDING + extraClearance,
+      minY: minY - FIT_VIEW_PADDING - extraClearance,
+      maxY: maxY + FIT_VIEW_PADDING + extraClearance,
     };
   };
 
-  // Clamp one axis so the viewport stays within [contentMin, contentMax]. When
-  // the content is smaller than the viewport on that axis it's locked centred.
+  // Clamp one axis so the viewport stays within [contentMin, contentMax].
+  // When the content is smaller than the viewport on that axis, the camera is
+  // free to sit anywhere that still keeps the content fully in view (from
+  // flush against the near edge to flush against the far edge) rather than
+  // forced to one exact centred point — a fixed point would fight (and get
+  // overridden every frame by) anchor-based zooming/panning once zoomed out
+  // past the content's own size, snapping the camera away from the cursor.
   const clampAxis = (
     camera: number,
     viewSize: number,
@@ -254,7 +350,7 @@ export function createViewContext(
   ): number => {
     const contentSize = contentMax - contentMin;
     if (contentSize <= viewSize) {
-      return contentMin - (viewSize - contentSize) / 2;
+      return Math.max(contentMax - viewSize, Math.min(camera, contentMin));
     }
     return Math.max(contentMin, Math.min(camera, contentMax - viewSize));
   };
@@ -446,6 +542,31 @@ export function createViewContext(
     runtime.panTargetCameraX = runtime.cameraX;
     runtime.panTargetCameraY = runtime.cameraY;
     runtime.viewAnimating = false;
+    runtime.viewUnfocusing = false;
+  };
+
+  // Initial-load entrance: starts zoomed out from the fit view's own centre
+  // and eases in to it, rather than the timeline just appearing already
+  // framed. Uses the same zoom-anchored animation as focusing an item.
+  const playEntranceAnimation = () => {
+    clearBranchFocus();
+    runtime.panning = false;
+    runtime.zooming = false;
+    resetCanvasFocus(runtime);
+    computeFitViewTargets();
+
+    const worldX =
+      runtime.targetCameraX + p.width / (2 * runtime.targetZoom);
+    const worldY =
+      runtime.targetCameraY + p.height / (2 * runtime.targetZoom);
+    runtime.zoom = runtime.targetZoom * ENTRANCE_ZOOM_START_FACTOR;
+    runtime.cameraX = worldX - p.width / (2 * runtime.zoom);
+    runtime.cameraY = worldY - p.height / (2 * runtime.zoom);
+    runtime.panTargetCameraX = runtime.cameraX;
+    runtime.panTargetCameraY = runtime.cameraY;
+
+    beginViewAnimation(worldX, worldY);
+    runtime.viewAnimating = true;
     runtime.viewUnfocusing = false;
   };
 
@@ -670,6 +791,10 @@ export function createViewContext(
       return;
     }
     clearBranchFocus();
+    // Focusing an item from the isolated view keeps the isolation active
+    // underneath (the branch stays straightened and the others stay faded), so
+    // getFocusBounds aims at the item's straightened position and unfocusing
+    // returns to the isolated timeline rather than the full one.
     runtime.panning = false;
     runtime.zooming = false;
     runtime.detailPhase = 'none';
@@ -700,10 +825,19 @@ export function createViewContext(
     clearBranchFocus();
     resetCanvasFocus(runtime);
     deps.refs.onContentUnfocusRef.current?.();
-    computeFitViewTargets();
     runtime.panning = false;
     runtime.zooming = false;
     runtime.viewUnfocusing = true;
+    // If an item was focused from within the isolated view, unfocusing returns
+    // to that isolated branch, not the full timeline.
+    if (runtime.branchIsolateRow !== null) {
+      const centroid = frameIsolatedBranch(runtime.branchIsolateRow);
+      syncInteractionLock(deps);
+      beginViewAnimation(centroid ?? p.width / 2, MAIN_LINE_Y);
+      runtime.viewAnimating = true;
+      return;
+    }
+    computeFitViewTargets();
     syncInteractionLock(deps);
     beginViewAnimation(
       runtime.targetCameraX + p.width / (2 * runtime.targetZoom),
@@ -753,24 +887,7 @@ export function createViewContext(
     }
 
     const ownRow = getOwnBranchRow();
-    if (ownRow < 0) {
-      return;
-    }
-
-    // Frame the user's branch like the main timeline is framed: its items
-    // spanning the screen edge-to-edge, vertically centred on the main line
-    // (where the isolation ease straightens them to).
-    const collectedBounds = bounds.getCollectedBounds();
-    let minX = Infinity;
-    let maxX = -Infinity;
-    deps.processedCollected.forEach((item, index) => {
-      const b = collectedBounds[index];
-      if (b && item.sources.some((s) => s.rowIndex === ownRow)) {
-        minX = Math.min(minX, b.left);
-        maxX = Math.max(maxX, b.right);
-      }
-    });
-    if (!(Number.isFinite(minX) && maxX > minX)) {
+    if (ownRow < 0 || !isolatedBranchLayout(ownRow)) {
       return;
     }
 
@@ -786,17 +903,14 @@ export function createViewContext(
     runtime.branchIsolateActive = true;
     syncInteractionLock(deps);
 
-    const paddedWidth = maxX - minX + FIT_VIEW_PADDING * 2;
-    runtime.targetZoom = (p.width / paddedWidth) * FIT_ZOOM_SCALAR;
-    // Don't zoom past the manual zoom ceiling for a tiny branch.
-    const maxZoom = Math.max(MAX_ZOOM_LEVEL, runtime.fitZoomLevel);
-    runtime.targetZoom = Math.min(runtime.targetZoom, maxZoom);
-    const centerX = (minX + maxX) / 2;
-    runtime.targetCameraX = centerX - p.width / (2 * runtime.targetZoom);
-    runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
-
-    beginViewAnimation(centerX, MAIN_LINE_Y);
-    runtime.viewAnimating = true;
+    // Frame the branch's final even-spaced straightened layout (main line
+    // edge-to-edge, vertically centred), not its scattered date-driven
+    // positions.
+    const centroid = frameIsolatedBranch(ownRow);
+    if (centroid !== null) {
+      beginViewAnimation(centroid, MAIN_LINE_Y);
+      runtime.viewAnimating = true;
+    }
   };
 
   return {
@@ -810,6 +924,7 @@ export function createViewContext(
     zoomViewAt,
     scrollView,
     fitView,
+    playEntranceAnimation,
     animateView,
     animatePan,
     animateZoom,

@@ -66,6 +66,7 @@ export function createTimelineRuntime(): TimelineRuntime {
     hoverNodeY: 0,
     hoverNodeColour: '#ffffff',
     nodeRegions: [],
+    isolatedRegions: [],
   };
 }
 

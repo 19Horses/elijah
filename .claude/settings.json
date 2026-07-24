@@ -3,7 +3,8 @@
     "allow": [
       "Bash(grep -n \"const nodeRegions\\\\|const drawCtx\\\\|audioNodeX,\\\\|drawMainTimelineGlow\\(p\\\\|p.pop\\(\\);\\\\|import type {\" src/components/timelineCanvas/sketch/drawFrame.ts)",
       "Bash(python3 -)",
-      "Bash(awk 'NR>=1260 && NR<=1290' src/index.css)"
+      "Bash(awk 'NR>=1260 && NR<=1290' src/index.css)",
+      "Bash(grep -n \"fitView: \\(\\) => void;\\\\|^    fitView,$\" src/components/timelineCanvas/sketch/view.ts)"
     ]
   }
 }

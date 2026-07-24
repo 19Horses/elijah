@@ -309,9 +309,12 @@ export function drawMainLaneConnectors(
     const travelAlpha = ctx.mainConnectorTravelAlpha(index);
     if (ctx.isTypeHighlightActive) {
       mainCtx.globalAlpha =
-        getCombinedAlpha(connectorLoadAlpha, ctx.dimAlpha) * travelAlpha;
+        getCombinedAlpha(connectorLoadAlpha, ctx.dimAlpha) *
+        travelAlpha *
+        ctx.isolateOtherAlpha;
     } else {
-      mainCtx.globalAlpha = connectorLoadAlpha * travelAlpha;
+      mainCtx.globalAlpha =
+        connectorLoadAlpha * travelAlpha * ctx.isolateOtherAlpha;
     }
 
     // Focused item's endpoint follows its image to the detail position.
@@ -590,9 +593,12 @@ export function drawMainLaneConnectorDots(
     const travelAlpha = ctx.mainConnectorTravelAlpha(index);
     if (ctx.isTypeHighlightActive) {
       mainCtx.globalAlpha =
-        getCombinedAlpha(connectorLoadAlpha, ctx.dimAlpha) * travelAlpha;
+        getCombinedAlpha(connectorLoadAlpha, ctx.dimAlpha) *
+        travelAlpha *
+        ctx.isolateOtherAlpha;
     } else {
-      mainCtx.globalAlpha = connectorLoadAlpha * travelAlpha;
+      mainCtx.globalAlpha =
+        connectorLoadAlpha * travelAlpha * ctx.isolateOtherAlpha;
     }
     const fromBounds = ctx.getDetailDrawBounds('main', index, bounds[index]);
     const toBounds = ctx.getDetailDrawBounds(

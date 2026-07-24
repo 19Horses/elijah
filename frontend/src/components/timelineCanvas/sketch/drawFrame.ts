@@ -18,6 +18,8 @@ import {
   LOAD_IMAGE_STAGGER_MS,
   LOAD_INITIAL_DELAY_MS,
   DOT_RADIUS,
+  ITEM_GAP,
+  ITEM_WIDTH,
   MAIN_CONNECTOR_DIM_ALPHA,
   MAIN_GLOW_COLOUR,
   MAIN_LINE_Y,
@@ -235,6 +237,47 @@ export function createDrawFrameHandler(
         false);
     const isolateOtherAlpha = isolateActive ? 1 - isolate : 1;
 
+    // The isolated branch's own colour, for its straightened line/nodes.
+    let isolateColour = '#ffffff';
+    if (isolateRow !== null) {
+      for (const item of deps.processedCollected) {
+        const src = item.sources.find((s) => s.rowIndex === isolateRow);
+        if (src) {
+          isolateColour = src.colour;
+          break;
+        }
+      }
+    }
+
+    // Even-spacing X targets for the isolated branch: its items laid out at a
+    // fixed step centred on their centroid, so the straightened branch reads as
+    // evenly spaced regardless of the original (date-driven) gaps. Lazily
+    // computed on first use, once per frame.
+    let isolatedTargetCenterX: Map<number, number> | null = null;
+    const getIsolatedTargetCenterX = (index: number): number | null => {
+      if (!isolateActive) {
+        return null;
+      }
+      if (!isolatedTargetCenterX) {
+        const targets = new Map<number, number>();
+        const cb = boundsCtx.getCollectedBounds();
+        const ordered = deps.processedCollected
+          .map((_, i) => i)
+          .filter((i) => isIsolatedItem(i) && cb[i])
+          .map((i) => ({ i, cx: (cb[i].left + cb[i].right) / 2 }))
+          .sort((a, b) => a.cx - b.cx);
+        const n = ordered.length;
+        if (n > 0) {
+          const step = ITEM_WIDTH + ITEM_GAP;
+          const centroid = ordered.reduce((s, e) => s + e.cx, 0) / n;
+          const startX = centroid - ((n - 1) * step) / 2;
+          ordered.forEach((e, k) => targets.set(e.i, startX + k * step));
+        }
+        isolatedTargetCenterX = targets;
+      }
+      return isolatedTargetCenterX.get(index) ?? null;
+    };
+
     const contentAlphaFor = (
       lane: 'main' | 'collected',
       index: number,
@@ -242,8 +285,13 @@ export function createDrawFrameHandler(
     ) => {
       let alpha = base;
       // Selecting an item no longer fades the others out — they stay visible.
-      // Other collectors' items still fade away while isolating a branch.
-      if (isolateActive && lane === 'collected' && !isIsolatedItem(index)) {
+      // Isolating the viewer's own branch, though, fades everything that isn't
+      // part of it away: the main timeline's own items and every other
+      // collector's items, leaving just the isolated branch straightened out.
+      if (
+        isolateActive &&
+        (lane === 'main' || !isIsolatedItem(index))
+      ) {
         alpha *= 1 - isolate;
       }
       return alpha;
@@ -259,8 +307,16 @@ export function createDrawFrameHandler(
       const base = getDetailDrawBounds(lane, index, itemBounds);
       if (isolateActive && lane === 'collected' && isIsolatedItem(index)) {
         const straightTop = MAIN_LINE_Y - base.height / 2;
+        // Ease X toward the even-spacing target as well as Y onto the main
+        // line, so the straightened branch is evenly spaced.
+        const targetCX = getIsolatedTargetCenterX(index);
+        const baseCX = (base.left + base.right) / 2;
+        const dx =
+          targetCX !== null ? (targetCX - baseCX) * isolate : 0;
         return {
           ...base,
+          left: base.left + dx,
+          right: base.right + dx,
           top: base.top + (straightTop - base.top) * isolate,
           centerY: base.centerY + (MAIN_LINE_Y - base.centerY) * isolate,
         };
@@ -382,8 +438,13 @@ export function createDrawFrameHandler(
 
     if (runtime.focusTarget && runtime.detailLayout > 0) {
       const { lane, index } = runtime.focusTarget;
-      const laneBounds =
-        lane === 'main' ? bounds[index] : collectedBounds[index];
+      // Use the straightened bounds while isolating, so the reported rect
+      // matches where the item is actually drawn (on the main line).
+      const laneBounds = getDetailDrawBoundsIso(
+        lane,
+        index,
+        lane === 'main' ? bounds[index] : collectedBounds[index]
+      );
       // The focused image stays at its world bounds; report its on-screen
       // rect so the detail text can be placed around it.
       deps.refs.onDetailImageRectRef.current?.({
@@ -499,6 +560,7 @@ export function createDrawFrameHandler(
         .map((_, index) => index)
         .filter((index) => isIsolatedItem(index))
         .map((index) => ({
+          index,
           rect: getDetailDrawBoundsIso(
             'collected',
             index,
@@ -507,10 +569,20 @@ export function createDrawFrameHandler(
         }))
         .sort((a, b) => a.rect.left - b.rect.left);
 
+      // Publish the straightened rects so a click can hit-test where the items
+      // actually appear (on the main line) rather than their branch positions.
+      runtime.isolatedRegions = isolatedOrdered.map(({ index, rect }) => ({
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.top + rect.height,
+        index,
+      }));
+
       const ctx2 = p.drawingContext as CanvasRenderingContext2D;
       ctx2.globalAlpha = isolate;
       ctx2.setLineDash([]);
-      p.stroke(255);
+      p.stroke(isolateColour);
       p.strokeWeight(zoomGrowth);
       p.noFill();
       for (let k = 0; k < isolatedOrdered.length - 1; k++) {
@@ -519,10 +591,12 @@ export function createDrawFrameHandler(
         p.line(a.right, a.centerY, b.left, b.centerY);
       }
       for (const { rect } of isolatedOrdered) {
-        drawDot(p, rect.left, rect.centerY, '#ffffff', zoomGrowth);
-        drawDot(p, rect.right, rect.centerY, '#ffffff', zoomGrowth);
+        drawDot(p, rect.left, rect.centerY, isolateColour, zoomGrowth);
+        drawDot(p, rect.right, rect.centerY, isolateColour, zoomGrowth);
       }
       resetCanvasEffects(ctx2);
+    } else if (runtime.isolatedRegions.length > 0) {
+      runtime.isolatedRegions = [];
     }
 
     // Date labels drawn last (still inside the world transform) so they sit

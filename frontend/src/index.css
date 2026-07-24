@@ -357,11 +357,13 @@ main.main--shop {
 }
 
 .timeline-detail__meta {
-  align-items: baseline;
+  /* Bottom-align rather than baseline, so a wrapping multi-line title doesn't
+     leave the date sitting up at its first line instead of the block's foot. */
+  align-items: flex-end;
   bottom: calc(100% + 16px);
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem 1.5rem;
+  gap: 0.25rem 1.5rem;
   justify-content: space-between;
   left: 0;
   overflow: hidden;
@@ -429,6 +431,7 @@ main.main--shop {
   line-height: 1.25;
   margin: 0;
   min-width: 0;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
 .timeline-detail__date {
@@ -437,6 +440,7 @@ main.main--shop {
   font-size: 0.875rem;
   margin: 0;
   white-space: nowrap;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
 .timeline-detail__description {
@@ -457,7 +461,7 @@ main.main--shop {
   flex-basis: 100%;
   flex-shrink: 0;
   font-size: 0.8125rem;
-  margin: 0.25rem 0 0;
+  margin: 0;
 }
 
 .timeline-detail__collected-count {

@@ -135,6 +135,17 @@ export type FocusTarget = {
   index: number;
 };
 
+// A straightened isolated-branch item's on-screen (world) rect, registered
+// while drawing so the input handler can hit-test clicks against where the
+// items actually appear (on the main line) rather than their branch positions.
+export type IsolatedItemRegion = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  index: number;
+};
+
 export type DetailPhase = 'none' | 'layout' | 'complete';
 
 export type DragLane = 'main' | 'collected' | 'canvas' | 'focus' | null;
@@ -210,6 +221,10 @@ export type TimelineRuntime = {
   // Connector dots drawn on the most recent frame while an item is focused, so
   // the input handler can hit-test them for hover labels and click-to-focus.
   nodeRegions: NodeHoverRegion[];
+  // Straightened isolated-branch item rects from the most recent frame, so a
+  // click while isolating can focus the item under the cursor (or exit if the
+  // click missed them all).
+  isolatedRegions: IsolatedItemRegion[];
 };
 
 export type TimelineSketchRefs = {
