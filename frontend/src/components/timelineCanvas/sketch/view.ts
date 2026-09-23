@@ -1,6 +1,5 @@
 import type p5 from 'p5';
 import {
-  DATE_OFFSET,
   DETAIL_IMAGE_HEIGHT_VH,
   DETAIL_IMAGE_LEFT_PX,
   DETAIL_TEXT_GAP_PX,
@@ -9,8 +8,6 @@ import {
   FIT_VIEW_PADDING,
   FIT_VIEW_TOP_CLEARANCE_PX,
   FIT_ZOOM_SCALAR,
-  ITEM_GAP,
-  ITEM_WIDTH,
   MAIN_LINE_Y,
   MAX_ZOOM_LEVEL,
   MIN_ZOOM_FACTOR,
@@ -71,6 +68,7 @@ export type ViewContext = {
   toggleOwnBranchIsolation: () => void;
   exitBranchIsolation: () => void;
   isViewInteractionLocked: () => boolean;
+  refreshIsolatedFraming: () => void;
 };
 
 export function createViewContext(
@@ -194,88 +192,46 @@ export function createViewContext(
     runtime.targetCameraY = focusBounds.top - targetTopScreen / zoom;
   };
 
-  // The even-spaced straightened layout for an isolated branch: its collected
-  // items laid out on the main line at a fixed step, centred on their centroid
-  // — matching the ease target in drawFrame's getDetailDrawBoundsIso. Returns
-  // each item's final straight rect plus the framing extents, or null if the
-  // row has no items.
-  const isolatedBranchLayout = (
-    rowIndex: number
-  ): {
-    straight: Map<number, ContentBounds>;
-    centroid: number;
-    minX: number;
-    maxX: number;
-  } | null => {
-    const cb = bounds.getCollectedBounds();
-    const items = deps.processedCollected
-      .map((item, index) => ({ item, index, b: cb[index] }))
-      .filter(
-        ({ item, b }) => b && item.sources.some((s) => s.rowIndex === rowIndex)
-      )
-      .map(({ index, b }) => ({
-        index,
-        cx: (b.left + b.right) / 2,
-        width: b.width,
-        height: b.height,
-      }))
-      .sort((a, b) => a.cx - b.cx);
-    if (items.length === 0) {
-      return null;
-    }
-    const n = items.length;
-    const step = ITEM_WIDTH + ITEM_GAP;
-    const centroid = items.reduce((sum, e) => sum + e.cx, 0) / n;
-    const startX = centroid - ((n - 1) * step) / 2;
-    const straight = new Map<number, ContentBounds>();
-    let minX = Infinity;
-    let maxX = -Infinity;
-    items.forEach((e, k) => {
-      const cx = startX + k * step;
-      straight.set(e.index, {
-        left: cx - e.width / 2,
-        right: cx + e.width / 2,
-        width: e.width,
-        height: e.height,
-        top: MAIN_LINE_Y - e.height / 2,
-        centerY: MAIN_LINE_Y,
-        dateBottom: MAIN_LINE_Y + e.height / 2 + DATE_OFFSET,
-      });
-      minX = Math.min(minX, cx - e.width / 2);
-      maxX = Math.max(maxX, cx + e.width / 2);
-    });
-    return { straight, centroid, minX, maxX };
-  };
-
   // Sets the camera targets to frame an isolated branch's even-spaced layout
-  // (main line edge-to-edge, vertically centred), and returns its centroid for
-  // the zoom-animation anchor — or null if the row has no items.
+  // (main line edge-to-edge, vertically centred) — its own items merged by
+  // date with the active collection's collectibles, per
+  // bounds.getIsolatedMergedLine — and returns its centroid for the
+  // zoom-animation anchor, or null if the row has no items.
   const frameIsolatedBranch = (rowIndex: number): number | null => {
-    const layout = isolatedBranchLayout(rowIndex);
-    if (!layout) {
+    const line = bounds.getIsolatedMergedLine(rowIndex);
+    if (!line) {
       return null;
     }
-    const paddedWidth = layout.maxX - layout.minX + FIT_VIEW_PADDING * 2;
+    const paddedWidth = line.maxX - line.minX + FIT_VIEW_PADDING * 2;
     runtime.targetZoom = (p.width / paddedWidth) * FIT_ZOOM_SCALAR;
     const maxZoom = Math.max(MAX_ZOOM_LEVEL, runtime.fitZoomLevel);
     runtime.targetZoom = Math.min(runtime.targetZoom, maxZoom);
-    runtime.targetCameraX = layout.centroid - p.width / (2 * runtime.targetZoom);
+    runtime.targetCameraX = line.centroid - p.width / (2 * runtime.targetZoom);
     runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
-    return layout.centroid;
+    return line.centroid;
   };
 
   const getFocusBounds = (target: FocusTarget): ContentBounds => {
     if (target.lane === 'main') {
       return bounds.getAllBounds()[target.index];
     }
-    // While isolating, an item is drawn at its straightened even-spaced
-    // position, so the focus must aim there (not its branch position).
+    // While isolating, an item (collected or collectible) is drawn at its
+    // straightened even-spaced position, so the focus must aim there — not
+    // its branch position (collected) or it wouldn't otherwise have one
+    // (collectible, which only exists while isolating).
     if (runtime.branchIsolateRow !== null) {
-      const straight = isolatedBranchLayout(runtime.branchIsolateRow)?.straight;
-      const rect = straight?.get(target.index);
-      if (rect) {
-        return rect;
+      const line = bounds.getIsolatedMergedLine(runtime.branchIsolateRow);
+      const found = line?.entries.find(
+        (entry) => entry.kind === target.lane && entry.index === target.index
+      );
+      if (found) {
+        return found.rect;
       }
+    }
+    if (target.lane === 'preview') {
+      // Collectibles only ever have a position while isolating (above); this
+      // is unreachable in practice, but keeps the return type non-nullable.
+      return bounds.getAllBounds()[0];
     }
     // Settled (row-growth 1) position: focusing zooms in past the fit level,
     // where the collected rows have eased back to their base spacing, so the
@@ -804,7 +760,7 @@ export function createViewContext(
     runtime.focusTarget = target;
     runtime.viewUnfocusing = false;
     syncInteractionLock(deps);
-    const slug = getFocusedSlug(target, deps.items, deps.processedCollected);
+    const slug = getFocusedSlug(target, deps);
     if (slug) {
       deps.refs.onContentFocusRef.current?.(slug);
     }
@@ -887,7 +843,10 @@ export function createViewContext(
     }
 
     const ownRow = getOwnBranchRow();
-    if (ownRow < 0 || !isolatedBranchLayout(ownRow)) {
+    const hasOwnBranchItems = deps.processedCollected.some((item) =>
+      item.sources.some((source) => source.rowIndex === ownRow)
+    );
+    if (ownRow < 0 || !hasOwnBranchItems) {
       return;
     }
 
@@ -907,6 +866,17 @@ export function createViewContext(
     // edge-to-edge, vertically centred), not its scattered date-driven
     // positions.
     const centroid = frameIsolatedBranch(ownRow);
+    if (centroid !== null) {
+      beginViewAnimation(centroid, MAIN_LINE_Y);
+      runtime.viewAnimating = true;
+    }
+  };
+
+  const refreshIsolatedFraming = () => {
+    if (!runtime.branchIsolateActive || runtime.branchIsolateRow === null) {
+      return;
+    }
+    const centroid = frameIsolatedBranch(runtime.branchIsolateRow);
     if (centroid !== null) {
       beginViewAnimation(centroid, MAIN_LINE_Y);
       runtime.viewAnimating = true;
@@ -936,5 +906,6 @@ export function createViewContext(
     toggleOwnBranchIsolation,
     exitBranchIsolation,
     isViewInteractionLocked: () => isViewInteractionLocked(runtime),
+    refreshIsolatedFraming,
   };
 }

@@ -1,7 +1,7 @@
 import type p5 from 'p5';
 import blankCdUrl from '../../Blank_cd.png';
 import garamondUrl from '../../EBGaramond-Regular.ttf';
-import type { TimelineSketchDeps } from './types';
+import type { ProcessedCollectionPreview, TimelineSketchDeps } from './types';
 import { createBoundsContext } from './sketch/bounds';
 import { createDrawFrameHandler } from './sketch/drawFrame';
 import { createGalleryController } from './sketch/galleryController';
@@ -27,6 +27,35 @@ export function createTimelineSketch(
     const loadedCollectedImages: (p5.Image | null)[] = new Array(
       deps.processedCollected.length
     ).fill(null);
+    const loadedPreviewImages: (p5.Image | null)[] = [];
+    const loadPreviewImages = (items: ProcessedCollectionPreview[]) => {
+      loadedPreviewImages.length = items.length;
+      loadedPreviewImages.fill(null);
+      items.forEach((item, index) => {
+        if (!item.imageUrl) {
+          return;
+        }
+        p.loadImage(
+          item.imageUrl,
+          (img) => {
+            loadedPreviewImages[index] = img;
+          },
+          () => {
+            loadedPreviewImages[index] = null;
+          }
+        );
+      });
+    };
+    deps.refs.reloadPreviewRef.current = (items) => {
+      deps.processedPreview = items;
+      loadPreviewImages(items);
+      deps.runtime.previewFadeOutStartMs = null;
+      deps.runtime.previewFadeInStartMs = p.millis();
+      view.refreshIsolatedFraming();
+    };
+    deps.refs.beginPreviewFadeOutRef.current = () => {
+      deps.runtime.previewFadeOutStartMs = p.millis();
+    };
     const cdImageRef: { current: p5.Image | null } = { current: null };
     const gallery = createGalleryController(p);
 
@@ -38,6 +67,7 @@ export function createTimelineSketch(
       view,
       loadedImages,
       loadedCollectedImages,
+      loadedPreviewImages,
       cdImageRef,
       gallery
     );
@@ -101,6 +131,8 @@ export function createTimelineSketch(
           }
         );
       });
+
+      loadPreviewImages(deps.processedPreview);
     };
 
     p.windowResized = () => {

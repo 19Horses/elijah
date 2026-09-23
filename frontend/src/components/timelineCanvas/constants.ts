@@ -142,3 +142,4 @@ export const LOAD_CONNECTOR_DELAY_MS = 180;
 export const LOAD_CONNECTOR_STAGGER_MS = 45;
 export const LOAD_CONNECTOR_FADE_MS = 400;
 export const LOAD_ALPHA_SNAP = 0.01;
+export const PREVIEW_SWITCH_FADE_MS = 250;

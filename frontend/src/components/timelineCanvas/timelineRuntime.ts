@@ -55,6 +55,8 @@ export function createTimelineRuntime(): TimelineRuntime {
     branchIsolateRow: null,
     branchIsolateActive: false,
     branchIsolate: 0,
+    previewFadeOutStartMs: null,
+    previewFadeInStartMs: null,
     loadStartMs: 0,
     entranceComplete: false,
     focusContentFade: 0,
@@ -78,13 +80,15 @@ export function resetCanvasFocus(runtime: TimelineRuntime): void {
 
 export function getFocusedSlug(
   target: FocusTarget,
-  items: TimelineSketchDeps['items'],
-  processedCollected: ProcessedCollected[]
+  deps: Pick<TimelineSketchDeps, 'items' | 'processedCollected' | 'processedPreview'>
 ): string | null {
   if (target.lane === 'main') {
-    return items[target.index]?.slug ?? null;
+    return deps.items[target.index]?.slug ?? null;
   }
-  return processedCollected[target.index]?.slug ?? null;
+  if (target.lane === 'preview') {
+    return deps.processedPreview[target.index]?.slug ?? null;
+  }
+  return deps.processedCollected[target.index]?.slug ?? null;
 }
 
 export function startDetailReveal(
@@ -92,7 +96,7 @@ export function startDetailReveal(
   target: FocusTarget,
   deps: TimelineSketchDeps
 ): void {
-  if (!getFocusedSlug(target, deps.items, deps.processedCollected)) {
+  if (!getFocusedSlug(target, deps)) {
     return;
   }
   if (runtime.detailPhase !== 'none') {
@@ -156,10 +160,15 @@ export function syncInteractionLock(deps: TimelineSketchDeps): void {
 }
 
 // Private items (not public, not collected by the viewer) aren't focusable.
+// Collectible items from the active collection are never private — they're
+// only shown because the viewer already has access to that collection.
 export function isPrivateTarget(
   deps: TimelineSketchDeps,
   target: FocusTarget
 ): boolean {
+  if (target.lane === 'preview') {
+    return false;
+  }
   const item: ProcessedItem | ProcessedCollected | undefined =
     target.lane === 'main'
       ? deps.processed[target.index]
