@@ -30,6 +30,7 @@ const COLLECTIONS_QUERY = `*[_type == "collection" && expiresAt > now()] | order
   content[]->{
     _id,
     _type,
+    date,
     "created_at": _createdAt,
     "slug": slug.current,
     public,

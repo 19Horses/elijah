@@ -1,13 +1,18 @@
 import p5 from 'p5';
 import { memo, useEffect, useRef, useState } from 'react';
-import type { ContentType } from '../../types/content';
-import { DEFAULT_BACKGROUND } from './constants';
+import type { CollectedUserRow } from '../../queries/collectedContent';
+import type { CollectionContent, ContentType } from '../../types/content';
+import { DEFAULT_BACKGROUND, PREVIEW_SWITCH_FADE_MS } from './constants';
 import { createTimelineSketch } from './createTimelineSketch';
 import {
   createAudioController,
   type AudioController,
 } from './sketch/audioController';
-import { buildProcessedCollected, buildProcessedItems } from './processItems';
+import {
+  buildProcessedCollected,
+  buildProcessedCollectionPreview,
+  buildProcessedItems,
+} from './processItems';
 import P5CanvasHost from './P5CanvasHost';
 import { createTimelineRuntime } from './timelineRuntime';
 import type {
@@ -16,9 +21,20 @@ import type {
   TimelineCanvasProps,
 } from './types';
 
+// Stable empty-array fallbacks for the destructuring defaults below — a
+// literal `= []` default creates a brand-new array every render the prop is
+// undefined, which (being a new reference each time) would otherwise re-fire
+// the canvas-mount effect below on every unrelated re-render of the caller.
+const EMPTY_COLLECTED_ROWS: CollectedUserRow[] = [];
+const EMPTY_PREVIEW_ITEMS: CollectionContent[] = [];
+
 function TimelineCanvas({
   items,
-  collectedRows = [],
+  collectedRows = EMPTY_COLLECTED_ROWS,
+  previewItems = EMPTY_PREVIEW_ITEMS,
+  previewColour = '#ffffff',
+  highlightedPreviewContentId = null,
+  onPreviewItemHover,
   colour,
   currentUsername = null,
   highlightedType = null,
@@ -63,6 +79,16 @@ function TimelineCanvas({
   const audioToggleRef = audioControlRef ?? localAudioControlRef;
   // Points at the live controller so the toggle ref can control playback.
   const audioRef = useRef<AudioController | null>(null);
+  const highlightedPreviewIdRef = useRef<string | null>(
+    highlightedPreviewContentId
+  );
+  const onPreviewHoverRef = useRef(onPreviewItemHover);
+  const reloadPreviewRef = useRef<
+    | ((items: ReturnType<typeof buildProcessedCollectionPreview>) => void)
+    | undefined
+  >(undefined);
+  const beginPreviewFadeOutRef = useRef<(() => void) | undefined>(undefined);
+  const prevPreviewItemsRef = useRef<CollectionContent[]>(EMPTY_PREVIEW_ITEMS);
 
   useEffect(() => {
     highlightedTypeRef.current = highlightedType ?? null;
@@ -99,6 +125,32 @@ function TimelineCanvas({
   useEffect(() => {
     onAudioStateChangeRef.current = onAudioStateChange;
   }, [onAudioStateChange]);
+
+  useEffect(() => {
+    highlightedPreviewIdRef.current = highlightedPreviewContentId ?? null;
+  }, [highlightedPreviewContentId]);
+
+  useEffect(() => {
+    onPreviewHoverRef.current = onPreviewItemHover;
+  }, [onPreviewItemHover]);
+
+  useEffect(() => {
+    const processed = buildProcessedCollectionPreview(previewItems);
+    const hadItems = prevPreviewItemsRef.current.length > 0;
+    const hasItems = previewItems.length > 0;
+    prevPreviewItemsRef.current = previewItems;
+
+    if (!hadItems || !hasItems) {
+      reloadPreviewRef.current?.(processed);
+      return;
+    }
+
+    beginPreviewFadeOutRef.current?.();
+    const id = window.setTimeout(() => {
+      reloadPreviewRef.current?.(processed);
+    }, PREVIEW_SWITCH_FADE_MS);
+    return () => window.clearTimeout(id);
+  }, [previewItems]);
 
   useEffect(() => {
     const preventScrollWhileFocused = (event: WheelEvent) => {
@@ -152,6 +204,7 @@ function TimelineCanvas({
 
     const processed = buildProcessedItems(items);
     const processedCollected = buildProcessedCollected(collectedRows);
+    const processedPreview = buildProcessedCollectionPreview(previewItems);
     const backgroundColour = colour || DEFAULT_BACKGROUND;
     const itemOffsets = processed.map(() => ({ dx: 0, dy: 0 }));
     const collectedOffsets = processedCollected.map(() => ({ dx: 0, dy: 0 }));
@@ -166,6 +219,8 @@ function TimelineCanvas({
       items,
       processed,
       processedCollected,
+      processedPreview,
+      previewColour,
       itemOffsets,
       collectedOffsets,
       backgroundColour,
@@ -186,6 +241,10 @@ function TimelineCanvas({
         resetViewRef,
         isolateOwnBranchRef,
         focusItemRef,
+        highlightedPreviewIdRef,
+        onPreviewHoverRef,
+        reloadPreviewRef,
+        beginPreviewFadeOutRef,
       },
     });
 
@@ -215,7 +274,11 @@ function TimelineCanvas({
       p5InstanceRef.current = null;
       container.replaceChildren();
     };
-  }, [items, collectedRows, colour, currentUsername]);
+    // previewItems is deliberately not a dependency here — its initial value is
+    // read once below for the sketch's first mount, but subsequent changes are
+    // hot-swapped via reloadPreviewRef (above) instead of remounting the whole
+    // canvas.
+  }, [items, collectedRows, previewColour, colour, currentUsername]);
 
   return (
     <div className="timeline-canvas-wrap">

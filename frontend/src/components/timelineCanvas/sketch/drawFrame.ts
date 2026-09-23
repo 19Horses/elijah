@@ -2,6 +2,7 @@ import type p5 from 'p5';
 import {
   getStaggeredLoadAlpha,
   getTypeDimAlpha,
+  hexToRgba,
   resetCanvasEffects,
 } from '../canvasEffects';
 import {
@@ -18,8 +19,6 @@ import {
   LOAD_IMAGE_STAGGER_MS,
   LOAD_INITIAL_DELAY_MS,
   DOT_RADIUS,
-  ITEM_GAP,
-  ITEM_WIDTH,
   MAIN_CONNECTOR_DIM_ALPHA,
   MAIN_GLOW_COLOUR,
   MAIN_LINE_Y,
@@ -29,6 +28,7 @@ import {
   PRIVATE_BADGE_COLOUR,
   PRIVATE_BADGE_TEXT,
   DATE_FONT_SIZE,
+  PREVIEW_SWITCH_FADE_MS,
   ZOOM_OUT_GROWTH_POWER,
 } from '../constants';
 import { drawDot } from '../connectors';
@@ -36,6 +36,7 @@ import { screenToWorld, zoomMergeProgress, zoomOutGrowth } from '../geometry';
 import { drawCollectedSourcesLabel, drawUserLabel } from '../labels';
 import {
   animateDetailReveal,
+  formatDateForZoom,
   syncInteractionLock,
   updateHighlightFade,
 } from '../timelineRuntime';
@@ -72,6 +73,7 @@ export function createDrawFrameHandler(
   view: ViewContext,
   loadedImages: (p5.Image | null)[],
   loadedCollectedImages: (p5.Image | null)[],
+  loadedPreviewImages: (p5.Image | null)[],
   cdImageRef: { current: p5.Image | null },
   gallery: GalleryController
 ): () => void {
@@ -112,6 +114,14 @@ export function createDrawFrameHandler(
   });
   // Last reported mini-player key, so the ref only fires when it changes.
   let lastAudioKey = '';
+  // Last reported hovered collectible-item content id, so the ref only fires
+  // when it changes.
+  let lastHoveredPreviewId: string | null = null;
+  // Eased 0-1 "highlighted" progress per collectible item (keyed by content
+  // id), so growing into/out of the selected/hovered look eases rather than
+  // snapping straight to size.
+  const previewHighlightProgress = new Map<string, number>();
+  const isolatedLineX = new Map<string, number>();
 
   // The logged-in viewer's own branch row, so hovering the user card can
   // highlight it exactly like hovering the branch on the canvas.
@@ -250,33 +260,77 @@ export function createDrawFrameHandler(
     }
 
     // Even-spacing X targets for the isolated branch: its items laid out at a
-    // fixed step centred on their centroid, so the straightened branch reads as
-    // evenly spaced regardless of the original (date-driven) gaps. Lazily
+    // fixed step centred on their centroid, so the straightened branch reads
+    // as evenly spaced regardless of the original (date-driven) gaps. The
+    // active collection's not-yet-collected items are merged into this same
+    // date-ordered sequence (as "collectible" slots), skipping any that the
+    // viewer has already collected onto this branch. Sourced from
+    // boundsCtx.getIsolatedMergedLine — the same layout view.ts uses to frame
+    // and focus these items, so the two can never drift apart. Lazily
     // computed on first use, once per frame.
-    let isolatedTargetCenterX: Map<number, number> | null = null;
+    let isolatedLine: ReturnType<BoundsContext['getIsolatedMergedLine']> = null;
+    const getIsolatedLine = () => {
+      if (isolatedLine === null && isolateRow !== null) {
+        isolatedLine = boundsCtx.getIsolatedMergedLine(isolateRow);
+      }
+      return isolatedLine;
+    };
+    let isolatedLineXReady = false;
+    const ensureIsolatedLineX = () => {
+      if (isolatedLineXReady) {
+        return;
+      }
+      isolatedLineXReady = true;
+      const line = getIsolatedLine();
+      if (!line) {
+        return;
+      }
+      for (const entry of line.entries) {
+        if (entry.kind !== 'collected') {
+          continue;
+        }
+        const targetX = (entry.rect.left + entry.rect.right) / 2;
+        const prevX = isolatedLineX.get(entry.contentId);
+        let easedX = targetX;
+        if (prevX !== undefined) {
+          easedX = prevX + (targetX - prevX) * BRANCH_DIM_LERP;
+          if (Math.abs(targetX - easedX) < 0.5) {
+            easedX = targetX;
+          }
+        }
+        isolatedLineX.set(entry.contentId, easedX);
+      }
+    };
     const getIsolatedTargetCenterX = (index: number): number | null => {
       if (!isolateActive) {
         return null;
       }
-      if (!isolatedTargetCenterX) {
-        const targets = new Map<number, number>();
-        const cb = boundsCtx.getCollectedBounds();
-        const ordered = deps.processedCollected
-          .map((_, i) => i)
-          .filter((i) => isIsolatedItem(i) && cb[i])
-          .map((i) => ({ i, cx: (cb[i].left + cb[i].right) / 2 }))
-          .sort((a, b) => a.cx - b.cx);
-        const n = ordered.length;
-        if (n > 0) {
-          const step = ITEM_WIDTH + ITEM_GAP;
-          const centroid = ordered.reduce((s, e) => s + e.cx, 0) / n;
-          const startX = centroid - ((n - 1) * step) / 2;
-          ordered.forEach((e, k) => targets.set(e.i, startX + k * step));
-        }
-        isolatedTargetCenterX = targets;
+      const found = getIsolatedLine()?.entries.find(
+        (e) => e.kind === 'collected' && e.index === index
+      );
+      if (!found) {
+        return null;
       }
-      return isolatedTargetCenterX.get(index) ?? null;
+      ensureIsolatedLineX();
+      return (
+        isolatedLineX.get(found.contentId) ??
+        (found.rect.left + found.rect.right) / 2
+      );
     };
+    let previewSwitchAlpha = 1;
+    if (runtime.previewFadeOutStartMs !== null) {
+      const t = Math.min(
+        1,
+        (p.millis() - runtime.previewFadeOutStartMs) / PREVIEW_SWITCH_FADE_MS
+      );
+      previewSwitchAlpha = 1 - t;
+    } else if (runtime.previewFadeInStartMs !== null) {
+      const t = Math.min(
+        1,
+        (p.millis() - runtime.previewFadeInStartMs) / PREVIEW_SWITCH_FADE_MS
+      );
+      previewSwitchAlpha = t;
+    }
 
     const contentAlphaFor = (
       lane: 'main' | 'collected',
@@ -288,10 +342,7 @@ export function createDrawFrameHandler(
       // Isolating the viewer's own branch, though, fades everything that isn't
       // part of it away: the main timeline's own items and every other
       // collector's items, leaving just the isolated branch straightened out.
-      if (
-        isolateActive &&
-        (lane === 'main' || !isIsolatedItem(index))
-      ) {
+      if (isolateActive && (lane === 'main' || !isIsolatedItem(index))) {
         alpha *= 1 - isolate;
       }
       return alpha;
@@ -300,7 +351,7 @@ export function createDrawFrameHandler(
     // While isolating, a collected item in the branch eases from its normal
     // position onto the main line (its straightened position).
     const getDetailDrawBoundsIso = (
-      lane: 'main' | 'collected',
+      lane: 'main' | 'collected' | 'preview',
       index: number,
       itemBounds: ContentBounds
     ): ContentBounds => {
@@ -311,8 +362,7 @@ export function createDrawFrameHandler(
         // line, so the straightened branch is evenly spaced.
         const targetCX = getIsolatedTargetCenterX(index);
         const baseCX = (base.left + base.right) / 2;
-        const dx =
-          targetCX !== null ? (targetCX - baseCX) * isolate : 0;
+        const dx = targetCX !== null ? (targetCX - baseCX) * isolate : 0;
         return {
           ...base,
           left: base.left + dx,
@@ -439,12 +489,18 @@ export function createDrawFrameHandler(
     if (runtime.focusTarget && runtime.detailLayout > 0) {
       const { lane, index } = runtime.focusTarget;
       // Use the straightened bounds while isolating, so the reported rect
-      // matches where the item is actually drawn (on the main line).
-      const laneBounds = getDetailDrawBoundsIso(
-        lane,
-        index,
-        lane === 'main' ? bounds[index] : collectedBounds[index]
-      );
+      // matches where the item is actually drawn (on the main line). A
+      // collectible item only ever has a position via the isolated line —
+      // it isn't in bounds/collectedBounds at all.
+      const itemBounds =
+        lane === 'main'
+          ? bounds[index]
+          : lane === 'preview'
+          ? getIsolatedLine()?.entries.find(
+              (entry) => entry.kind === 'preview' && entry.index === index
+            )?.rect ?? collectedBounds[index]
+          : collectedBounds[index];
+      const laneBounds = getDetailDrawBoundsIso(lane, index, itemBounds);
       // The focused image stays at its world bounds; report its on-screen
       // rect so the detail text can be placed around it.
       deps.refs.onDetailImageRectRef.current?.({
@@ -455,13 +511,19 @@ export function createDrawFrameHandler(
       });
     }
 
+    // While isolating, only the isolated branch's own items stay at full
+    // brightness — every other collector's items are faded, so they're
+    // excluded from hover here too.
+    const isCollectedItemHoverable = (index: number) =>
+      !isolateActive || isIsolatedItem(index);
     const collectedHover = computeCollectedLaneHover(
       deps,
       boundsCtx,
       collectedBounds,
       bounds,
       mouseWorld,
-      hoverSuppressed
+      hoverSuppressed,
+      isCollectedItemHoverable
     );
 
     // Hovering the user card behaves like hovering the viewer's own branch on
@@ -554,49 +616,175 @@ export function createDrawFrameHandler(
     );
     drawMainTimelineGlow(p, deps, boundsCtx, bounds, collectedBounds);
 
-    // Straight connectors joining the isolated branch's items into one line.
+    // Straight connectors joining the isolated branch's items — and the
+    // active collection's not-yet-collected items, merged in by date — into
+    // one line.
     if (isolateActive && isolateRow !== null) {
-      const isolatedOrdered = deps.processedCollected
-        .map((_, index) => index)
-        .filter((index) => isIsolatedItem(index))
-        .map((index) => ({
-          index,
-          rect: getDetailDrawBoundsIso(
-            'collected',
-            index,
-            collectedBounds[index]
-          ),
-        }))
+      const isolatedOrdered = (getIsolatedLine()?.entries ?? [])
+        .map((entry) => {
+          if (entry.kind === 'collected') {
+            return {
+              kind: entry.kind,
+              index: entry.index,
+              rect: getDetailDrawBoundsIso(
+                'collected',
+                entry.index,
+                collectedBounds[entry.index]
+              ),
+            };
+          }
+          return { kind: entry.kind, index: entry.index, rect: entry.rect };
+        })
         .sort((a, b) => a.rect.left - b.rect.left);
 
-      // Publish the straightened rects so a click can hit-test where the items
-      // actually appear (on the main line) rather than their branch positions.
-      runtime.isolatedRegions = isolatedOrdered.map(({ index, rect }) => ({
-        left: rect.left,
-        top: rect.top,
-        right: rect.right,
-        bottom: rect.top + rect.height,
-        index,
-      }));
+      // Publish the straightened rects (collected and collectible alike) so a
+      // click can hit-test where they actually appear (on the main line)
+      // rather than their branch positions.
+      runtime.isolatedRegions = isolatedOrdered.map(
+        ({ kind, index, rect }) => ({
+          left: rect.left,
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.top + rect.height,
+          index,
+          lane: kind,
+        })
+      );
+
+      // The collectible items have no prior on-screen position to ease from
+      // (they only exist while isolating), so they simply fade in at their
+      // straightened slot, tracking the isolate progress. Whichever one is
+      // selected/hovered in the caller's own item list (highlightedPreviewIdRef)
+      // draws at full colour with a subtle glow in the viewer's colour; every
+      // other collectible is greyed out — the opposite of a hover highlight.
+      // Hovering one here reports it back the other way via onPreviewHoverRef,
+      // so the caller's list can mirror the highlight.
+      const previewCtx = p.drawingContext as CanvasRenderingContext2D;
+      let hoveredPreviewContentId: string | null = null;
+      for (const entry of isolatedOrdered) {
+        if (entry.kind !== 'preview') {
+          continue;
+        }
+        const item = deps.processedPreview[entry.index];
+        const img = loadedPreviewImages[entry.index];
+        const { rect } = entry;
+
+        if (
+          mouseWorld.x >= rect.left &&
+          mouseWorld.x <= rect.right &&
+          mouseWorld.y >= rect.top &&
+          mouseWorld.y <= rect.top + rect.height
+        ) {
+          hoveredPreviewContentId = item.contentId;
+        }
+
+        const isFocusedPreview = isFocusedTarget('preview', entry.index);
+        const isHighlighted =
+          isFocusedPreview ||
+          item.contentId === deps.refs.highlightedPreviewIdRef.current;
+        const targetProgress = isHighlighted ? 1 : 0;
+        const prevProgress = previewHighlightProgress.get(item.contentId) ?? 0;
+        let progress =
+          prevProgress + (targetProgress - prevProgress) * BRANCH_DIM_LERP;
+        if (Math.abs(targetProgress - progress) < HIGHLIGHT_FADE_SNAP) {
+          progress = targetProgress;
+        }
+        previewHighlightProgress.set(item.contentId, progress);
+
+        previewCtx.globalAlpha = isolate * previewSwitchAlpha;
+        const greyness = 1 - progress;
+        if (greyness > 0) {
+          previewCtx.filter = `grayscale(${greyness * 80}%) brightness(${
+            1 - greyness * 0.25
+          })`;
+        }
+        if (progress > 0) {
+          previewCtx.shadowColor = hexToRgba(
+            deps.previewColour,
+            0.45 * isolate * previewSwitchAlpha * progress
+          );
+          previewCtx.shadowBlur = 12 * zoomGrowth * progress;
+        }
+        if (img) {
+          p.image(img, rect.left, rect.top, rect.width, rect.height);
+        } else {
+          p.noStroke();
+          p.fill(40);
+          p.rect(rect.left, rect.top, rect.width, rect.height);
+          p.fill(255);
+          p.textAlign(p.CENTER, p.CENTER);
+          p.text(
+            item.title,
+            rect.left + rect.width / 2,
+            rect.top + rect.height / 2
+          );
+        }
+        previewCtx.filter = 'none';
+        previewCtx.shadowBlur = 0;
+
+        // White border on every collectible except the focused one, matching
+        // the main/collected lanes' own convention.
+        if (!(isFocusActive && isFocusedPreview)) {
+          p.noFill();
+          p.stroke(255);
+          p.strokeWeight(2);
+          p.rect(rect.left, rect.top, rect.width, rect.height);
+        }
+        resetCanvasEffects(previewCtx);
+
+        // Deferred so the date renders above the connectors/nodes, matching
+        // every other item's date label.
+        dateLabels.push({
+          x: rect.left + rect.width / 2,
+          y: rect.top - 12,
+          text: formatDateForZoom(
+            item.anchorTime,
+            runtime.zoom,
+            runtime.fitZoomLevel
+          ),
+          colour: 255,
+          alpha: isolate * previewSwitchAlpha,
+        });
+      }
+
+      if (hoveredPreviewContentId !== lastHoveredPreviewId) {
+        lastHoveredPreviewId = hoveredPreviewContentId;
+        deps.refs.onPreviewHoverRef.current?.(hoveredPreviewContentId);
+      }
 
       const ctx2 = p.drawingContext as CanvasRenderingContext2D;
-      ctx2.globalAlpha = isolate;
-      ctx2.setLineDash([]);
       p.stroke(isolateColour);
       p.strokeWeight(zoomGrowth);
       p.noFill();
       for (let k = 0; k < isolatedOrdered.length - 1; k++) {
-        const a = isolatedOrdered[k].rect;
-        const b = isolatedOrdered[k + 1].rect;
-        p.line(a.right, a.centerY, b.left, b.centerY);
+        const a = isolatedOrdered[k];
+        const b = isolatedOrdered[k + 1];
+        // Dotted wherever the segment touches a collectible (not-yet-
+        // collected) item, so those links read differently from the solid
+        // lines between items actually on the branch.
+        const dotted = a.kind === 'preview' || b.kind === 'preview';
+        ctx2.globalAlpha = dotted ? isolate * previewSwitchAlpha : isolate;
+        ctx2.setLineDash(dotted ? [0.1, zoomGrowth * 6] : []);
+        ctx2.lineCap = dotted ? 'round' : 'butt';
+        p.line(a.rect.right, a.rect.centerY, b.rect.left, b.rect.centerY);
       }
-      for (const { rect } of isolatedOrdered) {
+      ctx2.setLineDash([]);
+      ctx2.lineCap = 'butt';
+      for (const { kind, rect } of isolatedOrdered) {
+        ctx2.globalAlpha =
+          kind === 'preview' ? isolate * previewSwitchAlpha : isolate;
         drawDot(p, rect.left, rect.centerY, isolateColour, zoomGrowth);
         drawDot(p, rect.right, rect.centerY, isolateColour, zoomGrowth);
       }
       resetCanvasEffects(ctx2);
-    } else if (runtime.isolatedRegions.length > 0) {
-      runtime.isolatedRegions = [];
+    } else {
+      if (runtime.isolatedRegions.length > 0) {
+        runtime.isolatedRegions = [];
+      }
+      if (lastHoveredPreviewId !== null) {
+        lastHoveredPreviewId = null;
+        deps.refs.onPreviewHoverRef.current?.(null);
+      }
     }
 
     // Date labels drawn last (still inside the world transform) so they sit

@@ -1,12 +1,26 @@
 import type { MutableRefObject, RefObject } from 'react';
 import type { MainTimelineItem } from '../../queries/mainTimeline';
-import type { ContentType } from '../../types/content';
+import type { CollectionContent, ContentType } from '../../types/content';
 import type { CollectedUserRow } from '../../queries/collectedContent';
 import type { AudioController } from './sketch/audioController';
 
 export type TimelineCanvasProps = {
   items: MainTimelineItem[];
   collectedRows?: CollectedUserRow[];
+  // The active collection's items, merged by date into the isolated
+  // own-branch view (see toggleOwnBranchIsolation) as "collectible" slots
+  // alongside whatever the viewer has actually collected.
+  previewItems?: CollectionContent[];
+  // Colour the highlighted collectible item's glow draws in (the viewer's
+  // own stored colour, matching the collection badge's tint).
+  previewColour?: string;
+  // The content id of the collectible item currently selected/hovered in the
+  // caller's own item list, so the canvas can highlight the matching item.
+  highlightedPreviewContentId?: string | null;
+  // Reports the content id of whichever collectible item the pointer is
+  // currently over on the canvas (or null), so the caller's own item list
+  // can mirror the highlight the other way.
+  onPreviewItemHover?: (contentId: string | null) => void;
   colour?: string | null;
   currentUsername?: string | null;
   highlightedType?: ContentType | null;
@@ -82,6 +96,17 @@ export type ProcessedCollected = {
   isPrivate: boolean;
 };
 
+// A collection item merged into the isolated own-branch view by date,
+// alongside items the viewer has actually collected.
+export type ProcessedCollectionPreview = {
+  contentId: string;
+  slug: string | null;
+  imageUrl: string | null;
+  title: string;
+  aspectRatio: number;
+  anchorTime: number;
+};
+
 export type ProcessedItem = {
   imageUrl: string | null;
   slug: string | null;
@@ -131,7 +156,7 @@ export type NodeHoverRegion = {
 };
 
 export type FocusTarget = {
-  lane: 'main' | 'collected';
+  lane: 'main' | 'collected' | 'preview';
   index: number;
 };
 
@@ -144,6 +169,7 @@ export type IsolatedItemRegion = {
   right: number;
   bottom: number;
   index: number;
+  lane: 'collected' | 'preview';
 };
 
 export type DetailPhase = 'none' | 'layout' | 'complete';
@@ -202,6 +228,8 @@ export type TimelineRuntime = {
   branchIsolateRow: number | null;
   branchIsolateActive: boolean;
   branchIsolate: number;
+  previewFadeOutStartMs: number | null;
+  previewFadeInStartMs: number | null;
   loadStartMs: number;
   // Set once the staggered entrance (images + connectors) has fully faded
   // in, so the one-shot onEntranceComplete callback only fires once.
@@ -257,6 +285,21 @@ export type TimelineSketchRefs = {
   isolateOwnBranchRef: MutableRefObject<(() => void) | undefined>;
   // React → sketch: mini-player click (image/title) jumps/focuses that item.
   focusItemRef: MutableRefObject<((target: FocusTarget) => void) | undefined>;
+  // React → sketch: content id of the collectible item selected/hovered in
+  // the caller's own item list (or null), so the canvas can highlight it.
+  highlightedPreviewIdRef: RefObject<string | null>;
+  // Sketch → React: reports the content id of whichever collectible item the
+  // pointer is over on the canvas (or null).
+  onPreviewHoverRef: RefObject<
+    ((contentId: string | null) => void) | undefined
+  >;
+  // React → sketch: swaps in a new set of collectible items (and loads their
+  // images) without remounting the whole canvas — switching which collection
+  // is expanded must not tear down the running sketch's camera/isolate state.
+  reloadPreviewRef: MutableRefObject<
+    ((items: ProcessedCollectionPreview[]) => void) | undefined
+  >;
+  beginPreviewFadeOutRef: MutableRefObject<(() => void) | undefined>;
 };
 
 export type TimelineSketchDeps = {
@@ -264,6 +307,8 @@ export type TimelineSketchDeps = {
   items: MainTimelineItem[];
   processed: ProcessedItem[];
   processedCollected: ProcessedCollected[];
+  processedPreview: ProcessedCollectionPreview[];
+  previewColour: string;
   itemOffsets: ItemOffset[];
   collectedOffsets: ItemOffset[];
   backgroundColour: string;

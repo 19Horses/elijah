@@ -78,13 +78,21 @@ export function computeCollectedLaneHover(
   collectedBounds: ContentBounds[],
   mainBounds: ContentBounds[],
   mouseWorld: { x: number; y: number },
-  isFocusActive: boolean
+  isFocusActive: boolean,
+  // While isolating a branch, every other collector's items are faded out
+  // (see contentAlphaFor) and shouldn't get hover feedback — only the
+  // isolated branch's own items should. Defaults to "every item", the normal
+  // (not isolating) case.
+  isItemHoverable: (index: number) => boolean = () => true
 ): CollectedLaneDrawResult {
   let hoveredCollected = -1;
   let hoveredCollectedIsImage = false;
   let hoveredUserRow: number | null = null;
 
   for (let index = deps.processedCollected.length - 1; index >= 0; index--) {
+    if (!isItemHoverable(index)) {
+      continue;
+    }
     const b = collectedBounds[index];
     if (
       mouseWorld.x >= b.left &&
@@ -100,6 +108,9 @@ export function computeCollectedLaneHover(
 
   if (hoveredCollected === -1 && !isFocusActive) {
     for (let index = deps.processedCollected.length - 1; index >= 0; index--) {
+      if (!isItemHoverable(index)) {
+        continue;
+      }
       const item = deps.processedCollected[index];
       for (
         let sourceIndex = 0;

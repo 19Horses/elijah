@@ -3,10 +3,12 @@ import {
   getMainTimelineImageUrl,
   type MainTimelineItem,
 } from '../../queries/mainTimeline';
+import type { CollectionContent } from '../../types/content';
 import { ITEM_WIDTH, IMAGE_HEIGHT } from './constants';
 import type {
   CollectedSource,
   ProcessedCollected,
+  ProcessedCollectionPreview,
   ProcessedItem,
 } from './types';
 
@@ -124,4 +126,27 @@ export function buildProcessedCollected(
     }
     return a.anchorTime - b.anchorTime;
   });
+}
+
+// Undated items have no place in the date-ordered merge, so they're skipped.
+export function buildProcessedCollectionPreview(
+  items: CollectionContent[]
+): ProcessedCollectionPreview[] {
+  return items
+    .map((item) => {
+      const anchorTime = item.date ? new Date(item.date).getTime() : Number.NaN;
+      if (Number.isNaN(anchorTime)) {
+        return null;
+      }
+      return {
+        contentId: item._id,
+        slug: item.slug ?? null,
+        imageUrl: item.imageUrl,
+        title: item.title,
+        aspectRatio:
+          item.imageDimensions?.aspectRatio || ITEM_WIDTH / IMAGE_HEIGHT,
+        anchorTime,
+      };
+    })
+    .filter((item): item is ProcessedCollectionPreview => item !== null);
 }

@@ -64,9 +64,12 @@ export type MainLaneDrawContext = {
   getCollectedConnectorLoadAlpha: (connectorIndex: number) => number;
   // Alpha multiplier dimming main connectors the active branch doesn't travel.
   mainConnectorTravelAlpha: (connectorIndex: number) => number;
-  isFocusedTarget: (lane: 'main' | 'collected', index: number) => boolean;
+  isFocusedTarget: (
+    lane: 'main' | 'collected' | 'preview',
+    index: number
+  ) => boolean;
   getDetailDrawBounds: (
-    lane: 'main' | 'collected',
+    lane: 'main' | 'collected' | 'preview',
     index: number,
     itemBounds: ContentBounds
   ) => ContentBounds;
@@ -109,24 +112,29 @@ export function computeMainLaneHover(
   deps: TimelineSketchDeps,
   bounds: ContentBounds[],
   mouseWorld: { x: number; y: number },
-  isFocusActive: boolean
+  hoverSuppressed: boolean
 ): MainLaneDrawResult {
+  // The main lane is always faded while something else is focused/isolated
+  // (see contentAlphaFor), so it never gets hover feedback in that state —
+  // not just its connectors (below), but the items themselves too.
   let hoveredMain = -1;
-  for (let index = deps.processed.length - 1; index >= 0; index--) {
-    const b = bounds[index];
-    if (
-      mouseWorld.x >= b.left &&
-      mouseWorld.x <= b.right &&
-      mouseWorld.y >= b.top &&
-      mouseWorld.y <= b.top + b.height
-    ) {
-      hoveredMain = index;
-      break;
+  if (!hoverSuppressed) {
+    for (let index = deps.processed.length - 1; index >= 0; index--) {
+      const b = bounds[index];
+      if (
+        mouseWorld.x >= b.left &&
+        mouseWorld.x <= b.right &&
+        mouseWorld.y >= b.top &&
+        mouseWorld.y <= b.top + b.height
+      ) {
+        hoveredMain = index;
+        break;
+      }
     }
   }
 
   let mainConnectorHover = false;
-  if (hoveredMain === -1 && !isFocusActive) {
+  if (hoveredMain === -1 && !hoverSuppressed) {
     for (let index = 0; index < deps.processed.length - 1; index++) {
       const line = getMainConnectorPoints(
         { x: bounds[index].right, y: bounds[index].centerY },
@@ -635,13 +643,16 @@ export function drawMainLaneConnectorDots(
 export function createMainLaneDrawHelpers(deps: TimelineSketchDeps) {
   const { runtime } = deps;
 
-  const isFocusedTarget = (lane: 'main' | 'collected', index: number) =>
+  const isFocusedTarget = (
+    lane: 'main' | 'collected' | 'preview',
+    index: number
+  ) =>
     runtime.focusTarget?.lane === lane && runtime.focusTarget.index === index;
 
   // The focused image stays at its world bounds — the camera frames it at the
   // detail position — so the draw bounds are just the item's own bounds.
   const getDetailDrawBounds = (
-    lane: 'main' | 'collected',
+    lane: 'main' | 'collected' | 'preview',
     index: number,
     itemBounds: ContentBounds
   ) => itemBounds;

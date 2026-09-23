@@ -28,6 +28,22 @@ import type {
   TimelineSketchDeps,
 } from '../types';
 
+// One entry (a real collected item, or a collectible from the active
+// collection) in the isolated view's merged, date-ordered straight line.
+export type IsolatedLineEntry = {
+  kind: 'collected' | 'preview';
+  index: number;
+  contentId: string;
+  rect: ContentBounds;
+};
+
+export type IsolatedLine = {
+  entries: IsolatedLineEntry[];
+  centroid: number;
+  minX: number;
+  maxX: number;
+};
+
 export type BranchSegment = {
   from: ConnectorPoint;
   to: ConnectorPoint;
@@ -85,6 +101,11 @@ export type BoundsContext = {
     order: { lane: 'main' | 'collected'; index: number }[];
     frame: ContentBounds | null;
   };
+  // The isolated branch's own items, merged by date with the active
+  // collection's not-yet-collected items, evenly spaced and straightened onto
+  // the main line — the single source of truth for both where those items are
+  // drawn and where the camera frames/focuses them.
+  getIsolatedMergedLine: (rowIndex: number) => IsolatedLine | null;
 };
 
 // The edge of a main item a branch springs from: the top when the collected
@@ -128,6 +149,9 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     itemOffsets,
     collectedOffsets,
   } = deps;
+  // Not destructured like the others above — reloadPreviewRef swaps
+  // deps.processedPreview in place (see getIsolatedMergedLine below), so it
+  // must be read fresh off deps each call rather than snapshotted once here.
 
   // Fan-out spacing for parallel branch nodes/lines eases down to 0 below
   // BRANCH_MERGE_ZOOM_FACTOR (of the fit-to-screen zoom), so lines sharing the
@@ -815,9 +839,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     return gaps;
   };
 
-  const getCollectedBounds = (
-    rowGrowthOverride?: number
-  ): ContentBounds[] => {
+  const getCollectedBounds = (rowGrowthOverride?: number): ContentBounds[] => {
     // Grows the row spacing as the camera zooms out, faster than the
     // nodes/lines themselves thicken (LANE_GAP_GROWTH_POWER > the line/node
     // growth power), so rows keep pulling further apart at extreme zoom-out
@@ -971,6 +993,107 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     return { targetX, order, frame };
   };
 
+  // The isolated branch's own items merged by date with the active
+  // collection's not-yet-collected items (skipping any the viewer has
+  // already collected onto this branch), evenly spaced at a fixed step and
+  // straightened onto the main line. Single source of truth for both where
+  // these items are drawn (drawFrame.ts) and where the camera frames/focuses
+  // them (view.ts) — kept in bounds.ts so the two can never drift apart.
+  const getIsolatedMergedLine = (rowIndex: number): IsolatedLine | null => {
+    const cb = getCollectedBounds();
+    const isolatedCollected = processedCollected
+      .map((item, index) => ({ item, index }))
+      .filter(
+        ({ item, index }) =>
+          cb[index] && item.sources.some((s) => s.rowIndex === rowIndex)
+      );
+    const isolatedContentIds = new Set(
+      isolatedCollected.map(({ item }) => item.contentId)
+    );
+    const previewEntries = deps.processedPreview
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => !isolatedContentIds.has(item.contentId));
+
+    const merged = [
+      ...isolatedCollected.map(({ item, index }) => ({
+        kind: 'collected' as const,
+        index,
+        anchorTime: item.anchorTime,
+        cx: (cb[index].left + cb[index].right) / 2,
+      })),
+      ...previewEntries.map(({ item, index }) => ({
+        kind: 'preview' as const,
+        index,
+        anchorTime: item.anchorTime,
+        cx: timeToWorldX(item.anchorTime),
+      })),
+    ].sort((a, b) => a.anchorTime - b.anchorTime);
+
+    const n = merged.length;
+    if (n === 0) {
+      return null;
+    }
+
+    const step = ITEM_WIDTH + ITEM_GAP;
+    const centroid = merged.reduce((sum, e) => sum + e.cx, 0) / n;
+    const startX = centroid - ((n - 1) * step) / 2;
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    const entries: IsolatedLineEntry[] = merged.map((e, k) => {
+      const targetCenterX = startX + k * step;
+      if (e.kind === 'collected') {
+        const b = cb[e.index];
+        const left = targetCenterX - b.width / 2;
+        const top = MAIN_LINE_Y - b.height / 2;
+        const rect: ContentBounds = {
+          left,
+          right: left + b.width,
+          top,
+          centerY: MAIN_LINE_Y,
+          width: b.width,
+          height: b.height,
+          dateBottom: top + b.height + DATE_OFFSET,
+        };
+        minX = Math.min(minX, rect.left);
+        maxX = Math.max(maxX, rect.right);
+        return {
+          kind: 'collected',
+          index: e.index,
+          contentId: processedCollected[e.index].contentId,
+          rect,
+        };
+      }
+      const item = deps.processedPreview[e.index];
+      const { width, height } = getFittedSize(
+        item.aspectRatio,
+        ITEM_WIDTH,
+        IMAGE_HEIGHT
+      );
+      const left = targetCenterX - width / 2;
+      const top = MAIN_LINE_Y - height / 2;
+      const rect: ContentBounds = {
+        left,
+        right: left + width,
+        top,
+        centerY: MAIN_LINE_Y,
+        width,
+        height,
+        dateBottom: top + height + DATE_OFFSET,
+      };
+      minX = Math.min(minX, rect.left);
+      maxX = Math.max(maxX, rect.right);
+      return {
+        kind: 'preview',
+        index: e.index,
+        contentId: item.contentId,
+        rect,
+      };
+    });
+
+    return { entries, centroid, minX, maxX };
+  };
+
   return {
     getAllBounds,
     slotLeft,
@@ -984,5 +1107,6 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     getBranchDetouredGaps,
     getCollectedBounds,
     getIsolatedLineTargets,
+    getIsolatedMergedLine,
   };
 }

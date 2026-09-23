@@ -62,9 +62,27 @@ function Home({ onEntranceComplete }: HomeProps) {
     null
   );
   const collectionTransitionTimeoutRef = useRef<number | undefined>(undefined);
-  const [alreadyCollected, setAlreadyCollected] = useState(false);
-  const [statusChecked, setStatusChecked] = useState(false);
-  const [collectedSignal, setCollectedSignal] = useState(0);
+  const [borderFlashActive, setBorderFlashActive] = useState(false);
+  // Which collection's badge is currently expanded (showing its item list and
+  // driving the canvas merge) — null when none is. Only one at a time.
+  const [expandedCollectionId, setExpandedCollectionId] = useState<
+    string | null
+  >(null);
+  // True while isolating via the user card specifically: the collection
+  // badges fade out and the isolated timeline shows only the viewer's own
+  // collected items, with no collection merged in.
+  const [isolatedViaUserCard, setIsolatedViaUserCard] = useState(false);
+  // Each collection remembers its own selected item index independently.
+  const [selectedItemIndexByCollection, setSelectedItemIndexByCollection] =
+    useState<Record<string, number>>({});
+  const [hoveredCollectionItemId, setHoveredCollectionItemId] = useState<
+    string | null
+  >(null);
+  // Per-collection "has the viewer already collected from this one" status.
+  // A collection id's absence means its status hasn't been checked yet.
+  const [collectedStatus, setCollectedStatus] = useState<
+    Record<string, boolean>
+  >({});
   const [highlightedType] = useState<ContentType | null>(null);
   const [focusSlug, setFocusSlug] = useState<string | null>(null);
   const [ownBranchHover, setOwnBranchHover] = useState(false);
@@ -141,11 +159,23 @@ function Home({ onEntranceComplete }: HomeProps) {
     };
   }, [contentDetail, detailReady, focusSlug, collectedRows, currentUsername]);
 
-  const activeCollection = collections?.[0] ?? null;
+  // The collection whose badge is currently expanded — its items are what
+  // merge into the isolated timeline on canvas.
+  const expandedCollection =
+    collections?.find(
+      (collection) => collection._id === expandedCollectionId
+    ) ?? null;
+  const expandedSelectedItemId =
+    expandedCollection?.content?.[
+      selectedItemIndexByCollection[expandedCollection._id] ?? 0
+    ]?._id ?? null;
+  // Hovering either side (the title or the canvas item) previews the
+  // highlight without disturbing the persisted selection underneath it.
+  const highlightedCollectionItemId =
+    hoveredCollectionItemId ?? expandedSelectedItemId;
 
-  const handleCollected = () => {
-    setAlreadyCollected(true);
-    setCollectedSignal((signal) => signal + 1);
+  const handleCollected = (collectionId: string) => {
+    setCollectedStatus((prev) => ({ ...prev, [collectionId]: true }));
     void queryClient.invalidateQueries({ queryKey: ['collectedTimeline'] });
     void queryClient.invalidateQueries({ queryKey: ['mainTimeline'] });
     void queryClient.invalidateQueries({ queryKey: ['contentDetail'] });
@@ -161,6 +191,42 @@ function Home({ onEntranceComplete }: HomeProps) {
       () => setViewerOpen(true),
       prefersReducedMotion() ? 0 : COLLECTION_FADE_MS
     );
+  };
+
+  // Clicking a collection badge flashes a border around the screen in the
+  // user's colour (and stays), and lists that collection's item titles below
+  // it — instead of opening the collection view. Only one collection can be
+  // expanded at a time; clicking a different one swaps which is expanded
+  // without leaving the isolated view, clicking the same one again closes it.
+  // The isolated, straightened view itself (shared with the user card's
+  // click) is only toggled on the not-isolating <-> isolating transition —
+  // switching between collections (or from the user card's own-items-only
+  // view) stays isolated throughout.
+  const handleCollectionBadgeClick = (collectionId: string) => {
+    setBorderFlashActive(true);
+    const wasIsolating = expandedCollectionId !== null || isolatedViaUserCard;
+    const next = expandedCollectionId === collectionId ? null : collectionId;
+    setExpandedCollectionId(next);
+    setIsolatedViaUserCard(false);
+    if (wasIsolating !== (next !== null)) {
+      isolateOwnBranchRef.current?.();
+    }
+  };
+
+  // Clicking the user card jumps to the isolated view of just the viewer's
+  // own collected items — no collection merged in (previewItems only ever
+  // comes from expandedCollection, which this keeps null) — and fades the
+  // collection badges out while that view is up. A collection expanded at
+  // the time switches to this mode without leaving isolation; clicking the
+  // user card again while already in it exits isolation entirely.
+  const handleUserCardActivate = () => {
+    if (expandedCollectionId !== null) {
+      setExpandedCollectionId(null);
+      setIsolatedViaUserCard(true);
+      return;
+    }
+    setIsolatedViaUserCard((current) => !current);
+    isolateOwnBranchRef.current?.();
   };
 
   // Mirrors openCollectionView in reverse: fade the collection view out,
@@ -199,43 +265,57 @@ function Home({ onEntranceComplete }: HomeProps) {
     return () => window.clearTimeout(collectionTransitionTimeoutRef.current);
   }, []);
 
+  // Checks every available collection's "already collected from" status in
+  // parallel, so each badge can independently decide whether to show.
   useEffect(() => {
     const currentUser = getStoredUser();
-    if (!currentUser || !activeCollection) {
-      setAlreadyCollected(false);
-      setStatusChecked(true);
+    if (!currentUser || !collections || collections.length === 0) {
+      setCollectedStatus({});
       return;
     }
 
     let cancelled = false;
-    setStatusChecked(false);
-    void hasCollectedFrom(currentUser.id, activeCollection._id)
-      .then((collected) => {
-        if (!cancelled) setAlreadyCollected(collected);
-      })
-      .catch((error) => {
-        console.error('Failed to check collection status', error);
-        if (!cancelled) setAlreadyCollected(false);
-      })
-      .finally(() => {
-        if (!cancelled) setStatusChecked(true);
-      });
+    collections.forEach((collection) => {
+      void hasCollectedFrom(currentUser.id, collection._id)
+        .then((collected) => {
+          if (!cancelled) {
+            setCollectedStatus((prev) => ({
+              ...prev,
+              [collection._id]: collected,
+            }));
+          }
+        })
+        .catch((error) => {
+          console.error('Failed to check collection status', error);
+          if (!cancelled) {
+            setCollectedStatus((prev) => ({
+              ...prev,
+              [collection._id]: false,
+            }));
+          }
+        });
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [activeCollection]);
+  }, [collections]);
 
-  // Resetting a collection timer via the debug panel should bring the
+  // Resetting a collection timer via the debug panel should bring every
   // countdown back even if it was already collected/dismissed.
   useEffect(() => {
     const onDebugChange = () => {
-      setAlreadyCollected(false);
-      setStatusChecked(true);
+      setCollectedStatus((prev) => {
+        const next = { ...prev };
+        (collections ?? []).forEach((collection) => {
+          next[collection._id] = false;
+        });
+        return next;
+      });
     };
     window.addEventListener(DEBUG_TIMERS_EVENT, onDebugChange);
     return () => window.removeEventListener(DEBUG_TIMERS_EVENT, onDebugChange);
-  }, []);
+  }, [collections]);
 
   if (isLoading || isCollectedLoading) {
     return <p className="home-status">Loading timeline…</p>;
@@ -253,12 +333,16 @@ function Home({ onEntranceComplete }: HomeProps) {
     <section className="home">
       <div
         className={`home__canvas-layer${
-          canvasHidden ? ' home__canvas-layer--hidden' : ''
+          canvasHidden ? ' home__canvas-layer--dimmed' : ''
         }`}
       >
         <TimelineCanvas
           items={timeline.items}
           collectedRows={collectedRows}
+          previewItems={expandedCollection?.content ?? undefined}
+          previewColour={getStoredColour() ?? DEFAULT_COLOUR}
+          highlightedPreviewContentId={highlightedCollectionItemId}
+          onPreviewItemHover={setHoveredCollectionItemId}
           colour={timeline.colour}
           currentUsername={currentUsername}
           highlightedType={highlightedType}
@@ -281,8 +365,7 @@ function Home({ onEntranceComplete }: HomeProps) {
         <div className="top-right-stack">
           <div ref={userCardWrapRef}>
             <UserCard
-              refreshSignal={collectedSignal}
-              onActivate={() => isolateOwnBranchRef.current?.()}
+              onActivate={handleUserCardActivate}
               onHoverChange={setOwnBranchHover}
             />
           </div>
@@ -295,18 +378,73 @@ function Home({ onEntranceComplete }: HomeProps) {
               }
             />
           )}
+          {!canvasHidden &&
+            (collections ?? [])
+              .filter((collection) => collectedStatus[collection._id] === false)
+              .map((collection) => (
+                <div
+                  className={`collection-card-stack${
+                    isolatedViaUserCard ? ' collection-card-stack--hidden' : ''
+                  }`}
+                  key={collection._id}
+                >
+                  <CollectionCountdown
+                    collection={collection}
+                    onClick={() => handleCollectionBadgeClick(collection._id)}
+                  />
+                  <div
+                    className={`collection-card-titles${
+                      expandedCollectionId === collection._id
+                        ? ' collection-card-titles--visible'
+                        : ''
+                    }`}
+                  >
+                    {(collection.content ?? []).map((item, index) => (
+                      <button
+                        key={item._id}
+                        type="button"
+                        className={`collection-card-title${
+                          item._id === highlightedCollectionItemId
+                            ? ' collection-card-title--active'
+                            : ''
+                        }`}
+                        style={
+                          { '--title-index': index } as React.CSSProperties
+                        }
+                        onClick={() =>
+                          setSelectedItemIndexByCollection((prev) => ({
+                            ...prev,
+                            [collection._id]: index,
+                          }))
+                        }
+                        onMouseEnter={() =>
+                          setHoveredCollectionItemId(item._id)
+                        }
+                        onMouseLeave={() =>
+                          setHoveredCollectionItemId((current) =>
+                            current === item._id ? null : current
+                          )
+                        }
+                      >
+                        {item.title}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
         </div>
       </div>
-      {statusChecked &&
-        activeCollection &&
-        !alreadyCollected &&
-        !canvasHidden && (
-          <CollectionCountdown
-            collection={activeCollection}
-            onClick={openCollectionView}
-          />
-        )}
-      {viewerOpen && activeCollection && (
+      <div
+        className={`screen-border-flash${
+          borderFlashActive ? ' screen-border-flash--visible' : ''
+        }`}
+        style={
+          {
+            '--flash-colour': getStoredColour() ?? DEFAULT_COLOUR,
+          } as React.CSSProperties
+        }
+      />
+      {viewerOpen && collections?.[0] && (
         <div
           className={`collection-view${
             viewerLeaving ? ' collection-view--leaving' : ''
@@ -320,9 +458,9 @@ function Home({ onEntranceComplete }: HomeProps) {
             />
           </div>
           <CollectionViewer
-            collection={activeCollection}
+            collection={collections[0]}
             onClose={closeCollectionView}
-            onCollected={handleCollected}
+            onCollected={() => handleCollected(collections[0]._id)}
             onFocusItemChange={handleFocusItemChange}
           />
         </div>
