@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { formatMainTimelineDate } from '../queries/mainTimeline';
 import { usePastEvents } from '../queries/events';
 
@@ -18,8 +19,12 @@ function Events() {
       )}
       {!isLoading && !isError && events.length > 0 && (
         <ul className="events__list">
-          {events.map((event) => (
-            <li key={event._id} className="events__row">
+          {events.map((event, index) => (
+            <li
+              key={event._id}
+              className="events__row"
+              style={{ '--row-index': index } as CSSProperties}
+            >
               <p className="events__date">
                 {formatMainTimelineDate(event.date)}
               </p>

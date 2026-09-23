@@ -36,9 +36,6 @@ import { prefersReducedMotion } from '../utils/motionPreference';
 
 // How long the timeline fades out before the collection view appears, and
 // how long the collection view fades out before the timeline reappears.
-// Matches EMenu's screen-fade transition duration (index.css's `main`/
-// `main--leaving`), so opening/closing a collection reads as the same kind
-// of transition as navigating between screens.
 const COLLECTION_FADE_MS = 400;
 
 type HomeProps = {
@@ -182,8 +179,7 @@ function Home({ onEntranceComplete }: HomeProps) {
   };
 
   // Fades the timeline out, then reveals the collection view once that
-  // finishes — the same "animate, then reveal/navigate once it finishes"
-  // idiom EMenu.tsx uses for its own screen transition.
+  // finishes.
   const openCollectionView = () => {
     setCanvasHidden(true);
     window.clearTimeout(collectionTransitionTimeoutRef.current);
