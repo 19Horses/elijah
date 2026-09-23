@@ -162,8 +162,9 @@ function Home({ onEntranceComplete }: HomeProps) {
   // The collection whose badge is currently expanded — its items are what
   // merge into the isolated timeline on canvas.
   const expandedCollection =
-    collections?.find((collection) => collection._id === expandedCollectionId) ??
-    null;
+    collections?.find(
+      (collection) => collection._id === expandedCollectionId
+    ) ?? null;
   const expandedSelectedItemId =
     expandedCollection?.content?.[
       selectedItemIndexByCollection[expandedCollection._id] ?? 0
@@ -287,7 +288,10 @@ function Home({ onEntranceComplete }: HomeProps) {
         .catch((error) => {
           console.error('Failed to check collection status', error);
           if (!cancelled) {
-            setCollectedStatus((prev) => ({ ...prev, [collection._id]: false }));
+            setCollectedStatus((prev) => ({
+              ...prev,
+              [collection._id]: false,
+            }));
           }
         });
     });
@@ -404,14 +408,18 @@ function Home({ onEntranceComplete }: HomeProps) {
                             ? ' collection-card-title--active'
                             : ''
                         }`}
-                        style={{ '--title-index': index } as React.CSSProperties}
+                        style={
+                          { '--title-index': index } as React.CSSProperties
+                        }
                         onClick={() =>
                           setSelectedItemIndexByCollection((prev) => ({
                             ...prev,
                             [collection._id]: index,
                           }))
                         }
-                        onMouseEnter={() => setHoveredCollectionItemId(item._id)}
+                        onMouseEnter={() =>
+                          setHoveredCollectionItemId(item._id)
+                        }
                         onMouseLeave={() =>
                           setHoveredCollectionItemId((current) =>
                             current === item._id ? null : current
@@ -430,7 +438,11 @@ function Home({ onEntranceComplete }: HomeProps) {
         className={`screen-border-flash${
           borderFlashActive ? ' screen-border-flash--visible' : ''
         }`}
-        style={{ '--flash-colour': getStoredColour() ?? DEFAULT_COLOUR } as React.CSSProperties}
+        style={
+          {
+            '--flash-colour': getStoredColour() ?? DEFAULT_COLOUR,
+          } as React.CSSProperties
+        }
       />
       {viewerOpen && collections?.[0] && (
         <div

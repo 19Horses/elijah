@@ -839,9 +839,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     return gaps;
   };
 
-  const getCollectedBounds = (
-    rowGrowthOverride?: number
-  ): ContentBounds[] => {
+  const getCollectedBounds = (rowGrowthOverride?: number): ContentBounds[] => {
     // Grows the row spacing as the camera zooms out, faster than the
     // nodes/lines themselves thicken (LANE_GAP_GROWTH_POWER > the line/node
     // growth power), so rows keep pulling further apart at extreme zoom-out
@@ -1085,7 +1083,12 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       };
       minX = Math.min(minX, rect.left);
       maxX = Math.max(maxX, rect.right);
-      return { kind: 'preview', index: e.index, contentId: item.contentId, rect };
+      return {
+        kind: 'preview',
+        index: e.index,
+        contentId: item.contentId,
+        rect,
+      };
     });
 
     return { entries, centroid, minX, maxX };

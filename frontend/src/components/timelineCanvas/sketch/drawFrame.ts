@@ -342,10 +342,7 @@ export function createDrawFrameHandler(
       // Isolating the viewer's own branch, though, fades everything that isn't
       // part of it away: the main timeline's own items and every other
       // collector's items, leaving just the isolated branch straightened out.
-      if (
-        isolateActive &&
-        (lane === 'main' || !isIsolatedItem(index))
-      ) {
+      if (isolateActive && (lane === 'main' || !isIsolatedItem(index))) {
         alpha *= 1 - isolate;
       }
       return alpha;
@@ -365,8 +362,7 @@ export function createDrawFrameHandler(
         // line, so the straightened branch is evenly spaced.
         const targetCX = getIsolatedTargetCenterX(index);
         const baseCX = (base.left + base.right) / 2;
-        const dx =
-          targetCX !== null ? (targetCX - baseCX) * isolate : 0;
+        const dx = targetCX !== null ? (targetCX - baseCX) * isolate : 0;
         return {
           ...base,
           left: base.left + dx,
@@ -644,14 +640,16 @@ export function createDrawFrameHandler(
       // Publish the straightened rects (collected and collectible alike) so a
       // click can hit-test where they actually appear (on the main line)
       // rather than their branch positions.
-      runtime.isolatedRegions = isolatedOrdered.map(({ kind, index, rect }) => ({
-        left: rect.left,
-        top: rect.top,
-        right: rect.right,
-        bottom: rect.top + rect.height,
-        index,
-        lane: kind,
-      }));
+      runtime.isolatedRegions = isolatedOrdered.map(
+        ({ kind, index, rect }) => ({
+          left: rect.left,
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.top + rect.height,
+          index,
+          lane: kind,
+        })
+      );
 
       // The collectible items have no prior on-screen position to ease from
       // (they only exist while isolating), so they simply fade in at their

@@ -290,7 +290,9 @@ export type TimelineSketchRefs = {
   highlightedPreviewIdRef: RefObject<string | null>;
   // Sketch → React: reports the content id of whichever collectible item the
   // pointer is over on the canvas (or null).
-  onPreviewHoverRef: RefObject<((contentId: string | null) => void) | undefined>;
+  onPreviewHoverRef: RefObject<
+    ((contentId: string | null) => void) | undefined
+  >;
   // React → sketch: swaps in a new set of collectible items (and loads their
   // images) without remounting the whole canvas — switching which collection
   // is expanded must not tear down the running sketch's camera/isolate state.

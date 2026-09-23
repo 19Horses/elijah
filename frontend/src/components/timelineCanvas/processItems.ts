@@ -143,7 +143,8 @@ export function buildProcessedCollectionPreview(
         slug: item.slug ?? null,
         imageUrl: item.imageUrl,
         title: item.title,
-        aspectRatio: item.imageDimensions?.aspectRatio || ITEM_WIDTH / IMAGE_HEIGHT,
+        aspectRatio:
+          item.imageDimensions?.aspectRatio || ITEM_WIDTH / IMAGE_HEIGHT,
         anchorTime,
       };
     })

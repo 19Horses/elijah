@@ -511,10 +511,8 @@ export function createViewContext(
     resetCanvasFocus(runtime);
     computeFitViewTargets();
 
-    const worldX =
-      runtime.targetCameraX + p.width / (2 * runtime.targetZoom);
-    const worldY =
-      runtime.targetCameraY + p.height / (2 * runtime.targetZoom);
+    const worldX = runtime.targetCameraX + p.width / (2 * runtime.targetZoom);
+    const worldY = runtime.targetCameraY + p.height / (2 * runtime.targetZoom);
     runtime.zoom = runtime.targetZoom * ENTRANCE_ZOOM_START_FACTOR;
     runtime.cameraX = worldX - p.width / (2 * runtime.zoom);
     runtime.cameraY = worldY - p.height / (2 * runtime.zoom);

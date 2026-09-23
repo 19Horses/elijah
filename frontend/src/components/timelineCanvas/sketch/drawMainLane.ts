@@ -646,7 +646,8 @@ export function createMainLaneDrawHelpers(deps: TimelineSketchDeps) {
   const isFocusedTarget = (
     lane: 'main' | 'collected' | 'preview',
     index: number
-  ) => runtime.focusTarget?.lane === lane && runtime.focusTarget.index === index;
+  ) =>
+    runtime.focusTarget?.lane === lane && runtime.focusTarget.index === index;
 
   // The focused image stays at its world bounds — the camera frames it at the
   // detail position — so the draw bounds are just the item's own bounds.

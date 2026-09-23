@@ -80,7 +80,10 @@ export function resetCanvasFocus(runtime: TimelineRuntime): void {
 
 export function getFocusedSlug(
   target: FocusTarget,
-  deps: Pick<TimelineSketchDeps, 'items' | 'processedCollected' | 'processedPreview'>
+  deps: Pick<
+    TimelineSketchDeps,
+    'items' | 'processedCollected' | 'processedPreview'
+  >
 ): string | null {
   if (target.lane === 'main') {
     return deps.items[target.index]?.slug ?? null;

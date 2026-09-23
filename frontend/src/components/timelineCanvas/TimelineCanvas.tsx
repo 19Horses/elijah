@@ -84,7 +84,8 @@ function TimelineCanvas({
   );
   const onPreviewHoverRef = useRef(onPreviewItemHover);
   const reloadPreviewRef = useRef<
-    ((items: ReturnType<typeof buildProcessedCollectionPreview>) => void) | undefined
+    | ((items: ReturnType<typeof buildProcessedCollectionPreview>) => void)
+    | undefined
   >(undefined);
   const beginPreviewFadeOutRef = useRef<(() => void) | undefined>(undefined);
   const prevPreviewItemsRef = useRef<CollectionContent[]>(EMPTY_PREVIEW_ITEMS);
@@ -273,10 +274,10 @@ function TimelineCanvas({
       p5InstanceRef.current = null;
       container.replaceChildren();
     };
-  // previewItems is deliberately not a dependency here — its initial value is
-  // read once below for the sketch's first mount, but subsequent changes are
-  // hot-swapped via reloadPreviewRef (above) instead of remounting the whole
-  // canvas.
+    // previewItems is deliberately not a dependency here — its initial value is
+    // read once below for the sketch's first mount, but subsequent changes are
+    // hot-swapped via reloadPreviewRef (above) instead of remounting the whole
+    // canvas.
   }, [items, collectedRows, previewColour, colour, currentUsername]);
 
   return (
