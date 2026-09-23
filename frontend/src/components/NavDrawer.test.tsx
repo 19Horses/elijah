@@ -1,41 +1,34 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import EMenu from './EMenu';
+import NavDrawer from './NavDrawer';
 
 function LocationDisplay() {
   const location = useLocation();
   return <div data-testid="location">{location.pathname}</div>;
 }
 
-// Defaults to the timeline screen itself, since most of these tests are
-// about the hover/toggle interaction rather than the cross-screen
-// navigate-back behavior (covered separately below). Wrapped in a real
-// <main>, since EMenu looks one up via document.querySelector to apply the
-// screen-fade class before navigating.
 function renderMenu(initialEntries: string[] = ['/home']) {
+  const queryClient = new QueryClient();
   const result = render(
-    <MemoryRouter initialEntries={initialEntries}>
-      <main>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={initialEntries}>
         <Routes>
-          <Route path="*" element={<EMenu />} />
+          <Route path="*" element={<NavDrawer />} />
         </Routes>
-      </main>
-      <LocationDisplay />
-    </MemoryRouter>
+        <LocationDisplay />
+      </MemoryRouter>
+    </QueryClientProvider>
   );
   const section = result.container.querySelector('.e-menu');
   if (!section) {
     throw new Error('Expected to find the .e-menu section wrapper');
   }
-  const main = result.container.querySelector('main');
-  if (!main) {
-    throw new Error('Expected to find a main element');
-  }
-  return { ...result, section, main };
+  return { ...result, section };
 }
 
-describe('EMenu', () => {
+describe('NavDrawer', () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -61,8 +54,6 @@ describe('EMenu', () => {
     const { section } = renderMenu();
     fireEvent.mouseEnter(section);
     fireEvent.mouseLeave(section);
-    // Still open immediately after leaving - covers the moment the pointer
-    // is in transit toward an item, over empty space.
     expect(screen.getByRole('menuitem', { name: 'Shop' })).toBeTruthy();
     act(() => {
       vi.advanceTimersByTime(300);
@@ -100,30 +91,42 @@ describe('EMenu', () => {
     expect(shopLink.getAttribute('href')).toBe('/shop');
   });
 
-  test('clicking the e on a non-timeline screen fades the screen out, then navigates back to the timeline', () => {
-    const { main } = renderMenu(['/shop']);
+  test('clicking Shop opens the drawer and navigates to /shop immediately', () => {
+    renderMenu(['/home']);
     fireEvent.click(screen.getByRole('button', { name: 'e' }));
-    // Still on /shop immediately - fading out first, not toggling in place.
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Shop' }));
     expect(screen.getByTestId('location').textContent).toBe('/shop');
-    expect(main.classList.contains('main--leaving')).toBe(true);
-    expect(screen.queryByRole('menuitem', { name: 'Shop' })).toBeNull();
-    act(() => {
-      vi.advanceTimersByTime(400);
-    });
+    expect(document.querySelector('.nav-drawer__panel--open')).not.toBeNull();
+  });
+
+  test('the active drawer item is highlighted while its content is open', () => {
+    renderMenu(['/shop']);
+    const shopLink = screen.getByRole('menuitem', { name: 'Shop' });
+    expect(shopLink.className).toContain('e-menu__item--active');
+  });
+
+  test('the menu list stays visible while the drawer is open, without hovering', () => {
+    renderMenu(['/shop']);
+    expect(screen.getByRole('menuitem', { name: 'Shop' })).toBeTruthy();
+  });
+
+  test('clicking the active item again closes the drawer', () => {
+    renderMenu(['/shop']);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Shop' }));
     expect(screen.getByTestId('location').textContent).toBe('/home');
   });
 
-  test('clicking Shop fades the timeline out, then navigates to /shop', () => {
-    const { main } = renderMenu(['/home']);
-    fireEvent.click(screen.getByRole('button', { name: 'e' }));
-    const shopLink = screen.getByRole('menuitem', { name: 'Shop' });
-    fireEvent.click(shopLink);
-    // Still on /home immediately - fading out first.
+  test('clicking the backdrop closes the drawer', () => {
+    renderMenu(['/shop']);
+    const backdrop = document.querySelector('.nav-drawer__backdrop');
+    if (!backdrop) throw new Error('Expected to find the backdrop');
+    fireEvent.click(backdrop);
     expect(screen.getByTestId('location').textContent).toBe('/home');
-    expect(main.classList.contains('main--leaving')).toBe(true);
-    act(() => {
-      vi.advanceTimersByTime(400);
-    });
-    expect(screen.getByTestId('location').textContent).toBe('/shop');
+  });
+
+  test('pressing Escape closes the drawer', () => {
+    renderMenu(['/events']);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByTestId('location').textContent).toBe('/home');
   });
 });
