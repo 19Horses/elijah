@@ -13,6 +13,12 @@ export type Collection = {
   name: string;
   slug: string | null;
   description: string | null;
+  imageUrl: string | null;
+  imageDimensions: {
+    width: number;
+    height: number;
+    aspectRatio: number;
+  } | null;
   expiresAt: string | null;
   unlockTime: string | null;
   created_at: string;
@@ -24,6 +30,8 @@ const COLLECTIONS_QUERY = `*[_type == "collection" && expiresAt > now()] | order
   name,
   "slug": slug.current,
   description,
+  "imageUrl": image.asset->url,
+  "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio},
   expiresAt,
   unlockTime,
   "created_at": _createdAt,

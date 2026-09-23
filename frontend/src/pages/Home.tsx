@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import CollectedBranchStrip, {
   type BranchStripPreviewItem,
 } from '../components/CollectedBranchStrip';
@@ -43,6 +44,8 @@ type HomeProps = {
 };
 
 function Home({ onEntranceComplete }: HomeProps) {
+  const { pathname } = useLocation();
+  const drawerOpen = pathname === '/shop' || pathname === '/events';
   const queryClient = useQueryClient();
   const { data: timeline, isLoading, error } = useMainTimeline();
   const { data: collections } = useCollections();
@@ -59,7 +62,6 @@ function Home({ onEntranceComplete }: HomeProps) {
     null
   );
   const collectionTransitionTimeoutRef = useRef<number | undefined>(undefined);
-  const [borderFlashActive, setBorderFlashActive] = useState(false);
   // Which collection's badge is currently expanded (showing its item list and
   // driving the canvas merge) — null when none is. Only one at a time.
   const [expandedCollectionId, setExpandedCollectionId] = useState<
@@ -69,6 +71,8 @@ function Home({ onEntranceComplete }: HomeProps) {
   // badges fade out and the isolated timeline shows only the viewer's own
   // collected items, with no collection merged in.
   const [isolatedViaUserCard, setIsolatedViaUserCard] = useState(false);
+  const borderFlashActive =
+    expandedCollectionId !== null || isolatedViaUserCard;
   // Each collection remembers its own selected item index independently.
   const [selectedItemIndexByCollection, setSelectedItemIndexByCollection] =
     useState<Record<string, number>>({});
@@ -189,17 +193,20 @@ function Home({ onEntranceComplete }: HomeProps) {
     );
   };
 
-  // Clicking a collection badge flashes a border around the screen in the
-  // user's colour (and stays), and lists that collection's item titles below
-  // it — instead of opening the collection view. Only one collection can be
+  // Clicking a collection badge lists that collection's item titles below it
+  // — instead of opening the collection view. Only one collection can be
   // expanded at a time; clicking a different one swaps which is expanded
   // without leaving the isolated view, clicking the same one again closes it.
   // The isolated, straightened view itself (shared with the user card's
   // click) is only toggled on the not-isolating <-> isolating transition —
   // switching between collections (or from the user card's own-items-only
   // view) stays isolated throughout.
+  const handleBranchIsolationExit = () => {
+    setExpandedCollectionId(null);
+    setIsolatedViaUserCard(false);
+  };
+
   const handleCollectionBadgeClick = (collectionId: string) => {
-    setBorderFlashActive(true);
     const wasIsolating = expandedCollectionId !== null || isolatedViaUserCard;
     const next = expandedCollectionId === collectionId ? null : collectionId;
     setExpandedCollectionId(next);
@@ -330,7 +337,7 @@ function Home({ onEntranceComplete }: HomeProps) {
       <div
         className={`home__canvas-layer${
           canvasHidden ? ' home__canvas-layer--dimmed' : ''
-        }`}
+        }${drawerOpen ? ' home__canvas-layer--drawer-open' : ''}`}
       >
         <TimelineCanvas
           items={timeline.items}
@@ -353,12 +360,17 @@ function Home({ onEntranceComplete }: HomeProps) {
           onDetailLayoutStart={handleDetailLayoutStart}
           onDetailImageRect={handleDetailImageRect}
           onEntranceComplete={onEntranceComplete}
+          onBranchIsolationExit={handleBranchIsolationExit}
         />
         <TimelineDetailOverlay
           detail={timelineDetail}
           imageRect={detailImageRect}
         />
-        <div className="top-right-stack">
+        <div
+          className={`top-right-stack${
+            drawerOpen ? ' top-right-stack--drawer-open' : ''
+          }`}
+        >
           <div ref={userCardWrapRef}>
             <UserCard
               onActivate={handleUserCardActivate}
@@ -389,42 +401,64 @@ function Home({ onEntranceComplete }: HomeProps) {
                     onClick={() => handleCollectionBadgeClick(collection._id)}
                   />
                   <div
-                    className={`collection-card-titles${
+                    className={`collection-card-panel${
                       expandedCollectionId === collection._id
-                        ? ' collection-card-titles--visible'
+                        ? ' collection-card-panel--visible'
                         : ''
                     }`}
                   >
-                    {(collection.content ?? []).map((item, index) => (
-                      <button
-                        key={item._id}
-                        type="button"
-                        className={`collection-card-title${
-                          item._id === highlightedCollectionItemId
-                            ? ' collection-card-title--active'
-                            : ''
-                        }`}
+                    {collection.imageUrl && (
+                      <img
+                        src={collection.imageUrl}
+                        alt={collection.name}
+                        className="collection-card-image"
                         style={
-                          { '--title-index': index } as React.CSSProperties
+                          collection.imageDimensions
+                            ? ({
+                                '--card-image-aspect-ratio':
+                                  collection.imageDimensions.aspectRatio,
+                              } as React.CSSProperties)
+                            : undefined
                         }
-                        onClick={() =>
-                          setSelectedItemIndexByCollection((prev) => ({
-                            ...prev,
-                            [collection._id]: index,
-                          }))
-                        }
-                        onMouseEnter={() =>
-                          setHoveredCollectionItemId(item._id)
-                        }
-                        onMouseLeave={() =>
-                          setHoveredCollectionItemId((current) =>
-                            current === item._id ? null : current
-                          )
-                        }
-                      >
-                        {item.title}
-                      </button>
-                    ))}
+                      />
+                    )}
+                    {collection.description && (
+                      <div className="collection-card-description">
+                        {collection.description}
+                      </div>
+                    )}
+                    <div className="collection-card-titles">
+                      {(collection.content ?? []).map((item, index) => (
+                        <button
+                          key={item._id}
+                          type="button"
+                          className={`collection-card-title${
+                            item._id === highlightedCollectionItemId
+                              ? ' collection-card-title--active'
+                              : ''
+                          }`}
+                          style={
+                            { '--title-index': index } as React.CSSProperties
+                          }
+                          onClick={() =>
+                            setSelectedItemIndexByCollection((prev) => ({
+                              ...prev,
+                              [collection._id]: index,
+                            }))
+                          }
+                          onMouseEnter={() =>
+                            setHoveredCollectionItemId(item._id)
+                          }
+                          onMouseLeave={() =>
+                            setHoveredCollectionItemId((current) =>
+                              current === item._id ? null : current
+                            )
+                          }
+                        >
+                          {item.title}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               ))}

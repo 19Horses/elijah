@@ -47,6 +47,7 @@ export type TimelineCanvasProps = {
   onDetailLayoutStart?: () => void;
   onDetailImageRect?: (rect: DetailImageRect) => void;
   onEntranceComplete?: () => void;
+  onBranchIsolationExit?: () => void;
 };
 
 export type DetailImageRect = {
@@ -274,6 +275,7 @@ export type TimelineSketchRefs = {
   onBranchFocusRef: RefObject<
     ((info: BranchFocusInfo | null) => void) | undefined
   >;
+  onBranchIsolationExitRef: RefObject<(() => void) | undefined>;
   // Sketch → React: reports the mini-player state (or null to hide it).
   onAudioStateChangeRef: RefObject<
     ((state: AudioPlayerState | null) => void) | undefined
