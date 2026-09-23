@@ -832,6 +832,7 @@ export function createViewContext(
     // clears it once the progress reaches zero.
     runtime.branchIsolateActive = false;
     animateToFitAll();
+    deps.refs.onBranchIsolationExitRef.current?.();
   };
 
   const toggleOwnBranchIsolation = () => {

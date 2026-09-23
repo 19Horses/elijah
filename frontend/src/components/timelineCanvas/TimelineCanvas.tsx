@@ -49,6 +49,7 @@ function TimelineCanvas({
   onDetailLayoutStart,
   onDetailImageRect,
   onEntranceComplete,
+  onBranchIsolationExit,
 }: TimelineCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const interactionLockedRef = useRef(false);
@@ -65,6 +66,7 @@ function TimelineCanvas({
   const onBranchFocusRef = useRef<
     ((info: BranchFocusInfo | null) => void) | undefined
   >(setBranchFocus);
+  const onBranchIsolationExitRef = useRef(onBranchIsolationExit);
   const resetViewRef = useRef<(() => void) | undefined>(undefined);
   const localIsolateRef = useRef<(() => void) | undefined>(undefined);
   const isolateOwnBranchRef = isolateControlRef ?? localIsolateRef;
@@ -111,6 +113,10 @@ function TimelineCanvas({
   }, [onContentUnfocus]);
 
   useEffect(() => {
+    onBranchIsolationExitRef.current = onBranchIsolationExit;
+  }, [onBranchIsolationExit]);
+
+  useEffect(() => {
     onDetailLayoutStartRef.current = onDetailLayoutStart;
   }, [onDetailLayoutStart]);
 
@@ -154,6 +160,14 @@ function TimelineCanvas({
 
   useEffect(() => {
     const preventScrollWhileFocused = (event: WheelEvent) => {
+      if (
+        event.target instanceof HTMLElement &&
+        event.target.closest('.collection-card-description')
+      ) {
+        event.stopImmediatePropagation();
+        return;
+      }
+
       const overlay = document.querySelector('.timeline-detail');
 
       // A detail is open: the wheel scrolls its text (wherever the cursor is,
@@ -237,6 +251,7 @@ function TimelineCanvas({
         onDetailImageRectRef,
         onEntranceCompleteRef,
         onBranchFocusRef,
+        onBranchIsolationExitRef,
         onAudioStateChangeRef,
         resetViewRef,
         isolateOwnBranchRef,
