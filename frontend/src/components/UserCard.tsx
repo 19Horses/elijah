@@ -14,7 +14,9 @@ function UserCard({
   onHoverChange,
 }: UserCardProps) {
   const [user, setUser] = useState(() => getStoredUser());
-  const [colour, setColour] = useState(() => getStoredColour() ?? DEFAULT_COLOUR);
+  const [colour, setColour] = useState(
+    () => getStoredColour() ?? DEFAULT_COLOUR
+  );
 
   useEffect(() => {
     const sync = () => {
