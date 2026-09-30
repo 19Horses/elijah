@@ -45,7 +45,8 @@ type HomeProps = {
 
 function Home({ onEntranceComplete }: HomeProps) {
   const { pathname } = useLocation();
-  const drawerOpen = pathname === '/shop' || pathname === '/events';
+  const drawerOpen =
+    pathname === '/shop' || pathname === '/events' || pathname === '/login';
   const queryClient = useQueryClient();
   const { data: timeline, isLoading, error } = useMainTimeline();
   const { data: collections } = useCollections();

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { getStoredUser } from '../services/userStorage';
+import { useEffect, useState } from 'react';
+import { getStoredUser, USER_CHANGED_EVENT } from '../services/userStorage';
 import { DEFAULT_COLOUR, getStoredColour } from '../services/userColor';
 
 type UserCardProps = {
@@ -13,8 +13,19 @@ function UserCard({
   onActivate,
   onHoverChange,
 }: UserCardProps) {
-  const [user] = useState(() => getStoredUser());
-  const [colour] = useState(() => getStoredColour() ?? DEFAULT_COLOUR);
+  const [user, setUser] = useState(() => getStoredUser());
+  const [colour, setColour] = useState(
+    () => getStoredColour() ?? DEFAULT_COLOUR
+  );
+
+  useEffect(() => {
+    const sync = () => {
+      setUser(getStoredUser());
+      setColour(getStoredColour() ?? DEFAULT_COLOUR);
+    };
+    window.addEventListener(USER_CHANGED_EVENT, sync);
+    return () => window.removeEventListener(USER_CHANGED_EVENT, sync);
+  }, []);
 
   if (!user) return null;
 
