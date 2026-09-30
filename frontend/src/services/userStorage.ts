@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'elijah:user';
+export const USER_CHANGED_EVENT = 'elijah:user-changed';
 
 export type StoredUser = {
   id: string;
@@ -8,6 +9,7 @@ export type StoredUser = {
 
 export function storeUser(user: StoredUser): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+  window.dispatchEvent(new Event(USER_CHANGED_EVENT));
 }
 
 export function getStoredUser(): StoredUser | null {
@@ -30,4 +32,5 @@ export function getStoredUser(): StoredUser | null {
 
 export function clearStoredUser(): void {
   localStorage.removeItem(STORAGE_KEY);
+  window.dispatchEvent(new Event(USER_CHANGED_EVENT));
 }

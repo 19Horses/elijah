@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Events from '../pages/Events';
+import Login from '../pages/Login';
 import Shop from '../pages/Shop';
 
 const CLOSE_GRACE_MS = 300;
@@ -43,7 +44,13 @@ function NavDrawer() {
   const navigate = useNavigate();
 
   const drawerRoute =
-    pathname === '/shop' ? 'shop' : pathname === '/events' ? 'events' : null;
+    pathname === '/shop'
+      ? 'shop'
+      : pathname === '/events'
+      ? 'events'
+      : pathname === '/login'
+      ? 'login'
+      : null;
   const drawerOpen = drawerRoute !== null;
   const listOpen = hoverOpen || drawerOpen;
 
@@ -126,7 +133,7 @@ function NavDrawer() {
       <div
         className={`e-menu${isVisible ? ' e-menu--visible' : ''}${
           listOpen ? ' e-menu--open' : ''
-        }`}
+        }${drawerOpen ? ' e-menu--drawer-open' : ''}`}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         style={
@@ -203,14 +210,31 @@ function NavDrawer() {
           >
             Shop
           </Link>
-          <button
-            type="button"
+          <Link
+            to="/login"
             role="menuitem"
-            className="e-menu__item e-menu__item--login"
+            className={`e-menu__item e-menu__item--login${
+              pathname === '/login' ? ' e-menu__item--active' : ''
+            }`}
+            aria-current={pathname === '/login' ? 'page' : undefined}
             tabIndex={listOpen ? 0 : -1}
+            onClick={(event) => {
+              if (
+                event.defaultPrevented ||
+                event.button !== 0 ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+              ) {
+                return;
+              }
+              event.preventDefault();
+              goToOrClose('/login');
+            }}
           >
             Login
-          </button>
+          </Link>
           <button
             type="button"
             role="menuitem"
@@ -229,6 +253,7 @@ function NavDrawer() {
         <div className="nav-drawer__content">
           {drawerRoute === 'shop' && <Shop />}
           {drawerRoute === 'events' && <Events />}
+          {drawerRoute === 'login' && <Login />}
         </div>
       </div>
     </>
