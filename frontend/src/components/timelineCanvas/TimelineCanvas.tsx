@@ -35,6 +35,9 @@ function TimelineCanvas({
   previewColour = '#ffffff',
   highlightedPreviewContentId = null,
   onPreviewItemHover,
+  highlightedMainContentId = null,
+  focusContentIdControlRef,
+  isCollectionView = false,
   colour,
   currentUsername = null,
   highlightedType = null,
@@ -74,6 +77,13 @@ function TimelineCanvas({
     undefined
   );
   const focusItemRef = focusItemControlRef ?? localFocusItemRef;
+  const localFocusContentIdRef = useRef<
+    ((contentId: string) => void) | undefined
+  >(undefined);
+  const focusContentIdRef = focusContentIdControlRef ?? localFocusContentIdRef;
+  const setCollectionViewActiveRef = useRef<
+    ((active: boolean) => void) | undefined
+  >(undefined);
   const onAudioStateChangeRef = useRef(onAudioStateChange);
   const localAudioControlRef = useRef<((src: string) => void) | undefined>(
     undefined
@@ -85,6 +95,9 @@ function TimelineCanvas({
     highlightedPreviewContentId
   );
   const onPreviewHoverRef = useRef(onPreviewItemHover);
+  const highlightedMainContentIdRef = useRef<string | null>(
+    highlightedMainContentId
+  );
   const reloadPreviewRef = useRef<
     | ((items: ReturnType<typeof buildProcessedCollectionPreview>) => void)
     | undefined
@@ -139,6 +152,14 @@ function TimelineCanvas({
   useEffect(() => {
     onPreviewHoverRef.current = onPreviewItemHover;
   }, [onPreviewItemHover]);
+
+  useEffect(() => {
+    highlightedMainContentIdRef.current = highlightedMainContentId ?? null;
+  }, [highlightedMainContentId]);
+
+  useEffect(() => {
+    setCollectionViewActiveRef.current?.(isCollectionView);
+  }, [isCollectionView]);
 
   useEffect(() => {
     const processed = buildProcessedCollectionPreview(previewItems);
@@ -260,6 +281,9 @@ function TimelineCanvas({
         onPreviewHoverRef,
         reloadPreviewRef,
         beginPreviewFadeOutRef,
+        highlightedMainContentIdRef,
+        focusContentIdRef,
+        setCollectionViewActiveRef,
       },
     });
 

@@ -17,6 +17,11 @@ export type TimelineCanvasProps = {
   // The content id of the collectible item currently selected/hovered in the
   // caller's own item list, so the canvas can highlight the matching item.
   highlightedPreviewContentId?: string | null;
+  highlightedMainContentId?: string | null;
+  focusContentIdControlRef?: MutableRefObject<
+    ((contentId: string) => void) | undefined
+  >;
+  isCollectionView?: boolean;
   // Reports the content id of whichever collectible item the pointer is
   // currently over on the canvas (or null), so the caller's own item list
   // can mirror the highlight the other way.
@@ -207,6 +212,8 @@ export type TimelineRuntime = {
   focusTarget: FocusTarget | null;
   // Collector row the view is zoomed into via a branch click, or null.
   focusedBranchRow: number | null;
+  lastHighlightedMainContentId: string | null;
+  isCollectionViewActive: boolean;
   viewAnimating: boolean;
   viewUnfocusing: boolean;
   fitZoomLevel: number;
@@ -290,6 +297,11 @@ export type TimelineSketchRefs = {
   // React → sketch: content id of the collectible item selected/hovered in
   // the caller's own item list (or null), so the canvas can highlight it.
   highlightedPreviewIdRef: RefObject<string | null>;
+  highlightedMainContentIdRef: RefObject<string | null>;
+  focusContentIdRef: MutableRefObject<((contentId: string) => void) | undefined>;
+  setCollectionViewActiveRef: MutableRefObject<
+    ((active: boolean) => void) | undefined
+  >;
   // Sketch → React: reports the content id of whichever collectible item the
   // pointer is over on the canvas (or null).
   onPreviewHoverRef: RefObject<

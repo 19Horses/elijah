@@ -21,6 +21,10 @@ export function createTimelineSketch(
       view.toggleOwnBranchIsolation();
     // Mini-player click → jump to (focus) the item that track belongs to.
     deps.refs.focusItemRef.current = (target) => view.focusItem(target);
+    deps.refs.focusContentIdRef.current = (contentId) =>
+      view.focusContentId(contentId);
+    deps.refs.setCollectionViewActiveRef.current = (active) =>
+      view.setCollectionViewActive(active);
     const loadedImages: (p5.Image | null)[] = new Array(
       deps.processed.length
     ).fill(null);

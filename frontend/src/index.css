@@ -285,7 +285,7 @@ main.main--home {
   position: absolute;
   top: 24px;
   transform: translateX(-50%);
-  z-index: 16;
+  z-index: 9;
 }
 
 .timeline-branch-bar__label {
@@ -327,7 +327,7 @@ main.main--home {
   opacity: 0;
   pointer-events: none;
   position: fixed;
-  z-index: 15;
+  z-index: 9;
 }
 
 .timeline-detail--visible {
@@ -651,12 +651,10 @@ main.main--home {
   width: calc(100% - 8rem);
 }
 
-/* Lives inside .top-right-stack (below the user card, and the mini player
-   when present) so it always sits directly under whichever of those is
-   currently showing, regardless of their height — same reasoning as that
-   stack's own user-card/mini-player pairing. Bound to the same
-   --top-right-card-width as .user-card (rather than just relying on
-   align-items: stretch) so the badge itself is explicitly the same width. */
+/* Lives inside .top-right-stack (below the mini player when present) so it
+   always sits directly under it, regardless of height. Bound to the shared
+   --top-right-card-width (rather than just relying on align-items: stretch)
+   so the badge itself is explicitly the same width. */
 .collection-card-stack {
   width: var(--top-right-card-width);
   display: flex;
@@ -1440,21 +1438,6 @@ main.main--home {
   pointer-events: none !important;
 }
 
-.user-card {
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-radius: 0;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.12);
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  width: var(--top-right-card-width);
-  padding: 0.625rem 0.75rem;
-  animation: user-card-fade-in 0.6s ease backwards;
-}
-
 @keyframes user-card-fade-in {
   from {
     opacity: 0;
@@ -1491,26 +1474,6 @@ main.main--home {
       transparent 200%
     );
   }
-}
-
-.user-card__header {
-  align-items: center;
-  display: flex;
-  gap: 0.625rem;
-}
-
-.user-card__swatch {
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 50%;
-  flex-shrink: 0;
-  height: 18px;
-  width: 18px;
-}
-
-.user-card__username {
-  color: #111827;
-  font-size: 0.9375rem;
-  font-weight: 600;
 }
 
 /* ── Content legend ────────────────────────── */
@@ -1844,6 +1807,10 @@ main.main--home {
   pointer-events: auto;
 }
 
+.nav-drawer__backdrop--light.nav-drawer__backdrop--visible {
+  background: rgba(0, 0, 0, 0.15);
+}
+
 .nav-drawer__panel {
   -webkit-backdrop-filter: blur(16px);
   backdrop-filter: blur(16px);
@@ -1893,13 +1860,57 @@ main.main--home {
   width: 100%;
 }
 
+.collected-items-list {
+  color: rgba(255, 255, 255, 0.92);
+  display: flex;
+  flex-direction: column;
+  font-family: 'EB Garamond', 'Times New Roman', Times, serif;
+  gap: 0.75rem;
+  list-style: none;
+  margin: 0;
+  max-width: 480px;
+  padding: 0;
+}
+
+.collected-items-list--empty {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.collected-items-list__item {
+  align-items: center;
+  animation: events-row-fade-in 0.4s ease-out both;
+  animation-delay: calc(var(--row-index, 0) * 40ms);
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: 6rem minmax(0, 1fr) 6rem;
+}
+
+.collected-items-list__date {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.collected-items-list__title {
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1.5;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collected-items-list__type {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.875rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .signup-form {
     transition: none;
-  }
-
-  .user-card {
-    animation: none;
   }
 
   .e-menu--visible {

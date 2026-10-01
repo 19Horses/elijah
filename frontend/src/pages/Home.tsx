@@ -1,5 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from 'react';
 import { useLocation } from 'react-router-dom';
 import CollectedBranchStrip, {
   type BranchStripPreviewItem,
@@ -16,7 +23,6 @@ import type {
 import TimelineDetailOverlay, {
   type TimelineDetailView,
 } from '../components/TimelineDetailOverlay';
-import UserCard from '../components/UserCard';
 import {
   getContentDetailDateLabel,
   getContentDetailDescription,
@@ -41,12 +47,24 @@ const COLLECTION_FADE_MS = 400;
 
 type HomeProps = {
   onEntranceComplete?: () => void;
+  highlightedContentId?: string | null;
+  focusContentIdControlRef?: MutableRefObject<
+    ((contentId: string) => void) | undefined
+  >;
 };
 
-function Home({ onEntranceComplete }: HomeProps) {
+function Home({
+  onEntranceComplete,
+  highlightedContentId,
+  focusContentIdControlRef,
+}: HomeProps) {
   const { pathname } = useLocation();
+  const isCollectionOpen = pathname === '/collection';
   const drawerOpen =
-    pathname === '/shop' || pathname === '/events' || pathname === '/login';
+    pathname === '/shop' ||
+    pathname === '/events' ||
+    pathname === '/login' ||
+    isCollectionOpen;
   const queryClient = useQueryClient();
   const { data: timeline, isLoading, error } = useMainTimeline();
   const { data: collections } = useCollections();
@@ -68,12 +86,7 @@ function Home({ onEntranceComplete }: HomeProps) {
   const [expandedCollectionId, setExpandedCollectionId] = useState<
     string | null
   >(null);
-  // True while isolating via the user card specifically: the collection
-  // badges fade out and the isolated timeline shows only the viewer's own
-  // collected items, with no collection merged in.
-  const [isolatedViaUserCard, setIsolatedViaUserCard] = useState(false);
-  const borderFlashActive =
-    expandedCollectionId !== null || isolatedViaUserCard;
+  const borderFlashActive = expandedCollectionId !== null;
   // Each collection remembers its own selected item index independently.
   const [selectedItemIndexByCollection, setSelectedItemIndexByCollection] =
     useState<Record<string, number>>({});
@@ -87,11 +100,9 @@ function Home({ onEntranceComplete }: HomeProps) {
   >({});
   const [highlightedType] = useState<ContentType | null>(null);
   const [focusSlug, setFocusSlug] = useState<string | null>(null);
-  const [ownBranchHover, setOwnBranchHover] = useState(false);
   const [detailReady, setDetailReady] = useState(false);
   const [detailImageRect, setDetailImageRect] =
     useState<DetailImageRect | null>(null);
-  const userCardWrapRef = useRef<HTMLDivElement>(null);
   const isolateOwnBranchRef = useRef<(() => void) | undefined>(undefined);
   const focusItemControlRef = useRef<
     ((target: FocusTarget) => void) | undefined
@@ -102,16 +113,6 @@ function Home({ onEntranceComplete }: HomeProps) {
   const [audioState, setAudioState] = useState<AudioPlayerState | null>(null);
 
   const { data: contentDetail } = useContentDetail(focusSlug, timeline?.items);
-
-  const handleFocusFadeChange = useCallback((fade: number) => {
-    const opacity = 1 - fade;
-    const pointerEvents = opacity < 0.5 ? 'none' : 'auto';
-    const ref = userCardWrapRef;
-    if (ref.current) {
-      ref.current.style.opacity = String(opacity);
-      ref.current.style.pointerEvents = pointerEvents;
-    }
-  }, []);
 
   const handleContentFocus = useCallback((slug: string) => {
     setFocusSlug(slug);
@@ -198,39 +199,17 @@ function Home({ onEntranceComplete }: HomeProps) {
   // — instead of opening the collection view. Only one collection can be
   // expanded at a time; clicking a different one swaps which is expanded
   // without leaving the isolated view, clicking the same one again closes it.
-  // The isolated, straightened view itself (shared with the user card's
-  // click) is only toggled on the not-isolating <-> isolating transition —
-  // switching between collections (or from the user card's own-items-only
-  // view) stays isolated throughout.
   const handleBranchIsolationExit = () => {
     setExpandedCollectionId(null);
-    setIsolatedViaUserCard(false);
   };
 
   const handleCollectionBadgeClick = (collectionId: string) => {
-    const wasIsolating = expandedCollectionId !== null || isolatedViaUserCard;
+    const wasIsolating = expandedCollectionId !== null;
     const next = expandedCollectionId === collectionId ? null : collectionId;
     setExpandedCollectionId(next);
-    setIsolatedViaUserCard(false);
     if (wasIsolating !== (next !== null)) {
       isolateOwnBranchRef.current?.();
     }
-  };
-
-  // Clicking the user card jumps to the isolated view of just the viewer's
-  // own collected items — no collection merged in (previewItems only ever
-  // comes from expandedCollection, which this keeps null) — and fades the
-  // collection badges out while that view is up. A collection expanded at
-  // the time switches to this mode without leaving isolation; clicking the
-  // user card again while already in it exits isolation entirely.
-  const handleUserCardActivate = () => {
-    if (expandedCollectionId !== null) {
-      setExpandedCollectionId(null);
-      setIsolatedViaUserCard(true);
-      return;
-    }
-    setIsolatedViaUserCard((current) => !current);
-    isolateOwnBranchRef.current?.();
   };
 
   // Mirrors openCollectionView in reverse: fade the collection view out,
@@ -347,15 +326,17 @@ function Home({ onEntranceComplete }: HomeProps) {
           previewColour={getStoredColour() ?? DEFAULT_COLOUR}
           highlightedPreviewContentId={highlightedCollectionItemId}
           onPreviewItemHover={setHoveredCollectionItemId}
+          highlightedMainContentId={highlightedContentId}
+          focusContentIdControlRef={focusContentIdControlRef}
+          isCollectionView={isCollectionOpen}
           colour={timeline.colour}
           currentUsername={currentUsername}
           highlightedType={highlightedType}
-          hoverOwnBranch={ownBranchHover}
+          hoverOwnBranch={isCollectionOpen}
           isolateControlRef={isolateOwnBranchRef}
           focusItemControlRef={focusItemControlRef}
           audioControlRef={audioControlRef}
           onAudioStateChange={setAudioState}
-          onFocusFadeChange={handleFocusFadeChange}
           onContentFocus={handleContentFocus}
           onContentUnfocus={handleContentUnfocus}
           onDetailLayoutStart={handleDetailLayoutStart}
@@ -372,12 +353,6 @@ function Home({ onEntranceComplete }: HomeProps) {
             drawerOpen ? ' top-right-stack--drawer-open' : ''
           }`}
         >
-          <div ref={userCardWrapRef}>
-            <UserCard
-              onActivate={handleUserCardActivate}
-              onHoverChange={setOwnBranchHover}
-            />
-          </div>
           {audioState && (
             <MediaPlayer
               state={audioState}
@@ -391,12 +366,7 @@ function Home({ onEntranceComplete }: HomeProps) {
             (collections ?? [])
               .filter((collection) => collectedStatus[collection._id] === false)
               .map((collection) => (
-                <div
-                  className={`collection-card-stack${
-                    isolatedViaUserCard ? ' collection-card-stack--hidden' : ''
-                  }`}
-                  key={collection._id}
-                >
+                <div className="collection-card-stack" key={collection._id}>
                   <CollectionCountdown
                     collection={collection}
                     onClick={() => handleCollectionBadgeClick(collection._id)}

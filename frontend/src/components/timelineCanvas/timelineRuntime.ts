@@ -38,6 +38,8 @@ export function createTimelineRuntime(): TimelineRuntime {
     zooming: false,
     focusTarget: null,
     focusedBranchRow: null,
+    lastHighlightedMainContentId: null,
+    isCollectionViewActive: false,
     viewAnimating: false,
     viewUnfocusing: false,
     fitZoomLevel: 1,

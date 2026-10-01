@@ -313,8 +313,14 @@ export function drawCollectedLaneItems(
       );
     }
 
+    const isExternallyHighlighted =
+      item.contentId === ctx.highlightedMainContentId;
+
     if (ctx.isFocusActive && ctx.isFocusedTarget('collected', index)) {
       // Selected image: no glow.
+    } else if (isExternallyHighlighted) {
+      collectedCtx.shadowBlur = 22;
+      collectedCtx.shadowColor = hexToRgba(deps.previewColour, 0.55 * visibilityAlpha);
     } else if (hover.hoveredCollected === index) {
       collectedCtx.shadowBlur = 22;
       collectedCtx.shadowColor = hexToRgba(

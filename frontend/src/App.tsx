@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   HashRouter,
   Navigate,
@@ -22,12 +22,19 @@ const AppRoutes = () => {
   const isShop = pathname === '/shop';
   const isEvents = pathname === '/events';
   const isLogin = pathname === '/login';
-  const isTimelineRoute = isHome || isShop || isEvents || isLogin;
+  const isCollection = pathname === '/collection';
+  const isTimelineRoute = isHome || isShop || isEvents || isLogin || isCollection;
   const showHeader = !isTimelineRoute;
   const [timelineReady, setTimelineReady] = useState(false);
   const handleEntranceComplete = useCallback(() => {
     setTimelineReady(true);
   }, []);
+  const [hoveredCollectedContentId, setHoveredCollectedContentId] = useState<
+    string | null
+  >(null);
+  const focusContentIdControlRef = useRef<
+    ((contentId: string) => void) | undefined
+  >(undefined);
 
   return (
     <>
@@ -38,10 +45,19 @@ const AppRoutes = () => {
           <Route path="/content/:slug" element={<Content />} />
         </Routes>
         {isTimelineRoute && (
-          <Home onEntranceComplete={handleEntranceComplete} />
+          <Home
+            onEntranceComplete={handleEntranceComplete}
+            highlightedContentId={hoveredCollectedContentId}
+            focusContentIdControlRef={focusContentIdControlRef}
+          />
         )}
       </main>
-      {timelineReady && isTimelineRoute && <NavDrawer />}
+      {timelineReady && isTimelineRoute && (
+        <NavDrawer
+          onCollectedItemHover={setHoveredCollectedContentId}
+          focusContentIdControlRef={focusContentIdControlRef}
+        />
+      )}
       <DebugPanel />
     </>
   );
