@@ -94,7 +94,8 @@ function CollectedItemsList({
           style={{ '--row-index': index } as CSSProperties}
         >
           <span className="collected-items-list__date">{item.dateLabel}</span>
-          <span
+          <button
+            type="button"
             className="collected-items-list__title"
             onMouseEnter={() => onItemHover?.(item.id)}
             onMouseLeave={() =>
@@ -106,7 +107,7 @@ function CollectedItemsList({
             }}
           >
             {item.title}
-          </span>
+          </button>
           <span className="collected-items-list__type">{item.typeLabel}</span>
         </li>
       ))}

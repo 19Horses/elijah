@@ -1892,11 +1892,18 @@ main.main--home {
 }
 
 .collected-items-list__title {
+  background: none;
+  border: none;
+  color: inherit;
   cursor: pointer;
+  font-family: inherit;
   font-size: 1rem;
   line-height: 1.5;
+  margin: 0;
   min-width: 0;
   overflow: hidden;
+  padding: 0;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

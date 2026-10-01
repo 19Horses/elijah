@@ -88,7 +88,7 @@ export function useContentDetail(
   slug: string | null,
   items: MainTimelineItem[] = []
 ) {
-  const isBandsintown = Boolean(slug) && isBandsintownSlug(slug!);
+  const isBandsintown = slug !== null && isBandsintownSlug(slug);
   const bandsintownItem = isBandsintown
     ? items.find(
         (item): item is MainTimelineEvent =>
@@ -98,10 +98,18 @@ export function useContentDetail(
 
   return useQuery({
     queryKey: ['contentDetail', slug],
-    queryFn: () =>
-      isBandsintown
-        ? Promise.resolve(toContentDetail(bandsintownItem!))
-        : fetchContentBySlug(slug!),
+    queryFn: () => {
+      if (isBandsintown) {
+        if (!bandsintownItem) {
+          return Promise.reject(new Error('Bandsintown event not found'));
+        }
+        return Promise.resolve(toContentDetail(bandsintownItem));
+      }
+      if (!slug) {
+        return Promise.reject(new Error('No slug to fetch content for'));
+      }
+      return fetchContentBySlug(slug);
+    },
     enabled: Boolean(slug) && (!isBandsintown || Boolean(bandsintownItem)),
   });
 }

@@ -184,17 +184,6 @@ function Home({
     void queryClient.invalidateQueries({ queryKey: ['contentDetail'] });
   };
 
-  // Fades the timeline out, then reveals the collection view once that
-  // finishes.
-  const openCollectionView = () => {
-    setCanvasHidden(true);
-    window.clearTimeout(collectionTransitionTimeoutRef.current);
-    collectionTransitionTimeoutRef.current = window.setTimeout(
-      () => setViewerOpen(true),
-      prefersReducedMotion() ? 0 : COLLECTION_FADE_MS
-    );
-  };
-
   // Clicking a collection badge lists that collection's item titles below it
   // — instead of opening the collection view. Only one collection can be
   // expanded at a time; clicking a different one swaps which is expanded
