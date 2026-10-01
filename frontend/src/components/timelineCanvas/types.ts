@@ -298,7 +298,9 @@ export type TimelineSketchRefs = {
   // the caller's own item list (or null), so the canvas can highlight it.
   highlightedPreviewIdRef: RefObject<string | null>;
   highlightedMainContentIdRef: RefObject<string | null>;
-  focusContentIdRef: MutableRefObject<((contentId: string) => void) | undefined>;
+  focusContentIdRef: MutableRefObject<
+    ((contentId: string) => void) | undefined
+  >;
   setCollectionViewActiveRef: MutableRefObject<
     ((active: boolean) => void) | undefined
   >;

@@ -23,7 +23,8 @@ const AppRoutes = () => {
   const isEvents = pathname === '/events';
   const isLogin = pathname === '/login';
   const isCollection = pathname === '/collection';
-  const isTimelineRoute = isHome || isShop || isEvents || isLogin || isCollection;
+  const isTimelineRoute =
+    isHome || isShop || isEvents || isLogin || isCollection;
   const showHeader = !isTimelineRoute;
   const [timelineReady, setTimelineReady] = useState(false);
   const handleEntranceComplete = useCallback(() => {

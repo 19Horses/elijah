@@ -817,8 +817,10 @@ export function createViewContext(
     const maxZoom = Math.max(MAX_ZOOM_LEVEL, runtime.fitZoomLevel);
     if (runtime.targetZoom > maxZoom) {
       runtime.targetZoom = maxZoom;
-      runtime.targetCameraX = center.centerX - p.width / (2 * runtime.targetZoom);
-      runtime.targetCameraY = center.centerY - p.height / (2 * runtime.targetZoom);
+      runtime.targetCameraX =
+        center.centerX - p.width / (2 * runtime.targetZoom);
+      runtime.targetCameraY =
+        center.centerY - p.height / (2 * runtime.targetZoom);
     }
     runtime.panning = false;
     runtime.zooming = false;
@@ -937,8 +939,10 @@ export function createViewContext(
     const maxZoom = Math.max(MAX_ZOOM_LEVEL, runtime.fitZoomLevel);
     if (runtime.targetZoom > maxZoom) {
       runtime.targetZoom = maxZoom;
-      runtime.targetCameraX = center.centerX - p.width / (2 * runtime.targetZoom);
-      runtime.targetCameraY = center.centerY - p.height / (2 * runtime.targetZoom);
+      runtime.targetCameraX =
+        center.centerX - p.width / (2 * runtime.targetZoom);
+      runtime.targetCameraY =
+        center.centerY - p.height / (2 * runtime.targetZoom);
     }
     runtime.panning = false;
     runtime.zooming = false;

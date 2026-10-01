@@ -320,7 +320,10 @@ export function drawCollectedLaneItems(
       // Selected image: no glow.
     } else if (isExternallyHighlighted) {
       collectedCtx.shadowBlur = 22;
-      collectedCtx.shadowColor = hexToRgba(deps.previewColour, 0.55 * visibilityAlpha);
+      collectedCtx.shadowColor = hexToRgba(
+        deps.previewColour,
+        0.55 * visibilityAlpha
+      );
     } else if (hover.hoveredCollected === index) {
       collectedCtx.shadowBlur = 22;
       collectedCtx.shadowColor = hexToRgba(

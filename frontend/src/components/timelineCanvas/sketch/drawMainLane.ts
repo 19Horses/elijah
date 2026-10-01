@@ -426,7 +426,10 @@ export function drawMainLaneItems(
       // Selected image: no glow.
     } else if (isExternallyHighlighted) {
       mainCtx.shadowBlur = 22;
-      mainCtx.shadowColor = hexToRgba(deps.previewColour, 0.55 * visibilityAlpha);
+      mainCtx.shadowColor = hexToRgba(
+        deps.previewColour,
+        0.55 * visibilityAlpha
+      );
     } else if (hover.hoveredMain === index || hover.mainConnectorHover) {
       mainCtx.shadowBlur = 22;
       mainCtx.shadowColor = hexToRgba(MAIN_GLOW_COLOUR, 0.45 * visibilityAlpha);

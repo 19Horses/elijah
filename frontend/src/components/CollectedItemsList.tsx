@@ -98,9 +98,7 @@ function CollectedItemsList({
             className="collected-items-list__title"
             onMouseEnter={() => onItemHover?.(item.id)}
             onMouseLeave={() =>
-              onItemHover?.((current) =>
-                current === item.id ? null : current
-              )
+              onItemHover?.((current) => (current === item.id ? null : current))
             }
             onClick={() => {
               focusContentIdControlRef?.current?.(item.id);
