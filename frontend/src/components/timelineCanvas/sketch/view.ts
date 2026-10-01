@@ -65,6 +65,11 @@ export type ViewContext = {
   focusItem: (target: FocusTarget) => void;
   focusBranch: (rowIndex: number) => void;
   unfocusItem: () => void;
+  previewFocusItem: (target: FocusTarget) => void;
+  clearPreviewFocus: () => void;
+  previewContentId: (contentId: string) => void;
+  focusContentId: (contentId: string) => void;
+  setCollectionViewActive: (active: boolean) => void;
   toggleOwnBranchIsolation: () => void;
   exitBranchIsolation: () => void;
   isViewInteractionLocked: () => boolean;
@@ -800,6 +805,75 @@ export function createViewContext(
     runtime.viewAnimating = true;
   };
 
+  const previewFocusItem = (target: FocusTarget) => {
+    if (isViewInteractionLocked(runtime) || isPrivateTarget(deps, target)) {
+      return;
+    }
+    const focusBounds = getFocusBounds(target);
+    const center = computeFitTargetsForBounds([focusBounds]);
+    if (!center) {
+      return;
+    }
+    const maxZoom = Math.max(MAX_ZOOM_LEVEL, runtime.fitZoomLevel);
+    if (runtime.targetZoom > maxZoom) {
+      runtime.targetZoom = maxZoom;
+      runtime.targetCameraX =
+        center.centerX - p.width / (2 * runtime.targetZoom);
+      runtime.targetCameraY =
+        center.centerY - p.height / (2 * runtime.targetZoom);
+    }
+    runtime.panning = false;
+    runtime.zooming = false;
+    beginViewAnimation(center.centerX, center.centerY);
+    runtime.viewAnimating = true;
+  };
+
+  const clearPreviewFocus = () => {
+    if (isViewInteractionLocked(runtime)) {
+      return;
+    }
+    runtime.panning = false;
+    runtime.zooming = false;
+    if (runtime.isCollectionViewActive) {
+      frameOwnBranchWide();
+      return;
+    }
+    computeFitViewTargets();
+    beginViewAnimation(
+      runtime.targetCameraX + p.width / (2 * runtime.targetZoom),
+      runtime.targetCameraY + p.height / (2 * runtime.targetZoom)
+    );
+    runtime.viewAnimating = true;
+  };
+
+  const resolveContentFocusTarget = (contentId: string): FocusTarget | null => {
+    const collectedIndex = deps.processedCollected.findIndex(
+      (item) => item.contentId === contentId
+    );
+    if (collectedIndex >= 0) {
+      return { lane: 'collected', index: collectedIndex };
+    }
+    const mainIndex = deps.items.findIndex((item) => item._id === contentId);
+    if (mainIndex >= 0) {
+      return { lane: 'main', index: mainIndex };
+    }
+    return null;
+  };
+
+  const previewContentId = (contentId: string) => {
+    const target = resolveContentFocusTarget(contentId);
+    if (target) {
+      previewFocusItem(target);
+    }
+  };
+
+  const focusContentId = (contentId: string) => {
+    const target = resolveContentFocusTarget(contentId);
+    if (target) {
+      focusItem(target);
+    }
+  };
+
   const getOwnBranchRow = (): number => {
     if (!deps.currentUsername) {
       return -1;
@@ -813,6 +887,86 @@ export function createViewContext(
       }
     }
     return -1;
+  };
+
+  const frameOwnBranchWide = () => {
+    if (isViewInteractionLocked(runtime)) {
+      return;
+    }
+    const ownRow = getOwnBranchRow();
+    const collectedBounds = bounds.getCollectedBounds();
+    const mainBounds = bounds.getAllBounds();
+    const branchItems =
+      ownRow >= 0
+        ? deps.processedCollected
+            .map((item, index) => ({ item, index }))
+            .filter(({ item }) =>
+              item.sources.some((s) => s.rowIndex === ownRow)
+            )
+        : [];
+
+    let center: { centerX: number; centerY: number } | null = null;
+    if (branchItems.length > 0) {
+      const branchBounds = branchItems.map(
+        ({ index }) => collectedBounds[index]
+      );
+      const mainIndices = new Set<number>();
+      for (const { item } of branchItems) {
+        const prev = Math.max(0, bounds.getPreviousMainIndex(item.anchorTime));
+        mainIndices.add(prev);
+        if (prev + 1 < mainBounds.length) {
+          mainIndices.add(prev + 1);
+        }
+      }
+      for (const index of mainIndices) {
+        branchBounds.push(mainBounds[index]);
+      }
+      center = computeFitTargetsForBounds(branchBounds);
+    }
+
+    if (!center) {
+      computeFitViewTargets();
+      runtime.panning = false;
+      runtime.zooming = false;
+      beginViewAnimation(
+        runtime.targetCameraX + p.width / (2 * runtime.targetZoom),
+        runtime.targetCameraY + p.height / (2 * runtime.targetZoom)
+      );
+      runtime.viewAnimating = true;
+      return;
+    }
+
+    const maxZoom = Math.max(MAX_ZOOM_LEVEL, runtime.fitZoomLevel);
+    if (runtime.targetZoom > maxZoom) {
+      runtime.targetZoom = maxZoom;
+      runtime.targetCameraX =
+        center.centerX - p.width / (2 * runtime.targetZoom);
+      runtime.targetCameraY =
+        center.centerY - p.height / (2 * runtime.targetZoom);
+    }
+    runtime.panning = false;
+    runtime.zooming = false;
+    beginViewAnimation(center.centerX, center.centerY);
+    runtime.viewAnimating = true;
+  };
+
+  const setCollectionViewActive = (active: boolean) => {
+    runtime.isCollectionViewActive = active;
+    if (isViewInteractionLocked(runtime)) {
+      return;
+    }
+    if (active) {
+      frameOwnBranchWide();
+    } else {
+      runtime.panning = false;
+      runtime.zooming = false;
+      computeFitViewTargets();
+      beginViewAnimation(
+        runtime.targetCameraX + p.width / (2 * runtime.targetZoom),
+        runtime.targetCameraY + p.height / (2 * runtime.targetZoom)
+      );
+      runtime.viewAnimating = true;
+    }
   };
 
   const animateToFitAll = () => {
@@ -902,6 +1056,11 @@ export function createViewContext(
     focusItem,
     focusBranch,
     unfocusItem,
+    previewFocusItem,
+    clearPreviewFocus,
+    previewContentId,
+    focusContentId,
+    setCollectionViewActive,
     toggleOwnBranchIsolation,
     exitBranchIsolation,
     isViewInteractionLocked: () => isViewInteractionLocked(runtime),

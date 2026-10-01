@@ -177,6 +177,16 @@ export function createDrawFrameHandler(
     const typeHighlightStrength = runtime.highlightStrength;
     const isTypeHighlightActive =
       typeHighlightStrength > HIGHLIGHT_FADE_SNAP && highlightedType !== null;
+    const highlightedMainContentId =
+      deps.refs.highlightedMainContentIdRef.current;
+    if (highlightedMainContentId !== runtime.lastHighlightedMainContentId) {
+      runtime.lastHighlightedMainContentId = highlightedMainContentId;
+      if (highlightedMainContentId) {
+        view.previewContentId(highlightedMainContentId);
+      } else {
+        view.clearPreviewFocus();
+      }
+    }
     const dimAlpha = getTypeDimAlpha(typeHighlightStrength);
     const elapsed = p.millis() - runtime.loadStartMs;
     const totalImages = deps.processed.length + deps.processedCollected.length;
@@ -433,6 +443,7 @@ export function createDrawFrameHandler(
       highlightedType,
       typeHighlightStrength,
       isTypeHighlightActive,
+      highlightedMainContentId,
       dimAlpha,
       otherContentAlpha,
       isFocusActive,

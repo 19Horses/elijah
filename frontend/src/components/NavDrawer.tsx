@@ -1,8 +1,18 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import CollectedItemsList from './CollectedItemsList';
 import Events from '../pages/Events';
 import Login from '../pages/Login';
 import Shop from '../pages/Shop';
+import { getStoredUser, USER_CHANGED_EVENT } from '../services/userStorage';
 
 const CLOSE_GRACE_MS = 300;
 
@@ -34,7 +44,17 @@ function measureInkCenterShift(font: string): number | null {
   return (fontAscent - fontDescent - (inkAscent - inkDescent)) / 2;
 }
 
-function NavDrawer() {
+type NavDrawerProps = {
+  onCollectedItemHover?: Dispatch<SetStateAction<string | null>>;
+  focusContentIdControlRef?: MutableRefObject<
+    ((contentId: string) => void) | undefined
+  >;
+};
+
+function NavDrawer({
+  onCollectedItemHover,
+  focusContentIdControlRef,
+}: NavDrawerProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [hoverOpen, setHoverOpen] = useState(false);
   const [inkShift, setInkShift] = useState<number | null>(null);
@@ -42,7 +62,15 @@ function NavDrawer() {
   const closeTimeoutRef = useRef<number | null>(null);
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const [user, setUser] = useState(() => getStoredUser());
 
+  useEffect(() => {
+    const sync = () => setUser(getStoredUser());
+    window.addEventListener(USER_CHANGED_EVENT, sync);
+    return () => window.removeEventListener(USER_CHANGED_EVENT, sync);
+  }, []);
+
+  const accountRoute = user ? '/collection' : '/login';
   const drawerRoute =
     pathname === '/shop'
       ? 'shop'
@@ -50,6 +78,8 @@ function NavDrawer() {
       ? 'events'
       : pathname === '/login'
       ? 'login'
+      : pathname === '/collection'
+      ? 'collection'
       : null;
   const drawerOpen = drawerRoute !== null;
   const listOpen = hoverOpen || drawerOpen;
@@ -126,7 +156,7 @@ function NavDrawer() {
       <div
         className={`nav-drawer__backdrop${
           drawerOpen ? ' nav-drawer__backdrop--visible' : ''
-        }`}
+        }${drawerRoute === 'collection' ? ' nav-drawer__backdrop--light' : ''}`}
         onClick={() => navigate('/home')}
         aria-hidden="true"
       />
@@ -211,12 +241,12 @@ function NavDrawer() {
             Shop
           </Link>
           <Link
-            to="/login"
+            to={accountRoute}
             role="menuitem"
             className={`e-menu__item e-menu__item--login${
-              pathname === '/login' ? ' e-menu__item--active' : ''
+              pathname === accountRoute ? ' e-menu__item--active' : ''
             }`}
-            aria-current={pathname === '/login' ? 'page' : undefined}
+            aria-current={pathname === accountRoute ? 'page' : undefined}
             tabIndex={listOpen ? 0 : -1}
             onClick={(event) => {
               if (
@@ -230,10 +260,10 @@ function NavDrawer() {
                 return;
               }
               event.preventDefault();
-              goToOrClose('/login');
+              goToOrClose(accountRoute);
             }}
           >
-            Login
+            {user ? user.username : 'Login'}
           </Link>
           <button
             type="button"
@@ -254,6 +284,12 @@ function NavDrawer() {
           {drawerRoute === 'shop' && <Shop />}
           {drawerRoute === 'events' && <Events />}
           {drawerRoute === 'login' && <Login />}
+          {drawerRoute === 'collection' && (
+            <CollectedItemsList
+              onItemHover={onCollectedItemHover}
+              focusContentIdControlRef={focusContentIdControlRef}
+            />
+          )}
         </div>
       </div>
     </>

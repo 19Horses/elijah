@@ -55,6 +55,7 @@ export type MainLaneDrawContext = {
   highlightedType: ContentType | null;
   typeHighlightStrength: number;
   isTypeHighlightActive: boolean;
+  highlightedMainContentId: string | null;
   dimAlpha: number;
   otherContentAlpha: number;
   isFocusActive: boolean;
@@ -418,8 +419,17 @@ export function drawMainLaneItems(
       );
     }
 
+    const isExternallyHighlighted =
+      deps.items[index]._id === ctx.highlightedMainContentId;
+
     if (ctx.isFocusActive && ctx.isFocusedTarget('main', index)) {
       // Selected image: no glow.
+    } else if (isExternallyHighlighted) {
+      mainCtx.shadowBlur = 22;
+      mainCtx.shadowColor = hexToRgba(
+        deps.previewColour,
+        0.55 * visibilityAlpha
+      );
     } else if (hover.hoveredMain === index || hover.mainConnectorHover) {
       mainCtx.shadowBlur = 22;
       mainCtx.shadowColor = hexToRgba(MAIN_GLOW_COLOUR, 0.45 * visibilityAlpha);

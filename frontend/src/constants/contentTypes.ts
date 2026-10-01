@@ -18,3 +18,7 @@ export function getContentTypeColour(type: ContentType): string {
     CONTENT_TYPES.find((entry) => entry.type === type)?.colour ?? '#111827'
   );
 }
+
+export function getContentTypeLabel(type: ContentType): string {
+  return CONTENT_TYPES.find((entry) => entry.type === type)?.label ?? '';
+}
