@@ -88,22 +88,24 @@ function CollectedItemsList({
   return (
     <ul className="collected-items-list">
       {data.map((item, index) => (
-        <li
-          key={item.id}
-          className="collected-items-list__item"
-          style={{ '--row-index': index } as CSSProperties}
-          onMouseEnter={() => onItemHover?.(item.id)}
-          onMouseLeave={() =>
-            onItemHover?.((current) => (current === item.id ? null : current))
-          }
-          onClick={() => {
-            focusContentIdControlRef?.current?.(item.id);
-            navigate('/home');
-          }}
-        >
-          <span className="collected-items-list__date">{item.dateLabel}</span>
-          <span className="collected-items-list__title">{item.title}</span>
-          <span className="collected-items-list__type">{item.typeLabel}</span>
+        <li key={item.id}>
+          <button
+            type="button"
+            className="collected-items-list__item"
+            style={{ '--row-index': index } as CSSProperties}
+            onMouseEnter={() => onItemHover?.(item.id)}
+            onMouseLeave={() =>
+              onItemHover?.((current) => (current === item.id ? null : current))
+            }
+            onClick={() => {
+              focusContentIdControlRef?.current?.(item.id);
+              navigate('/home');
+            }}
+          >
+            <span className="collected-items-list__date">{item.dateLabel}</span>
+            <span className="collected-items-list__title">{item.title}</span>
+            <span className="collected-items-list__type">{item.typeLabel}</span>
+          </button>
         </li>
       ))}
     </ul>

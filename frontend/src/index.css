@@ -1879,12 +1879,18 @@ main.main--home {
   align-items: center;
   animation: events-row-fade-in 0.4s ease-out both;
   animation-delay: calc(var(--row-index, 0) * 40ms);
+  background: none;
+  border: none;
   box-sizing: border-box;
+  color: inherit;
   cursor: pointer;
   display: grid;
+  font-family: inherit;
   gap: 0.75rem;
   grid-template-columns: 6rem minmax(0, 1fr) 6rem;
   padding: 0.5rem 0.25rem;
+  text-align: left;
+  width: 100%;
 }
 
 .collected-items-list__item:hover .collected-items-list__title {
