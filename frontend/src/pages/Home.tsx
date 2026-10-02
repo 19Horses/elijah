@@ -95,6 +95,12 @@ function Home({
   const [hoveredCollectionItemId, setHoveredCollectionItemId] = useState<
     string | null
   >(null);
+  const [centerOnCollectionItemId, setCenterOnCollectionItemId] = useState<
+    string | null
+  >(null);
+  useEffect(() => {
+    setCenterOnCollectionItemId(null);
+  }, [expandedCollectionId]);
   // Per-collection "has the viewer already collected from this one" status.
   // A collection id's absence means its status hasn't been checked yet.
   const [collectedStatus, setCollectedStatus] = useState<
@@ -140,6 +146,11 @@ function Home({
   const branchColour = getStoredColour() ?? DEFAULT_COLOUR;
   const collectedRow =
     collectedRows?.find((row) => row.username === currentUsername) ?? null;
+  const collectedContentIds = useMemo(
+    () =>
+      new Set((collectedRow?.items ?? []).map((entry) => entry.content._id)),
+    [collectedRow]
+  );
 
   const timelineDetail = useMemo((): TimelineDetailView | null => {
     if (!focusSlug || !detailReady || !contentDetail) {
@@ -316,6 +327,7 @@ function Home({
           previewItems={expandedCollection?.content ?? undefined}
           previewColour={getStoredColour() ?? DEFAULT_COLOUR}
           highlightedPreviewContentId={highlightedCollectionItemId}
+          centerOnPreviewContentId={centerOnCollectionItemId}
           onPreviewItemHover={setHoveredCollectionItemId}
           highlightedMainContentId={highlightedContentId}
           focusContentIdControlRef={focusContentIdControlRef}
@@ -390,33 +402,49 @@ function Home({
                         {collection.description}
                       </div>
                     )}
-                    <div className="collection-card-titles">
+                    <div
+                      className="collection-card-titles"
+                      style={
+                        {
+                          '--collection-title-colour': branchColour,
+                        } as React.CSSProperties
+                      }
+                    >
                       {(collection.content ?? []).map((item, index) => (
                         <button
                           key={item._id}
                           type="button"
                           className={`collection-card-title${
-                            item._id === highlightedCollectionItemId
+                            focusSlug !== null && item.slug === focusSlug
                               ? ' collection-card-title--active'
+                              : ''
+                          }${
+                            collectedContentIds.has(item._id)
+                              ? ' collection-card-title--collected'
                               : ''
                           }`}
                           style={
                             { '--title-index': index } as React.CSSProperties
                           }
-                          onClick={() =>
+                          onClick={() => {
                             setSelectedItemIndexByCollection((prev) => ({
                               ...prev,
                               [collection._id]: index,
-                            }))
-                          }
-                          onMouseEnter={() =>
-                            setHoveredCollectionItemId(item._id)
-                          }
-                          onMouseLeave={() =>
+                            }));
+                            focusContentIdControlRef?.current?.(item._id);
+                          }}
+                          onMouseEnter={() => {
+                            setHoveredCollectionItemId(item._id);
+                            setCenterOnCollectionItemId(item._id);
+                          }}
+                          onMouseLeave={() => {
                             setHoveredCollectionItemId((current) =>
                               current === item._id ? null : current
-                            )
-                          }
+                            );
+                            setCenterOnCollectionItemId((current) =>
+                              current === item._id ? null : current
+                            );
+                          }}
                         >
                           {item.title}
                         </button>

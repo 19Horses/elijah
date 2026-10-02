@@ -28,6 +28,7 @@ import {
   PRIVATE_BADGE_COLOUR,
   PRIVATE_BADGE_TEXT,
   DATE_FONT_SIZE,
+  PREVIEW_EXPAND_LERP,
   PREVIEW_SWITCH_FADE_MS,
   ZOOM_OUT_GROWTH_POWER,
 } from '../constants';
@@ -121,6 +122,7 @@ export function createDrawFrameHandler(
   // id), so growing into/out of the selected/hovered look eases rather than
   // snapping straight to size.
   const previewHighlightProgress = new Map<string, number>();
+  const previewExpandProgress = new Map<string, number>();
   const isolatedLineX = new Map<string, number>();
 
   // The logged-in viewer's own branch row, so hovering the user card can
@@ -185,6 +187,18 @@ export function createDrawFrameHandler(
         view.previewContentId(highlightedMainContentId);
       } else {
         view.clearPreviewFocus();
+      }
+    }
+    const centerOnPreviewId = deps.refs.centerOnPreviewIdRef.current;
+    if (
+      runtime.focusTarget === null &&
+      centerOnPreviewId !== runtime.lastCenterOnPreviewContentId
+    ) {
+      runtime.lastCenterOnPreviewContentId = centerOnPreviewId;
+      if (centerOnPreviewId) {
+        view.previewIsolatedContentId(centerOnPreviewId);
+      } else {
+        view.refreshIsolatedFraming();
       }
     }
     const dimAlpha = getTypeDimAlpha(typeHighlightStrength);
@@ -278,10 +292,38 @@ export function createDrawFrameHandler(
     // boundsCtx.getIsolatedMergedLine — the same layout view.ts uses to frame
     // and focus these items, so the two can never drift apart. Lazily
     // computed on first use, once per frame.
+    const centerOnPreviewContentId =
+      runtime.focusTarget === null
+        ? deps.refs.centerOnPreviewIdRef.current
+        : null;
+    for (const key of [...previewExpandProgress.keys()]) {
+      if (key === centerOnPreviewContentId) {
+        continue;
+      }
+      const prev = previewExpandProgress.get(key) ?? 0;
+      const next = prev + (0 - prev) * PREVIEW_EXPAND_LERP;
+      if (next < HIGHLIGHT_FADE_SNAP) {
+        previewExpandProgress.delete(key);
+      } else {
+        previewExpandProgress.set(key, next);
+      }
+    }
+    let previewExpandAmount = 0;
+    if (centerOnPreviewContentId) {
+      const prev = previewExpandProgress.get(centerOnPreviewContentId) ?? 0;
+      const next = prev + (1 - prev) * PREVIEW_EXPAND_LERP;
+      previewExpandAmount = next > 1 - HIGHLIGHT_FADE_SNAP ? 1 : next;
+      previewExpandProgress.set(centerOnPreviewContentId, previewExpandAmount);
+    }
+
     let isolatedLine: ReturnType<BoundsContext['getIsolatedMergedLine']> = null;
     const getIsolatedLine = () => {
       if (isolatedLine === null && isolateRow !== null) {
-        isolatedLine = boundsCtx.getIsolatedMergedLine(isolateRow);
+        isolatedLine = boundsCtx.getIsolatedMergedLine(
+          isolateRow,
+          centerOnPreviewContentId,
+          previewExpandAmount
+        );
       }
       return isolatedLine;
     };
@@ -671,6 +713,15 @@ export function createDrawFrameHandler(
       // Hovering one here reports it back the other way via onPreviewHoverRef,
       // so the caller's list can mirror the highlight.
       const previewCtx = p.drawingContext as CanvasRenderingContext2D;
+      const collectionPanelRect = document
+        .querySelector('.collection-card-panel--visible')
+        ?.getBoundingClientRect();
+      const pointerOverCollectionPanel =
+        !!collectionPanelRect &&
+        p.mouseX >= collectionPanelRect.left &&
+        p.mouseX <= collectionPanelRect.right &&
+        p.mouseY >= collectionPanelRect.top &&
+        p.mouseY <= collectionPanelRect.bottom;
       let hoveredPreviewContentId: string | null = null;
       for (const entry of isolatedOrdered) {
         if (entry.kind !== 'preview') {
@@ -681,6 +732,7 @@ export function createDrawFrameHandler(
         const { rect } = entry;
 
         if (
+          !pointerOverCollectionPanel &&
           mouseWorld.x >= rect.left &&
           mouseWorld.x <= rect.right &&
           mouseWorld.y >= rect.top &&
@@ -743,19 +795,41 @@ export function createDrawFrameHandler(
         }
         resetCanvasEffects(previewCtx);
 
+        const isTitleShown = item.contentId === centerOnPreviewContentId;
+        const titleAlpha = isTitleShown
+          ? previewExpandAmount * isolate * previewSwitchAlpha
+          : 0;
+        const hideDateLabel =
+          isFocusedPreview && isDetailLayoutActive && runtime.detailLayout > 0;
+
         // Deferred so the date renders above the connectors/nodes, matching
         // every other item's date label.
-        dateLabels.push({
-          x: rect.left + rect.width / 2,
-          y: rect.top - 12,
-          text: formatDateForZoom(
-            item.anchorTime,
-            runtime.zoom,
-            runtime.fitZoomLevel
-          ),
-          colour: 255,
-          alpha: isolate * previewSwitchAlpha,
-        });
+        if (!hideDateLabel) {
+          dateLabels.push({
+            x: isTitleShown ? rect.right : rect.left + rect.width / 2,
+            y: rect.top - 12,
+            text: formatDateForZoom(
+              item.anchorTime,
+              runtime.zoom,
+              runtime.fitZoomLevel
+            ),
+            colour: 255,
+            alpha: isolate * previewSwitchAlpha,
+            align: isTitleShown ? 'right' : 'center',
+          });
+        }
+
+        if (titleAlpha > HIGHLIGHT_FADE_SNAP) {
+          dateLabels.push({
+            x: rect.left,
+            y: rect.top - 12,
+            text: item.title,
+            colour: 255,
+            alpha: titleAlpha,
+            align: 'left',
+            variant: 'title',
+          });
+        }
       }
 
       if (hoveredPreviewContentId !== lastHoveredPreviewId) {
@@ -814,12 +888,28 @@ export function createDrawFrameHandler(
       const dateFontScale = 1 - dateMergeProgress * DATE_FONT_MERGE_SHRINK;
       const dateCtx = p.drawingContext as CanvasRenderingContext2D;
       p.noStroke();
-      p.textSize((DATE_FONT_SIZE * dateFontScale) / runtime.zoom);
-      p.textAlign(p.CENTER, p.BOTTOM);
       for (const label of dateLabels) {
         dateCtx.globalAlpha = label.alpha;
         p.fill(label.colour);
+        const horizontalAlign =
+          label.align === 'right'
+            ? p.RIGHT
+            : label.align === 'left'
+            ? p.LEFT
+            : p.CENTER;
+        p.textAlign(horizontalAlign, p.BOTTOM);
+        p.textSize(
+          (label.variant === 'title'
+            ? DATE_FONT_SIZE * 1.15
+            : DATE_FONT_SIZE * dateFontScale) / runtime.zoom
+        );
+        if (label.variant === 'title') {
+          p.textStyle(p.BOLD);
+        }
         p.text(label.text, label.x, label.y);
+        if (label.variant === 'title') {
+          p.textStyle(p.NORMAL);
+        }
       }
       resetCanvasEffects(dateCtx);
       p.textSize(12);

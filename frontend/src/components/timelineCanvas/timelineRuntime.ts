@@ -39,6 +39,7 @@ export function createTimelineRuntime(): TimelineRuntime {
     focusTarget: null,
     focusedBranchRow: null,
     lastHighlightedMainContentId: null,
+    lastCenterOnPreviewContentId: null,
     isCollectionViewActive: false,
     viewAnimating: false,
     viewUnfocusing: false,

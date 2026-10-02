@@ -13,6 +13,7 @@ import {
   MIN_ZOOM_FACTOR,
   PAN_LERP,
   PAN_SETTLE_THRESHOLD_PX,
+  PREVIEW_ISOLATE_HOVER_MAX_ZOOM,
   VIEW_ANIMATION_LERP,
   VIEW_SNAP_THRESHOLD,
   VIEW_UNFOCUS_ANIMATION_LERP,
@@ -68,6 +69,7 @@ export type ViewContext = {
   previewFocusItem: (target: FocusTarget) => void;
   clearPreviewFocus: () => void;
   previewContentId: (contentId: string) => void;
+  previewIsolatedContentId: (contentId: string) => void;
   focusContentId: (contentId: string) => void;
   setCollectionViewActive: (active: boolean) => void;
   toggleOwnBranchIsolation: () => void;
@@ -805,16 +807,14 @@ export function createViewContext(
     runtime.viewAnimating = true;
   };
 
-  const previewFocusItem = (target: FocusTarget) => {
-    if (isViewInteractionLocked(runtime) || isPrivateTarget(deps, target)) {
-      return;
-    }
-    const focusBounds = getFocusBounds(target);
+  const panToFocusBounds = (
+    focusBounds: ContentBounds,
+    maxZoom: number = Math.max(MAX_ZOOM_LEVEL, runtime.fitZoomLevel)
+  ) => {
     const center = computeFitTargetsForBounds([focusBounds]);
     if (!center) {
       return;
     }
-    const maxZoom = Math.max(MAX_ZOOM_LEVEL, runtime.fitZoomLevel);
     if (runtime.targetZoom > maxZoom) {
       runtime.targetZoom = maxZoom;
       runtime.targetCameraX =
@@ -826,6 +826,27 @@ export function createViewContext(
     runtime.zooming = false;
     beginViewAnimation(center.centerX, center.centerY);
     runtime.viewAnimating = true;
+  };
+
+  const previewFocusItem = (target: FocusTarget) => {
+    if (isViewInteractionLocked(runtime) || isPrivateTarget(deps, target)) {
+      return;
+    }
+    panToFocusBounds(getFocusBounds(target));
+  };
+
+  const previewIsolatedContentId = (contentId: string) => {
+    if (runtime.branchIsolateRow === null) {
+      return;
+    }
+    const target = resolveContentFocusTarget(contentId);
+    if (!target) {
+      return;
+    }
+    panToFocusBounds(
+      getFocusBounds(target),
+      Math.max(PREVIEW_ISOLATE_HOVER_MAX_ZOOM, runtime.fitZoomLevel)
+    );
   };
 
   const clearPreviewFocus = () => {
@@ -856,6 +877,12 @@ export function createViewContext(
     const mainIndex = deps.items.findIndex((item) => item._id === contentId);
     if (mainIndex >= 0) {
       return { lane: 'main', index: mainIndex };
+    }
+    const previewIndex = deps.processedPreview.findIndex(
+      (item) => item.contentId === contentId
+    );
+    if (previewIndex >= 0) {
+      return { lane: 'preview', index: previewIndex };
     }
     return null;
   };
@@ -1059,6 +1086,7 @@ export function createViewContext(
     previewFocusItem,
     clearPreviewFocus,
     previewContentId,
+    previewIsolatedContentId,
     focusContentId,
     setCollectionViewActive,
     toggleOwnBranchIsolation,
