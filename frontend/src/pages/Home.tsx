@@ -51,12 +51,14 @@ type HomeProps = {
   focusContentIdControlRef?: MutableRefObject<
     ((contentId: string) => void) | undefined
   >;
+  resetViewControlRef?: MutableRefObject<(() => void) | undefined>;
 };
 
 function Home({
   onEntranceComplete,
   highlightedContentId,
   focusContentIdControlRef,
+  resetViewControlRef,
 }: HomeProps) {
   const { pathname } = useLocation();
   const isCollectionOpen = pathname === '/collection';
@@ -317,6 +319,7 @@ function Home({
           onPreviewItemHover={setHoveredCollectionItemId}
           highlightedMainContentId={highlightedContentId}
           focusContentIdControlRef={focusContentIdControlRef}
+          resetViewControlRef={resetViewControlRef}
           isCollectionView={isCollectionOpen}
           colour={timeline.colour}
           currentUsername={currentUsername}

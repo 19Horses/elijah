@@ -37,6 +37,7 @@ function TimelineCanvas({
   onPreviewItemHover,
   highlightedMainContentId = null,
   focusContentIdControlRef,
+  resetViewControlRef,
   isCollectionView = false,
   colour,
   currentUsername = null,
@@ -70,7 +71,8 @@ function TimelineCanvas({
     ((info: BranchFocusInfo | null) => void) | undefined
   >(setBranchFocus);
   const onBranchIsolationExitRef = useRef(onBranchIsolationExit);
-  const resetViewRef = useRef<(() => void) | undefined>(undefined);
+  const localResetViewRef = useRef<(() => void) | undefined>(undefined);
+  const resetViewRef = resetViewControlRef ?? localResetViewRef;
   const localIsolateRef = useRef<(() => void) | undefined>(undefined);
   const isolateOwnBranchRef = isolateControlRef ?? localIsolateRef;
   const localFocusItemRef = useRef<((target: FocusTarget) => void) | undefined>(

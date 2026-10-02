@@ -35,6 +35,9 @@ export type TimelineCanvasProps = {
   // Populated by the canvas with a toggle for isolating the viewer's own branch,
   // so an outside control (the user card) can invoke it.
   isolateControlRef?: MutableRefObject<(() => void) | undefined>;
+  // Populated by the canvas with a zoom-out/unfocus trigger, so an outside
+  // control (e.g. the nav drawer opening) can back out of a focused item.
+  resetViewControlRef?: MutableRefObject<(() => void) | undefined>;
   // Populated by the canvas with a jump-to-item focuser, so an outside control
   // (the mini player, rendered by the caller) can invoke it.
   focusItemControlRef?: MutableRefObject<
