@@ -761,8 +761,7 @@ main.main--home {
 .collection-card-titles {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 0.4rem;
+  align-items: stretch;
 }
 
 .collection-card-title {
@@ -770,10 +769,12 @@ main.main--home {
   border: none;
   color: rgba(255, 255, 255, 0.55);
   cursor: pointer;
+  display: block;
+  width: 100%;
   font-family: 'EB Garamond', 'Times New Roman', Times, serif;
   font-size: 1.15rem;
   margin: 0;
-  padding: 0;
+  padding: 0.2rem 0;
   text-align: left;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
   opacity: 0;
@@ -783,9 +784,24 @@ main.main--home {
   transition-delay: calc(var(--title-index) * 60ms);
 }
 
-.collection-card-title--active,
-.collection-card-title:hover {
+.collection-card-title--active {
   color: #ffffff;
+}
+
+.collection-card-title:hover {
+  color: var(--collection-title-colour, #ffffff);
+}
+
+.collection-card-title--collected {
+  color: rgba(255, 255, 255, 0.28);
+}
+
+.collection-card-title--collected.collection-card-title--active {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.collection-card-title--collected:hover {
+  color: var(--collection-title-colour, #ffffff);
 }
 
 .collection-card-panel--visible .collection-card-title {

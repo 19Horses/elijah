@@ -1,5 +1,8 @@
 export const ITEM_WIDTH = 180;
 export const ITEM_GAP = 140;
+export const PREVIEW_EXPAND_SCALE = 1.5;
+export const PREVIEW_EXPAND_LERP = 0.16;
+export const PREVIEW_ISOLATE_HOVER_MAX_ZOOM = 1.6;
 export const IMAGE_HEIGHT = 144;
 export const PADDING_X = 48;
 export const PADDING_Y = 48;

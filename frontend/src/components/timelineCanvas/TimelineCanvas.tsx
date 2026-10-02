@@ -34,6 +34,7 @@ function TimelineCanvas({
   previewItems = EMPTY_PREVIEW_ITEMS,
   previewColour = '#ffffff',
   highlightedPreviewContentId = null,
+  centerOnPreviewContentId = null,
   onPreviewItemHover,
   highlightedMainContentId = null,
   focusContentIdControlRef,
@@ -96,6 +97,7 @@ function TimelineCanvas({
   const highlightedPreviewIdRef = useRef<string | null>(
     highlightedPreviewContentId
   );
+  const centerOnPreviewIdRef = useRef<string | null>(centerOnPreviewContentId);
   const onPreviewHoverRef = useRef(onPreviewItemHover);
   const highlightedMainContentIdRef = useRef<string | null>(
     highlightedMainContentId
@@ -150,6 +152,10 @@ function TimelineCanvas({
   useEffect(() => {
     highlightedPreviewIdRef.current = highlightedPreviewContentId ?? null;
   }, [highlightedPreviewContentId]);
+
+  useEffect(() => {
+    centerOnPreviewIdRef.current = centerOnPreviewContentId ?? null;
+  }, [centerOnPreviewContentId]);
 
   useEffect(() => {
     onPreviewHoverRef.current = onPreviewItemHover;
@@ -280,6 +286,7 @@ function TimelineCanvas({
         isolateOwnBranchRef,
         focusItemRef,
         highlightedPreviewIdRef,
+        centerOnPreviewIdRef,
         onPreviewHoverRef,
         reloadPreviewRef,
         beginPreviewFadeOutRef,

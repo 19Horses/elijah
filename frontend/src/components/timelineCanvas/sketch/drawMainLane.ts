@@ -101,6 +101,8 @@ export type DateLabel = {
   // Text fill (0 = black for future items on the grey gradient, 255 = white).
   colour: number;
   alpha: number;
+  align?: 'center' | 'right' | 'left';
+  variant?: 'date' | 'title';
 };
 
 export type MainLaneDrawResult = {

@@ -12,6 +12,7 @@ import {
   MAIN_LINE_Y,
   PADDING_X,
   PADDING_Y,
+  PREVIEW_EXPAND_SCALE,
 } from '../constants';
 import { getBranchPoints, getSteppedBranchPoints } from '../connectors';
 import {
@@ -105,7 +106,11 @@ export type BoundsContext = {
   // collection's not-yet-collected items, evenly spaced and straightened onto
   // the main line — the single source of truth for both where those items are
   // drawn and where the camera frames/focuses them.
-  getIsolatedMergedLine: (rowIndex: number) => IsolatedLine | null;
+  getIsolatedMergedLine: (
+    rowIndex: number,
+    expandedContentId?: string | null,
+    expandProgress?: number
+  ) => IsolatedLine | null;
 };
 
 // The edge of a main item a branch springs from: the top when the collected
@@ -999,7 +1004,11 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
   // straightened onto the main line. Single source of truth for both where
   // these items are drawn (drawFrame.ts) and where the camera frames/focuses
   // them (view.ts) — kept in bounds.ts so the two can never drift apart.
-  const getIsolatedMergedLine = (rowIndex: number): IsolatedLine | null => {
+  const getIsolatedMergedLine = (
+    rowIndex: number,
+    expandedContentId: string | null = null,
+    expandProgress = 0
+  ): IsolatedLine | null => {
     const cb = getCollectedBounds();
     const isolatedCollected = processedCollected
       .map((item, index) => ({ item, index }))
@@ -1038,22 +1047,57 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     const centroid = merged.reduce((sum, e) => sum + e.cx, 0) / n;
     const startX = centroid - ((n - 1) * step) / 2;
 
+    const resolveEntryContentId = (e: (typeof merged)[number]): string =>
+      e.kind === 'collected'
+        ? processedCollected[e.index].contentId
+        : deps.processedPreview[e.index].contentId;
+    const expandedK =
+      expandedContentId && expandProgress > 0
+        ? merged.findIndex(
+            (e) => resolveEntryContentId(e) === expandedContentId
+          )
+        : -1;
+    let expandHalfExtra = 0;
+    if (expandedK >= 0) {
+      const expanded = merged[expandedK];
+      const baseWidth =
+        expanded.kind === 'collected'
+          ? cb[expanded.index].width
+          : getFittedSize(
+              deps.processedPreview[expanded.index].aspectRatio,
+              ITEM_WIDTH,
+              IMAGE_HEIGHT
+            ).width;
+      expandHalfExtra =
+        (baseWidth * (PREVIEW_EXPAND_SCALE - 1) * expandProgress) / 2;
+    }
+
     let minX = Infinity;
     let maxX = -Infinity;
     const entries: IsolatedLineEntry[] = merged.map((e, k) => {
-      const targetCenterX = startX + k * step;
+      const nudge =
+        expandedK < 0 || k === expandedK
+          ? 0
+          : k < expandedK
+          ? -expandHalfExtra
+          : expandHalfExtra;
+      const targetCenterX = startX + k * step + nudge;
+      const sizeScale =
+        k === expandedK ? 1 + (PREVIEW_EXPAND_SCALE - 1) * expandProgress : 1;
       if (e.kind === 'collected') {
         const b = cb[e.index];
-        const left = targetCenterX - b.width / 2;
-        const top = MAIN_LINE_Y - b.height / 2;
+        const width = b.width * sizeScale;
+        const height = b.height * sizeScale;
+        const left = targetCenterX - width / 2;
+        const top = MAIN_LINE_Y - height / 2;
         const rect: ContentBounds = {
           left,
-          right: left + b.width,
+          right: left + width,
           top,
           centerY: MAIN_LINE_Y,
-          width: b.width,
-          height: b.height,
-          dateBottom: top + b.height + DATE_OFFSET,
+          width,
+          height,
+          dateBottom: top + height + DATE_OFFSET,
         };
         minX = Math.min(minX, rect.left);
         maxX = Math.max(maxX, rect.right);
@@ -1065,11 +1109,9 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
         };
       }
       const item = deps.processedPreview[e.index];
-      const { width, height } = getFittedSize(
-        item.aspectRatio,
-        ITEM_WIDTH,
-        IMAGE_HEIGHT
-      );
+      const fitted = getFittedSize(item.aspectRatio, ITEM_WIDTH, IMAGE_HEIGHT);
+      const width = fitted.width * sizeScale;
+      const height = fitted.height * sizeScale;
       const left = targetCenterX - width / 2;
       const top = MAIN_LINE_Y - height / 2;
       const rect: ContentBounds = {

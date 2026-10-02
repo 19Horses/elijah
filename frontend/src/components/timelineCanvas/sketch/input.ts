@@ -92,28 +92,6 @@ export function createInputHandlers(
         runtime.zoom
       );
 
-      // While a branch is isolated (and no item is focused yet): clicking one
-      // of its straightened items focuses it in place; clicking empty space
-      // exits back to the full timeline. Once an item is focused, clicks fall
-      // through to the normal handling below (which unfocuses back to the
-      // isolated view).
-      if (runtime.branchIsolateRow !== null && runtime.focusTarget === null) {
-        const hitIsolated = runtime.isolatedRegions.find(
-          (region) =>
-            world.x >= region.left &&
-            world.x <= region.right &&
-            world.y >= region.top &&
-            world.y <= region.bottom
-        );
-        if (hitIsolated) {
-          view.focusItem({ lane: hitIsolated.lane, index: hitIsolated.index });
-        } else {
-          view.exitBranchIsolation();
-        }
-        runtime.dragLane = null;
-        return;
-      }
-
       const audioButton = deps.audio.getButtonRegion();
       if (
         audioButton &&
@@ -133,6 +111,30 @@ export function createInputHandlers(
         );
       if (navHit && runtime.focusTarget) {
         gallery.step(navHit.delta);
+        runtime.dragLane = null;
+        return;
+      }
+
+      if (runtime.branchIsolateRow !== null) {
+        const hitIsolated = runtime.isolatedRegions.find(
+          (region) =>
+            world.x >= region.left &&
+            world.x <= region.right &&
+            world.y >= region.top &&
+            world.y <= region.bottom
+        );
+        const isSameFocus =
+          hitIsolated &&
+          runtime.focusTarget !== null &&
+          hitIsolated.lane === runtime.focusTarget.lane &&
+          hitIsolated.index === runtime.focusTarget.index;
+        if (hitIsolated && !isSameFocus) {
+          view.focusItem({ lane: hitIsolated.lane, index: hitIsolated.index });
+        } else if (runtime.focusTarget !== null) {
+          view.unfocusItem();
+        } else {
+          view.exitBranchIsolation();
+        }
         runtime.dragLane = null;
         return;
       }
@@ -176,29 +178,6 @@ export function createInputHandlers(
           view.unfocusItem();
         } else {
           view.focusItem(clicked);
-        }
-      } else if (runtime.branchIsolateRow !== null && runtime.focusTarget) {
-        // Focused from within the isolated view (findClickedItem doesn't know
-        // about collectible items, so a click on one never lands above):
-        // clicking a different item in that same straightened line — real or
-        // collectible — switches focus straight to it; anything else
-        // (including the currently focused item, or empty space) returns to
-        // that isolated timeline rather than jumping to another branch.
-        const hitIsolated = runtime.isolatedRegions.find(
-          (region) =>
-            world.x >= region.left &&
-            world.x <= region.right &&
-            world.y >= region.top &&
-            world.y <= region.bottom
-        );
-        const isSameFocus =
-          hitIsolated &&
-          hitIsolated.lane === runtime.focusTarget.lane &&
-          hitIsolated.index === runtime.focusTarget.index;
-        if (hitIsolated && !isSameFocus) {
-          view.focusItem({ lane: hitIsolated.lane, index: hitIsolated.index });
-        } else {
-          view.unfocusItem();
         }
       } else {
         // Clicking a collector's branch line frames just their timeline.
