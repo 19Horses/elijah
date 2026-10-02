@@ -49,11 +49,13 @@ type NavDrawerProps = {
   focusContentIdControlRef?: MutableRefObject<
     ((contentId: string) => void) | undefined
   >;
+  resetViewControlRef?: MutableRefObject<(() => void) | undefined>;
 };
 
 function NavDrawer({
   onCollectedItemHover,
   focusContentIdControlRef,
+  resetViewControlRef,
 }: NavDrawerProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [hoverOpen, setHoverOpen] = useState(false);
@@ -114,6 +116,12 @@ function NavDrawer({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (drawerOpen) {
+      resetViewControlRef?.current?.();
+    }
+  }, [drawerOpen, resetViewControlRef]);
 
   useEffect(() => {
     if (!drawerOpen) return undefined;

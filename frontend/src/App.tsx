@@ -36,6 +36,7 @@ const AppRoutes = () => {
   const focusContentIdControlRef = useRef<
     ((contentId: string) => void) | undefined
   >(undefined);
+  const resetViewControlRef = useRef<(() => void) | undefined>(undefined);
 
   return (
     <>
@@ -50,6 +51,7 @@ const AppRoutes = () => {
             onEntranceComplete={handleEntranceComplete}
             highlightedContentId={hoveredCollectedContentId}
             focusContentIdControlRef={focusContentIdControlRef}
+            resetViewControlRef={resetViewControlRef}
           />
         )}
       </main>
@@ -57,6 +59,7 @@ const AppRoutes = () => {
         <NavDrawer
           onCollectedItemHover={setHoveredCollectedContentId}
           focusContentIdControlRef={focusContentIdControlRef}
+          resetViewControlRef={resetViewControlRef}
         />
       )}
       <DebugPanel />
