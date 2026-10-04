@@ -343,6 +343,19 @@ main.main--home {
   }
 }
 
+.timeline-detail--fading {
+  animation: timeline-detail-exit 0.9s ease-in forwards;
+}
+
+@keyframes timeline-detail-exit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
 .timeline-detail__meta {
   /* Bottom-align rather than baseline, so a wrapping multi-line title doesn't
      leave the date sitting up at its first line instead of the block's foot. */
@@ -671,6 +684,10 @@ main.main--home {
   pointer-events: none;
 }
 
+.collection-card-stack--collecting {
+  transition-duration: 750ms;
+}
+
 .collection-countdown {
   align-items: center;
   background: #ffffff;
@@ -757,7 +774,6 @@ main.main--home {
 .collection-card-panel--visible .collection-card-description {
   opacity: 1;
 }
-
 .collection-card-titles {
   display: flex;
   flex-direction: column;
@@ -952,7 +968,6 @@ main.main--home {
 }
 
 .collection-viewer__item--active {
-  cursor: default;
   transform: scale(1);
 }
 

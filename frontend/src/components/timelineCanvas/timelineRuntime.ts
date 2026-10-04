@@ -43,6 +43,7 @@ export function createTimelineRuntime(): TimelineRuntime {
     isCollectionViewActive: false,
     viewAnimating: false,
     viewUnfocusing: false,
+    slowViewAnimation: false,
     fitZoomLevel: 1,
     animationWorldX: 0,
     animationWorldY: 0,
@@ -60,6 +61,15 @@ export function createTimelineRuntime(): TimelineRuntime {
     branchIsolate: 0,
     previewFadeOutStartMs: null,
     previewFadeInStartMs: null,
+    collectStartMs: null,
+    collectIndex: -1,
+    collectReported: false,
+    collectContentId: null,
+    collectFinalRect: null,
+    collectedVersion: 0,
+    collectReturnIndex: -1,
+    collectReturnWaitStartMs: 0,
+    collectReturnStartMs: null,
     loadStartMs: 0,
     entranceComplete: false,
     focusContentFade: 0,
@@ -155,7 +165,8 @@ export function isViewInteractionLocked(runtime: TimelineRuntime): boolean {
     runtime.focusTarget !== null ||
     runtime.viewUnfocusing ||
     runtime.detailPhase !== 'none' ||
-    runtime.branchIsolateRow !== null
+    runtime.branchIsolateRow !== null ||
+    runtime.collectReturnIndex !== -1
   );
 }
 

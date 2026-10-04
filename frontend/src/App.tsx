@@ -16,15 +16,11 @@ import { initSelectionColour } from './services/userColor';
 
 const queryClient = new QueryClient();
 
+const TIMELINE_PATHS = ['/home', '/shop', '/events', '/login', '/collection'];
+
 const AppRoutes = () => {
   const { pathname } = useLocation();
-  const isHome = pathname === '/home';
-  const isShop = pathname === '/shop';
-  const isEvents = pathname === '/events';
-  const isLogin = pathname === '/login';
-  const isCollection = pathname === '/collection';
-  const isTimelineRoute =
-    isHome || isShop || isEvents || isLogin || isCollection;
+  const isTimelineRoute = TIMELINE_PATHS.includes(pathname);
   const showHeader = !isTimelineRoute;
   const [timelineReady, setTimelineReady] = useState(false);
   const handleEntranceComplete = useCallback(() => {
@@ -45,6 +41,9 @@ const AppRoutes = () => {
         <Routes>
           <Route path="/" element={<Navigate to="/home" replace />} />
           <Route path="/content/:slug" element={<Content />} />
+          {TIMELINE_PATHS.map((path) => (
+            <Route key={path} path={path} element={null} />
+          ))}
         </Routes>
         {isTimelineRoute && (
           <Home

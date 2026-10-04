@@ -111,6 +111,7 @@ export type BoundsContext = {
     expandedContentId?: string | null,
     expandProgress?: number
   ) => IsolatedLine | null;
+  invalidateCollected: () => void;
 };
 
 // The edge of a main item a branch springs from: the top when the collected
@@ -1150,5 +1151,10 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     getCollectedBounds,
     getIsolatedLineTargets,
     getIsolatedMergedLine,
+    invalidateCollected: () => {
+      gapExtraSlotsCache = null;
+      branchNodeXCache = null;
+      itemAttachCache = null;
+    },
   };
 }

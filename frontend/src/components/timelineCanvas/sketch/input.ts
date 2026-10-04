@@ -76,7 +76,7 @@ export function createInputHandlers(
   const mouseReleased = (event?: Event) => {
     // A release on overlaid DOM UI (e.g. the cancel button) shouldn't count as a
     // canvas click; just clear any in-progress drag.
-    if (!isCanvasEvent(event)) {
+    if (!isCanvasEvent(event) || runtime.collectStartMs !== null) {
       runtime.dragLane = null;
       return;
     }
@@ -130,6 +130,18 @@ export function createInputHandlers(
           hitIsolated.index === runtime.focusTarget.index;
         if (hitIsolated && !isSameFocus) {
           view.focusItem({ lane: hitIsolated.lane, index: hitIsolated.index });
+        } else if (
+          hitIsolated &&
+          hitIsolated.lane === 'preview' &&
+          !runtime.viewAnimating
+        ) {
+          const item = deps.processedPreview[hitIsolated.index];
+          if (item) {
+            runtime.collectStartMs = p.millis();
+            runtime.collectIndex = hitIsolated.index;
+            runtime.collectReported = false;
+            deps.refs.onPreviewCollectStartRef.current?.(item.contentId);
+          }
         } else if (runtime.focusTarget !== null) {
           view.unfocusItem();
         } else {
