@@ -27,6 +27,9 @@ export type TimelineCanvasProps = {
   // currently over on the canvas (or null), so the caller's own item list
   // can mirror the highlight the other way.
   onPreviewItemHover?: (contentId: string | null) => void;
+  onPreviewCollectStart?: (contentId: string) => void;
+  onPreviewCollect?: (contentId: string) => void;
+  cancelPreviewCollectControlRef?: MutableRefObject<(() => void) | undefined>;
   colour?: string | null;
   currentUsername?: string | null;
   highlightedType?: ContentType | null;
@@ -65,7 +68,6 @@ export type DetailImageRect = {
   width: number;
   height: number;
 };
-
 // Which collector's timeline the view is currently zoomed into, for the
 // top-bar label. Null when not zoomed into any branch.
 export type BranchFocusInfo = {
@@ -221,6 +223,7 @@ export type TimelineRuntime = {
   isCollectionViewActive: boolean;
   viewAnimating: boolean;
   viewUnfocusing: boolean;
+  slowViewAnimation: boolean;
   fitZoomLevel: number;
   animationWorldX: number;
   animationWorldY: number;
@@ -243,6 +246,15 @@ export type TimelineRuntime = {
   branchIsolate: number;
   previewFadeOutStartMs: number | null;
   previewFadeInStartMs: number | null;
+  collectStartMs: number | null;
+  collectIndex: number;
+  collectReported: boolean;
+  collectContentId: string | null;
+  collectFinalRect: DetailImageRect | null;
+  collectedVersion: number;
+  collectReturnIndex: number;
+  collectReturnWaitStartMs: number;
+  collectReturnStartMs: number | null;
   loadStartMs: number;
   // Set once the staggered entrance (images + connectors) has fully faded
   // in, so the one-shot onEntranceComplete callback only fires once.
@@ -322,6 +334,14 @@ export type TimelineSketchRefs = {
     ((items: ProcessedCollectionPreview[]) => void) | undefined
   >;
   beginPreviewFadeOutRef: MutableRefObject<(() => void) | undefined>;
+  onPreviewCollectStartRef: RefObject<
+    ((contentId: string) => void) | undefined
+  >;
+  onPreviewCollectRef: RefObject<((contentId: string) => void) | undefined>;
+  cancelPreviewCollectRef: MutableRefObject<(() => void) | undefined>;
+  reloadCollectedRef: MutableRefObject<
+    ((items: ProcessedCollected[]) => void) | undefined
+  >;
 };
 
 export type TimelineSketchDeps = {

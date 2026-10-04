@@ -30,6 +30,10 @@ import {
   DATE_FONT_SIZE,
   PREVIEW_EXPAND_LERP,
   PREVIEW_SWITCH_FADE_MS,
+  COLLECT_ANIM_MS,
+  COLLECT_HOLD_MS,
+  COLLECT_RETURN_FADE_MS,
+  COLLECT_RETURN_IMAGE_WAIT_MS,
   ZOOM_OUT_GROWTH_POWER,
 } from '../constants';
 import { drawDot } from '../connectors';
@@ -93,26 +97,47 @@ export function createDrawFrameHandler(
       index: number;
     }
   >();
-  deps.processed.forEach((item, index) => {
-    if (item.audioUrl) {
-      audioMeta.set(item.audioUrl, {
-        title: item.title,
-        imageUrl: item.imageUrl,
-        lane: 'main',
-        index,
-      });
+  let ownBranchRow = -1;
+  let syncedCollectedVersion = -1;
+  const syncCollectedCaches = () => {
+    if (syncedCollectedVersion === runtime.collectedVersion) {
+      return;
     }
-  });
-  deps.processedCollected.forEach((item, index) => {
-    if (item.audioUrl) {
-      audioMeta.set(item.audioUrl, {
-        title: item.title,
-        imageUrl: item.imageUrl,
-        lane: 'collected',
-        index,
-      });
+    syncedCollectedVersion = runtime.collectedVersion;
+    audioMeta.clear();
+    deps.processed.forEach((item, index) => {
+      if (item.audioUrl) {
+        audioMeta.set(item.audioUrl, {
+          title: item.title,
+          imageUrl: item.imageUrl,
+          lane: 'main',
+          index,
+        });
+      }
+    });
+    deps.processedCollected.forEach((item, index) => {
+      if (item.audioUrl) {
+        audioMeta.set(item.audioUrl, {
+          title: item.title,
+          imageUrl: item.imageUrl,
+          lane: 'collected',
+          index,
+        });
+      }
+    });
+    ownBranchRow = -1;
+    if (deps.currentUsername) {
+      for (const item of deps.processedCollected) {
+        const source = item.sources.find(
+          (s) => s.username === deps.currentUsername
+        );
+        if (source) {
+          ownBranchRow = source.rowIndex;
+          break;
+        }
+      }
     }
-  });
+  };
   // Last reported mini-player key, so the ref only fires when it changes.
   let lastAudioKey = '';
   // Last reported hovered collectible-item content id, so the ref only fires
@@ -124,21 +149,6 @@ export function createDrawFrameHandler(
   const previewHighlightProgress = new Map<string, number>();
   const previewExpandProgress = new Map<string, number>();
   const isolatedLineX = new Map<string, number>();
-
-  // The logged-in viewer's own branch row, so hovering the user card can
-  // highlight it exactly like hovering the branch on the canvas.
-  let ownBranchRow = -1;
-  if (deps.currentUsername) {
-    for (const item of deps.processedCollected) {
-      const source = item.sources.find(
-        (s) => s.username === deps.currentUsername
-      );
-      if (source) {
-        ownBranchRow = source.rowIndex;
-        break;
-      }
-    }
-  }
 
   const reportAudioState = (isFocusActive: boolean) => {
     const current = deps.audio.getCurrent();
@@ -168,6 +178,7 @@ export function createDrawFrameHandler(
   };
 
   return () => {
+    syncCollectedCaches();
     view.animateView();
     view.animatePan();
     view.animateZoom();
@@ -384,6 +395,94 @@ export function createDrawFrameHandler(
       previewSwitchAlpha = t;
     }
 
+    let collectProgress = 0;
+    let collectHeld = false;
+    if (runtime.collectStartMs !== null) {
+      const collectElapsed = p.millis() - runtime.collectStartMs;
+      const t = Math.min(1, collectElapsed / COLLECT_ANIM_MS);
+      collectProgress = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
+      collectHeld = collectElapsed >= COLLECT_ANIM_MS + COLLECT_HOLD_MS;
+    }
+    const isCollecting = runtime.collectStartMs !== null;
+
+    const returnIndex = runtime.collectReturnIndex;
+    let returnFade = 1;
+    if (returnIndex !== -1) {
+      if (runtime.collectReturnStartMs === null) {
+        const imageReady =
+          loadedCollectedImages[returnIndex] !== null ||
+          !deps.processedCollected[returnIndex]?.imageUrl;
+        if (
+          imageReady ||
+          p.millis() - runtime.collectReturnWaitStartMs >=
+            COLLECT_RETURN_IMAGE_WAIT_MS
+        ) {
+          runtime.collectReturnStartMs = p.millis();
+        }
+      }
+      if (runtime.collectReturnStartMs === null) {
+        returnFade = 0;
+      } else {
+        const t = Math.min(
+          1,
+          (p.millis() - runtime.collectReturnStartMs) / COLLECT_RETURN_FADE_MS
+        );
+        returnFade = t * t * (3 - 2 * t);
+        if (t >= 1) {
+          runtime.collectReturnIndex = -1;
+          runtime.collectReturnStartMs = null;
+          runtime.collectContentId = null;
+          runtime.collectFinalRect = null;
+          view.animateToFitView();
+        }
+      }
+    }
+    const isReturnTarget = (index: number) =>
+      returnIndex !== -1 && index === returnIndex;
+
+    const collectFade = (1 - collectProgress) * returnFade;
+    const isCollectTarget = (index: number) =>
+      isCollecting && index === runtime.collectIndex;
+    const moveToScreenCentre = <
+      T extends Pick<
+        ContentBounds,
+        'left' | 'right' | 'top' | 'height' | 'centerY'
+      >
+    >(
+      rect: T
+    ): T => {
+      const centreX = runtime.cameraX + p.width / (2 * runtime.zoom);
+      const centreY = runtime.cameraY + p.height / (2 * runtime.zoom);
+      const dx = (centreX - (rect.left + rect.right) / 2) * collectProgress;
+      const dy = (centreY - (rect.top + rect.height / 2)) * collectProgress;
+      return {
+        ...rect,
+        left: rect.left + dx,
+        right: rect.right + dx,
+        top: rect.top + dy,
+        centerY: rect.centerY + dy,
+      };
+    };
+
+    if (isCollecting && collectHeld && !runtime.collectReported) {
+      runtime.collectReported = true;
+      const collected = deps.processedPreview[runtime.collectIndex];
+      const entry = getIsolatedLine()?.entries.find(
+        (e) => e.kind === 'preview' && e.index === runtime.collectIndex
+      );
+      if (collected && entry) {
+        const finalRect = moveToScreenCentre(entry.rect);
+        runtime.collectContentId = collected.contentId;
+        runtime.collectFinalRect = {
+          left: (finalRect.left - runtime.cameraX) * runtime.zoom,
+          top: (finalRect.top - runtime.cameraY) * runtime.zoom,
+          width: finalRect.width * runtime.zoom,
+          height: finalRect.height * runtime.zoom,
+        };
+        deps.refs.onPreviewCollectRef.current?.(collected.contentId);
+      }
+    }
+
     const contentAlphaFor = (
       lane: 'main' | 'collected',
       index: number,
@@ -397,7 +496,10 @@ export function createDrawFrameHandler(
       if (isolateActive && (lane === 'main' || !isIsolatedItem(index))) {
         alpha *= 1 - isolate;
       }
-      return alpha;
+      if (lane === 'collected' && isReturnTarget(index)) {
+        return alpha;
+      }
+      return alpha * collectFade;
     };
 
     // While isolating, a collected item in the branch eases from its normal
@@ -443,7 +545,8 @@ export function createDrawFrameHandler(
     );
 
     // Hover effects are suppressed while focused or isolating.
-    const hoverSuppressed = isFocusActive || isolateActive;
+    const hoverSuppressed =
+      isFocusActive || isolateActive || returnIndex !== -1;
     const mainHover = computeMainLaneHover(
       deps,
       bounds,
@@ -496,7 +599,7 @@ export function createDrawFrameHandler(
       isFocusedTarget,
       getDetailDrawBounds: getDetailDrawBoundsIso,
       contentAlphaFor,
-      isolateOtherAlpha,
+      isolateOtherAlpha: isolateOtherAlpha * collectFade,
       audioNodeX,
       audioNodeShift,
       dateLabels,
@@ -553,7 +656,11 @@ export function createDrawFrameHandler(
               (entry) => entry.kind === 'preview' && entry.index === index
             )?.rect ?? collectedBounds[index]
           : collectedBounds[index];
-      const laneBounds = getDetailDrawBoundsIso(lane, index, itemBounds);
+      const isoBounds = getDetailDrawBoundsIso(lane, index, itemBounds);
+      const laneBounds =
+        lane === 'preview' && isCollectTarget(index)
+          ? moveToScreenCentre(isoBounds)
+          : isoBounds;
       // The focused image stays at its world bounds; report its on-screen
       // rect so the detail text can be placed around it.
       deps.refs.onDetailImageRectRef.current?.({
@@ -686,7 +793,13 @@ export function createDrawFrameHandler(
               ),
             };
           }
-          return { kind: entry.kind, index: entry.index, rect: entry.rect };
+          return {
+            kind: entry.kind,
+            index: entry.index,
+            rect: isCollectTarget(entry.index)
+              ? moveToScreenCentre(entry.rect)
+              : entry.rect,
+          };
         })
         .sort((a, b) => a.rect.left - b.rect.left);
 
@@ -732,6 +845,7 @@ export function createDrawFrameHandler(
         const { rect } = entry;
 
         if (
+          !isCollecting &&
           !pointerOverCollectionPanel &&
           mouseWorld.x >= rect.left &&
           mouseWorld.x <= rect.right &&
@@ -754,7 +868,11 @@ export function createDrawFrameHandler(
         }
         previewHighlightProgress.set(item.contentId, progress);
 
-        previewCtx.globalAlpha = isolate * previewSwitchAlpha;
+        const previewAlpha =
+          isolate *
+          previewSwitchAlpha *
+          (isCollectTarget(entry.index) ? 1 : collectFade);
+        previewCtx.globalAlpha = previewAlpha;
         const greyness = 1 - progress;
         if (greyness > 0) {
           previewCtx.filter = `grayscale(${greyness * 80}%) brightness(${
@@ -764,7 +882,7 @@ export function createDrawFrameHandler(
         if (progress > 0) {
           previewCtx.shadowColor = hexToRgba(
             deps.previewColour,
-            0.45 * isolate * previewSwitchAlpha * progress
+            0.45 * previewAlpha * progress
           );
           previewCtx.shadowBlur = 12 * zoomGrowth * progress;
         }
@@ -848,7 +966,8 @@ export function createDrawFrameHandler(
         // collected) item, so those links read differently from the solid
         // lines between items actually on the branch.
         const dotted = a.kind === 'preview' || b.kind === 'preview';
-        ctx2.globalAlpha = dotted ? isolate * previewSwitchAlpha : isolate;
+        ctx2.globalAlpha =
+          (dotted ? isolate * previewSwitchAlpha : isolate) * collectFade;
         ctx2.setLineDash(dotted ? [0.1, zoomGrowth * 6] : []);
         ctx2.lineCap = dotted ? 'round' : 'butt';
         p.line(a.rect.right, a.rect.centerY, b.rect.left, b.rect.centerY);
@@ -857,7 +976,8 @@ export function createDrawFrameHandler(
       ctx2.lineCap = 'butt';
       for (const { kind, rect } of isolatedOrdered) {
         ctx2.globalAlpha =
-          kind === 'preview' ? isolate * previewSwitchAlpha : isolate;
+          (kind === 'preview' ? isolate * previewSwitchAlpha : isolate) *
+          collectFade;
         drawDot(p, rect.left, rect.centerY, isolateColour, zoomGrowth);
         drawDot(p, rect.right, rect.centerY, isolateColour, zoomGrowth);
       }
@@ -889,7 +1009,7 @@ export function createDrawFrameHandler(
       const dateCtx = p.drawingContext as CanvasRenderingContext2D;
       p.noStroke();
       for (const label of dateLabels) {
-        dateCtx.globalAlpha = label.alpha;
+        dateCtx.globalAlpha = label.alpha * collectFade;
         p.fill(label.colour);
         const horizontalAlign =
           label.align === 'right'
@@ -981,6 +1101,26 @@ export function createDrawFrameHandler(
           hoveredMainItem?.title
         );
       }
+    } else if (lastHoveredPreviewId !== null) {
+      const hoveredPreviewIndex = deps.processedPreview.findIndex(
+        (item) => item.contentId === lastHoveredPreviewId
+      );
+      const isHoveredPreviewFocused =
+        isFocusActive && isFocusedTarget('preview', hoveredPreviewIndex);
+      if (
+        hoveredPreviewIndex !== -1 &&
+        (isHoveredPreviewFocused || runtime.focusContentFade <= LOAD_ALPHA_SNAP)
+      ) {
+        drawUserLabel(
+          p,
+          isHoveredPreviewFocused
+            ? '+ Collect item'
+            : deps.processedPreview[hoveredPreviewIndex].title,
+          deps.previewColour,
+          p.mouseX,
+          p.mouseY
+        );
+      }
     }
 
     // While an item is focused, hovering one of its connector dots grows the
@@ -1062,7 +1202,8 @@ export function createDrawFrameHandler(
       (mainHover.hoveredMain !== -1 &&
         !deps.processed[mainHover.hoveredMain]?.isPrivate) ||
       (collectedHover.hoveredCollectedIsImage &&
-        !deps.processedCollected[collectedHover.hoveredCollected]?.isPrivate);
+        !deps.processedCollected[collectedHover.hoveredCollected]?.isPrivate) ||
+      lastHoveredPreviewId !== null;
     if (overAudioButton || overGalleryArrow) {
       p.cursor('pointer');
     } else if (view.isViewInteractionLocked()) {

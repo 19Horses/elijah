@@ -40,7 +40,7 @@ export function drawUserLabel(
 
   p.noStroke();
   p.fill(colour);
-  p.rect(left, top, width, labelHeight, 4);
+  p.rect(left, top, width, labelHeight);
 
   p.fill(getContrastText(colour));
   p.textAlign(p.CENTER, p.CENTER);
@@ -107,7 +107,7 @@ export function drawCollectedSourcesLabel(
   if (title) {
     p.noStroke();
     p.fill(17);
-    p.rect(left, top, totalWidth, titleHeight, 4, 4, 0, 0);
+    p.rect(left, top, totalWidth, titleHeight);
     p.fill(255);
     p.textAlign(p.CENTER, p.CENTER);
     p.textStyle(p.BOLD);
@@ -121,7 +121,7 @@ export function drawCollectedSourcesLabel(
     const width = chipWidths[index];
     p.noStroke();
     p.fill(chip.bg);
-    p.rect(chipLeft, chipsTop, width, chipsRowHeight, 4);
+    p.rect(chipLeft, chipsTop, width, chipsRowHeight);
     p.fill(getContrastText(chip.bg));
     p.textAlign(p.CENTER, p.CENTER);
     p.textStyle(p.NORMAL);

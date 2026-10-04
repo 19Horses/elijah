@@ -31,10 +31,17 @@ import {
   getContentDetailNewsletterContent,
   useContentDetail,
 } from '../queries/contentDetail';
-import { useCollectedTimeline } from '../queries/collectedContent';
+import {
+  useCollectedTimeline,
+  type CollectedRowItem,
+  type CollectedUserRow,
+} from '../queries/collectedContent';
 import { useCollections } from '../queries/collection';
-import { useMainTimeline } from '../queries/mainTimeline';
-import { hasCollectedFrom } from '../services/collectItem';
+import {
+  useMainTimeline,
+  type MainTimelineItem,
+} from '../queries/mainTimeline';
+import { collectItem, hasCollectedFrom } from '../services/collectItem';
 import { DEBUG_TIMERS_EVENT } from '../services/debugTimers';
 import { DEFAULT_COLOUR, getStoredColour } from '../services/userColor';
 import { getStoredUser } from '../services/userStorage';
@@ -108,6 +115,7 @@ function Home({
   >({});
   const [highlightedType] = useState<ContentType | null>(null);
   const [focusSlug, setFocusSlug] = useState<string | null>(null);
+  const [collectingItemId, setCollectingItemId] = useState<string | null>(null);
   const [detailReady, setDetailReady] = useState(false);
   const [detailImageRect, setDetailImageRect] =
     useState<DetailImageRect | null>(null);
@@ -132,6 +140,7 @@ function Home({
     setFocusSlug(null);
     setDetailReady(false);
     setDetailImageRect(null);
+    setCollectingItemId(null);
   }, []);
 
   const handleDetailLayoutStart = useCallback(() => {
@@ -196,6 +205,77 @@ function Home({
     void queryClient.invalidateQueries({ queryKey: ['mainTimeline'] });
     void queryClient.invalidateQueries({ queryKey: ['contentDetail'] });
   };
+
+  const cancelPreviewCollectRef = useRef<(() => void) | undefined>(undefined);
+  const handlePreviewCollect = useCallback(
+    (contentId: string) => {
+      const currentUser = getStoredUser();
+      const collectedContent = expandedCollection?.content?.find(
+        (item) => item._id === contentId
+      );
+      if (!currentUser || !expandedCollection || !collectedContent) {
+        cancelPreviewCollectRef.current?.();
+        setCollectingItemId(null);
+        return;
+      }
+      const collectionId = expandedCollection._id;
+      const previousRows = queryClient.getQueryData<CollectedUserRow[]>([
+        'collectedTimeline',
+      ]);
+      const optimisticItem: CollectedRowItem = {
+        content: {
+          image: null,
+          ...collectedContent,
+          unlockTime: null,
+          expiryTime: null,
+          isPrivate: false,
+        } as MainTimelineItem,
+        collectedAt: new Date().toISOString(),
+      };
+      queryClient.setQueryData<CollectedUserRow[]>(
+        ['collectedTimeline'],
+        (rows = []) => {
+          const ownRow = rows.find((row) => row.userId === currentUser.id);
+          if (ownRow) {
+            return rows.map((row) =>
+              row === ownRow
+                ? { ...row, items: [...row.items, optimisticItem] }
+                : row
+            );
+          }
+          return [
+            ...rows,
+            {
+              userId: currentUser.id,
+              username: currentUser.username,
+              colour: getStoredColour() ?? DEFAULT_COLOUR,
+              items: [optimisticItem],
+            },
+          ];
+        }
+      );
+      setCollectedStatus((prev) => ({ ...prev, [collectionId]: true }));
+
+      const isInMainTimeline =
+        timeline?.items.some((item) => item._id === contentId) ?? false;
+      void collectItem(currentUser.id, contentId, collectionId)
+        .then(() => {
+          void queryClient.invalidateQueries({
+            queryKey: ['collectedTimeline'],
+          });
+          void queryClient.invalidateQueries({ queryKey: ['contentDetail'] });
+          if (isInMainTimeline) {
+            void queryClient.invalidateQueries({ queryKey: ['mainTimeline'] });
+          }
+        })
+        .catch((collectError) => {
+          console.error('Failed to collect item', collectError);
+          queryClient.setQueryData(['collectedTimeline'], previousRows);
+          setCollectedStatus((prev) => ({ ...prev, [collectionId]: false }));
+        });
+    },
+    [expandedCollection, queryClient, timeline]
+  );
 
   // Clicking a collection badge lists that collection's item titles below it
   // — instead of opening the collection view. Only one collection can be
@@ -329,6 +409,9 @@ function Home({
           highlightedPreviewContentId={highlightedCollectionItemId}
           centerOnPreviewContentId={centerOnCollectionItemId}
           onPreviewItemHover={setHoveredCollectionItemId}
+          onPreviewCollectStart={setCollectingItemId}
+          onPreviewCollect={handlePreviewCollect}
+          cancelPreviewCollectControlRef={cancelPreviewCollectRef}
           highlightedMainContentId={highlightedContentId}
           focusContentIdControlRef={focusContentIdControlRef}
           resetViewControlRef={resetViewControlRef}
@@ -351,6 +434,7 @@ function Home({
         <TimelineDetailOverlay
           detail={timelineDetail}
           imageRect={detailImageRect}
+          fading={collectingItemId !== null}
         />
         <div
           className={`top-right-stack${
@@ -370,7 +454,14 @@ function Home({
             (collections ?? [])
               .filter((collection) => collectedStatus[collection._id] === false)
               .map((collection) => (
-                <div className="collection-card-stack" key={collection._id}>
+                <div
+                  className={`collection-card-stack${
+                    collectingItemId !== null
+                      ? ' collection-card-stack--hidden collection-card-stack--collecting'
+                      : ''
+                  }`}
+                  key={collection._id}
+                >
                   <CollectionCountdown
                     collection={collection}
                     onClick={() => handleCollectionBadgeClick(collection._id)}

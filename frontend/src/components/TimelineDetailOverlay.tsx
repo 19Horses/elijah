@@ -83,6 +83,7 @@ export type TimelineDetailView = {
 type TimelineDetailOverlayProps = {
   detail: TimelineDetailView | null;
   imageRect?: DetailImageRect | null;
+  fading?: boolean;
 };
 
 // Gap between the image and the text placed above/below/beside it.
@@ -93,6 +94,7 @@ const EDGE_PADDING_PX = 48;
 function TimelineDetailOverlay({
   detail,
   imageRect = null,
+  fading = false,
 }: TimelineDetailOverlayProps) {
   if (!detail || !imageRect) {
     return null;
@@ -145,7 +147,9 @@ function TimelineDetailOverlay({
 
   return (
     <aside
-      className="timeline-detail timeline-detail--visible"
+      className={`timeline-detail timeline-detail--visible${
+        fading ? ' timeline-detail--fading' : ''
+      }`}
       aria-label={detail.title}
       style={{
         left: `${imageRect.left}px`,

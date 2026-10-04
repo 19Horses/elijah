@@ -18,6 +18,7 @@ import { createTimelineRuntime } from './timelineRuntime';
 import type {
   BranchFocusInfo,
   FocusTarget,
+  ProcessedCollected,
   TimelineCanvasProps,
 } from './types';
 
@@ -36,6 +37,9 @@ function TimelineCanvas({
   highlightedPreviewContentId = null,
   centerOnPreviewContentId = null,
   onPreviewItemHover,
+  onPreviewCollectStart,
+  onPreviewCollect,
+  cancelPreviewCollectControlRef,
   highlightedMainContentId = null,
   focusContentIdControlRef,
   resetViewControlRef,
@@ -99,6 +103,18 @@ function TimelineCanvas({
   );
   const centerOnPreviewIdRef = useRef<string | null>(centerOnPreviewContentId);
   const onPreviewHoverRef = useRef(onPreviewItemHover);
+  const onPreviewCollectStartRef = useRef(onPreviewCollectStart);
+  const onPreviewCollectRef = useRef(onPreviewCollect);
+  const localCancelPreviewCollectRef = useRef<(() => void) | undefined>(
+    undefined
+  );
+  const cancelPreviewCollectRef =
+    cancelPreviewCollectControlRef ?? localCancelPreviewCollectRef;
+  const reloadCollectedRef = useRef<
+    ((items: ProcessedCollected[]) => void) | undefined
+  >(undefined);
+  const collectedRowsRef = useRef(collectedRows);
+  const appliedCollectedRowsRef = useRef<CollectedUserRow[] | null>(null);
   const highlightedMainContentIdRef = useRef<string | null>(
     highlightedMainContentId
   );
@@ -160,6 +176,27 @@ function TimelineCanvas({
   useEffect(() => {
     onPreviewHoverRef.current = onPreviewItemHover;
   }, [onPreviewItemHover]);
+
+  useEffect(() => {
+    onPreviewCollectStartRef.current = onPreviewCollectStart;
+  }, [onPreviewCollectStart]);
+
+  useEffect(() => {
+    onPreviewCollectRef.current = onPreviewCollect;
+  }, [onPreviewCollect]);
+
+  useEffect(() => {
+    collectedRowsRef.current = collectedRows;
+    if (
+      appliedCollectedRowsRef.current === null ||
+      appliedCollectedRowsRef.current === collectedRows ||
+      !reloadCollectedRef.current
+    ) {
+      return;
+    }
+    appliedCollectedRowsRef.current = collectedRows;
+    reloadCollectedRef.current(buildProcessedCollected(collectedRows));
+  }, [collectedRows]);
 
   useEffect(() => {
     highlightedMainContentIdRef.current = highlightedMainContentId ?? null;
@@ -246,7 +283,9 @@ function TimelineCanvas({
     setBranchFocus(null);
 
     const processed = buildProcessedItems(items);
-    const processedCollected = buildProcessedCollected(collectedRows);
+    const mountedCollectedRows = collectedRowsRef.current;
+    appliedCollectedRowsRef.current = mountedCollectedRows;
+    const processedCollected = buildProcessedCollected(mountedCollectedRows);
     const processedPreview = buildProcessedCollectionPreview(previewItems);
     const backgroundColour = colour || DEFAULT_BACKGROUND;
     const itemOffsets = processed.map(() => ({ dx: 0, dy: 0 }));
@@ -290,6 +329,10 @@ function TimelineCanvas({
         onPreviewHoverRef,
         reloadPreviewRef,
         beginPreviewFadeOutRef,
+        onPreviewCollectStartRef,
+        onPreviewCollectRef,
+        cancelPreviewCollectRef,
+        reloadCollectedRef,
         highlightedMainContentIdRef,
         focusContentIdRef,
         setCollectionViewActiveRef,
@@ -309,11 +352,17 @@ function TimelineCanvas({
       // Purge any canvas a previous zombie instance may have left behind.
       container.replaceChildren();
       p5InstanceRef.current = new p5(sketch, container);
+      const latestRows = collectedRowsRef.current;
+      if (appliedCollectedRowsRef.current !== latestRows) {
+        appliedCollectedRowsRef.current = latestRows;
+        reloadCollectedRef.current?.(buildProcessedCollected(latestRows));
+      }
     });
 
     return () => {
       cancelled = true;
       cancelAnimationFrame(rafId);
+      reloadCollectedRef.current = undefined;
       interactionLockedRef.current = false;
       audio.dispose();
       audioRef.current = null;
@@ -326,7 +375,7 @@ function TimelineCanvas({
     // read once below for the sketch's first mount, but subsequent changes are
     // hot-swapped via reloadPreviewRef (above) instead of remounting the whole
     // canvas.
-  }, [items, collectedRows, previewColour, colour, currentUsername]);
+  }, [items, previewColour, colour, currentUsername]);
 
   return (
     <div className="timeline-canvas-wrap">

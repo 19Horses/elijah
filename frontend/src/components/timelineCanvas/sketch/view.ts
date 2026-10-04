@@ -15,6 +15,7 @@ import {
   PAN_SETTLE_THRESHOLD_PX,
   PREVIEW_ISOLATE_HOVER_MAX_ZOOM,
   VIEW_ANIMATION_LERP,
+  COLLECT_RETURN_ZOOM_LERP,
   VIEW_SNAP_THRESHOLD,
   VIEW_UNFOCUS_ANIMATION_LERP,
   WHEEL_ZOOM_SENSITIVITY,
@@ -34,6 +35,7 @@ import {
 import type {
   BranchFocusInfo,
   ContentBounds,
+  DetailImageRect,
   FocusTarget,
   TimelineSketchDeps,
 } from '../types';
@@ -58,6 +60,11 @@ export type ViewContext = {
   scrollView: (deltaX: number, deltaY: number) => void;
   fitView: () => void;
   playEntranceAnimation: () => void;
+  startCollectReturn: (
+    collectedIndex: number,
+    rect: DetailImageRect
+  ) => boolean;
+  animateToFitView: () => void;
   animateView: () => void;
   animatePan: () => void;
   animateZoom: () => void;
@@ -116,6 +123,7 @@ export function createViewContext(
     runtime.animationStartCameraX = runtime.cameraX;
     runtime.animationStartCameraY = runtime.cameraY;
     runtime.animationStartZoom = runtime.zoom;
+    runtime.slowViewAnimation = false;
   };
 
   // Frame an arbitrary set of item bounds: set the target zoom/camera so the
@@ -531,6 +539,63 @@ export function createViewContext(
     runtime.viewUnfocusing = false;
   };
 
+  const startCollectReturn = (
+    collectedIndex: number,
+    rect: DetailImageRect
+  ) => {
+    const roughBounds = bounds.getCollectedBounds()[collectedIndex];
+    if (!roughBounds || roughBounds.width <= 0) {
+      return false;
+    }
+    clearBranchFocus();
+    runtime.panning = false;
+    runtime.zooming = false;
+    resetCanvasFocus(runtime);
+    deps.refs.onContentUnfocusRef.current?.();
+    runtime.focusContentFade = 0;
+    notifyFocusFade(deps);
+    const wasIsolating = runtime.branchIsolateActive;
+    runtime.branchIsolateActive = false;
+    runtime.branchIsolate = 0;
+    runtime.branchIsolateRow = null;
+    runtime.branchDimStrength = 0;
+    runtime.branchDimRow = null;
+    runtime.collectStartMs = null;
+    runtime.collectIndex = -1;
+    runtime.collectReported = false;
+    computeFitViewTargets();
+    if (wasIsolating) {
+      deps.refs.onBranchIsolationExitRef.current?.();
+    }
+    runtime.zoom = rect.width / roughBounds.width;
+    const itemBounds = bounds.getCollectedBounds()[collectedIndex];
+    runtime.zoom = rect.width / itemBounds.width;
+    runtime.cameraX = itemBounds.left - rect.left / runtime.zoom;
+    runtime.cameraY = itemBounds.top - rect.top / runtime.zoom;
+    runtime.panTargetCameraX = runtime.cameraX;
+    runtime.panTargetCameraY = runtime.cameraY;
+    runtime.viewAnimating = false;
+    runtime.viewUnfocusing = false;
+    runtime.collectReturnIndex = collectedIndex;
+    runtime.collectReturnWaitStartMs = p.millis();
+    runtime.collectReturnStartMs = null;
+    syncInteractionLock(deps);
+    return true;
+  };
+
+  const animateToFitView = () => {
+    runtime.panning = false;
+    runtime.zooming = false;
+    computeFitViewTargets();
+    beginViewAnimation(
+      runtime.targetCameraX + p.width / (2 * runtime.targetZoom),
+      runtime.targetCameraY + p.height / (2 * runtime.targetZoom)
+    );
+    runtime.slowViewAnimation = true;
+    runtime.viewAnimating = true;
+    runtime.viewUnfocusing = false;
+  };
+
   const animateView = () => {
     if (!runtime.viewAnimating) {
       if (runtime.focusTarget && !runtime.viewUnfocusing) {
@@ -544,7 +609,9 @@ export function createViewContext(
       return;
     }
 
-    const lerpFactor = runtime.viewUnfocusing
+    const lerpFactor = runtime.slowViewAnimation
+      ? COLLECT_RETURN_ZOOM_LERP
+      : runtime.viewUnfocusing
       ? VIEW_UNFOCUS_ANIMATION_LERP
       : VIEW_ANIMATION_LERP;
     const lerp = (current: number, target: number) =>
@@ -617,6 +684,7 @@ export function createViewContext(
       const wasUnfocusing = runtime.viewUnfocusing;
       runtime.viewAnimating = false;
       runtime.viewUnfocusing = false;
+      runtime.slowViewAnimation = false;
       if (runtime.focusTarget && !wasUnfocusing) {
         runtime.focusContentFade = 1;
         if (runtime.detailPhase === 'none') {
@@ -1075,6 +1143,8 @@ export function createViewContext(
     scrollView,
     fitView,
     playEntranceAnimation,
+    startCollectReturn,
+    animateToFitView,
     animateView,
     animatePan,
     animateZoom,

@@ -1,13 +1,16 @@
 import type p5 from 'p5';
 import blankCdUrl from '../../Blank_cd.png';
 import garamondUrl from '../../EBGaramond-Regular.ttf';
-import type { ProcessedCollectionPreview, TimelineSketchDeps } from './types';
+import type {
+  ProcessedCollected,
+  ProcessedCollectionPreview,
+  TimelineSketchDeps,
+} from './types';
 import { createBoundsContext } from './sketch/bounds';
 import { createDrawFrameHandler } from './sketch/drawFrame';
 import { createGalleryController } from './sketch/galleryController';
 import { createInputHandlers } from './sketch/input';
 import { createViewContext } from './sketch/view';
-
 export function createTimelineSketch(
   deps: TimelineSketchDeps
 ): (p: p5) => void {
@@ -59,6 +62,117 @@ export function createTimelineSketch(
     };
     deps.refs.beginPreviewFadeOutRef.current = () => {
       deps.runtime.previewFadeOutStartMs = p.millis();
+    };
+    deps.refs.cancelPreviewCollectRef.current = () => {
+      deps.runtime.collectStartMs = null;
+      deps.runtime.collectIndex = -1;
+      deps.runtime.collectReported = false;
+      deps.runtime.collectContentId = null;
+      deps.runtime.collectFinalRect = null;
+    };
+    const loadCollectedImages = (
+      items: ProcessedCollected[],
+      reuse: Map<string, p5.Image>
+    ) => {
+      loadedCollectedImages.length = items.length;
+      loadedCollectedImages.fill(null);
+      items.forEach((item, index) => {
+        if (!item.imageUrl) {
+          return;
+        }
+        const cached = reuse.get(item.imageUrl);
+        if (cached) {
+          loadedCollectedImages[index] = cached;
+          return;
+        }
+        p.loadImage(
+          item.imageUrl,
+          (img) => {
+            if (deps.processedCollected[index] === item) {
+              loadedCollectedImages[index] = img;
+            }
+          },
+          () => {
+            if (deps.processedCollected[index] === item) {
+              loadedCollectedImages[index] = null;
+            }
+          }
+        );
+      });
+    };
+    deps.refs.reloadCollectedRef.current = (items) => {
+      const { runtime } = deps;
+      const reuse = new Map<string, p5.Image>();
+      deps.processedCollected.forEach((item, index) => {
+        const img = loadedCollectedImages[index];
+        if (item.imageUrl && img) {
+          reuse.set(item.imageUrl, img);
+        }
+      });
+      deps.processedPreview.forEach((item, index) => {
+        const img = loadedPreviewImages[index];
+        if (item.imageUrl && img && !reuse.has(item.imageUrl)) {
+          reuse.set(item.imageUrl, img);
+        }
+      });
+      const focusedContentId =
+        runtime.focusTarget?.lane === 'collected'
+          ? deps.processedCollected[runtime.focusTarget.index]?.contentId
+          : undefined;
+
+      deps.processedCollected.splice(
+        0,
+        deps.processedCollected.length,
+        ...items
+      );
+      deps.collectedOffsets.splice(
+        0,
+        deps.collectedOffsets.length,
+        ...items.map(() => ({ dx: 0, dy: 0 }))
+      );
+      loadCollectedImages(items, reuse);
+      boundsCtx.invalidateCollected();
+      runtime.collectedVersion += 1;
+
+      if (focusedContentId !== undefined) {
+        const index = items.findIndex(
+          (item) => item.contentId === focusedContentId
+        );
+        if (index === -1) {
+          view.unfocusItem();
+        } else {
+          runtime.focusTarget = { lane: 'collected', index };
+        }
+      }
+
+      const collectContentId = runtime.collectContentId;
+      if (!collectContentId) {
+        return;
+      }
+      const collectedIndex = items.findIndex(
+        (item) =>
+          item.contentId === collectContentId &&
+          item.sources.some(
+            (source) => source.username === deps.currentUsername
+          )
+      );
+      if (runtime.collectReturnIndex !== -1) {
+        if (collectedIndex === -1) {
+          runtime.collectReturnIndex = -1;
+          runtime.collectReturnStartMs = null;
+          runtime.collectContentId = null;
+          runtime.collectFinalRect = null;
+          view.animateToFitView();
+        } else {
+          runtime.collectReturnIndex = collectedIndex;
+        }
+      } else if (
+        runtime.collectReported &&
+        runtime.collectFinalRect &&
+        collectedIndex !== -1
+      ) {
+        view.startCollectReturn(collectedIndex, runtime.collectFinalRect);
+      }
     };
     const cdImageRef: { current: p5.Image | null } = { current: null };
     const gallery = createGalleryController(p);
@@ -120,22 +234,7 @@ export function createTimelineSketch(
         );
       });
 
-      deps.processedCollected.forEach((item, index) => {
-        if (!item.imageUrl) {
-          return;
-        }
-
-        p.loadImage(
-          item.imageUrl,
-          (img) => {
-            loadedCollectedImages[index] = img;
-          },
-          () => {
-            loadedCollectedImages[index] = null;
-          }
-        );
-      });
-
+      loadCollectedImages(deps.processedCollected, new Map());
       loadPreviewImages(deps.processedPreview);
     };
 
