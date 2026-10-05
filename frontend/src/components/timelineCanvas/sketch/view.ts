@@ -65,6 +65,8 @@ export type ViewContext = {
     rect: DetailImageRect
   ) => boolean;
   animateToFitView: () => void;
+  startPreviewCollect: (previewIndex: number) => boolean;
+  collectFocusedPreviewContentId: (contentId: string) => void;
   animateView: () => void;
   animatePan: () => void;
   animateZoom: () => void;
@@ -581,6 +583,33 @@ export function createViewContext(
     runtime.collectReturnStartMs = null;
     syncInteractionLock(deps);
     return true;
+  };
+
+  const startPreviewCollect = (previewIndex: number): boolean => {
+    const item = deps.processedPreview[previewIndex];
+    if (
+      !item ||
+      runtime.viewAnimating ||
+      runtime.collectStartMs !== null ||
+      runtime.focusTarget?.lane !== 'preview' ||
+      runtime.focusTarget.index !== previewIndex
+    ) {
+      return false;
+    }
+    runtime.collectStartMs = p.millis();
+    runtime.collectIndex = previewIndex;
+    runtime.collectReported = false;
+    deps.refs.onPreviewCollectStartRef.current?.(item.contentId);
+    return true;
+  };
+
+  const collectFocusedPreviewContentId = (contentId: string) => {
+    const previewIndex = deps.processedPreview.findIndex(
+      (item) => item.contentId === contentId
+    );
+    if (previewIndex !== -1) {
+      startPreviewCollect(previewIndex);
+    }
   };
 
   const animateToFitView = () => {
@@ -1145,6 +1174,8 @@ export function createViewContext(
     playEntranceAnimation,
     startCollectReturn,
     animateToFitView,
+    startPreviewCollect,
+    collectFocusedPreviewContentId,
     animateView,
     animatePan,
     animateZoom,

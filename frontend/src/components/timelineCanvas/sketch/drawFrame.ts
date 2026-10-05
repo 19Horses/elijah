@@ -1114,7 +1114,7 @@ export function createDrawFrameHandler(
         drawUserLabel(
           p,
           isHoveredPreviewFocused
-            ? '+ Collect item'
+            ? '+ collect item'
             : deps.processedPreview[hoveredPreviewIndex].title,
           deps.previewColour,
           p.mouseX,

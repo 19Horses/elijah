@@ -781,11 +781,14 @@ main.main--home {
 }
 
 .collection-card-title {
+  align-items: baseline;
   background: none;
   border: none;
   color: rgba(255, 255, 255, 0.55);
   cursor: pointer;
-  display: block;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
   width: 100%;
   font-family: 'EB Garamond', 'Times New Roman', Times, serif;
   font-size: 1.15rem;
@@ -802,6 +805,22 @@ main.main--home {
 
 .collection-card-title--active {
   color: #ffffff;
+}
+
+.collection-card-title__plus {
+  flex-shrink: 0;
+}
+
+.collect-tooltip {
+  font-family: 'EB Garamond', 'Times New Roman', Times, serif;
+  font-size: 12px;
+  line-height: 16px;
+  padding: 4px 8px;
+  pointer-events: none;
+  position: fixed;
+  transform: translate(-50%, calc(-100% - 14px));
+  white-space: nowrap;
+  z-index: 1000;
 }
 
 .collection-card-title:hover {
