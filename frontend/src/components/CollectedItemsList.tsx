@@ -8,6 +8,8 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { getContentTypeLabel } from '../constants/contentTypes';
+import ContentTypeIcon, { CONTENT_TYPE_ICONS } from './ContentTypeIcon';
+import type { ContentType } from '../types/content';
 import { fetchContentByIds } from '../queries/collectedContent';
 import { formatMainTimelineDate } from '../queries/mainTimeline';
 import { getCollectedItems } from '../services/collectItem';
@@ -16,6 +18,7 @@ import { getStoredUser } from '../services/userStorage';
 type CollectedListItem = {
   id: string;
   title: string;
+  type: ContentType;
   typeLabel: string;
   dateLabel: string;
   collectedAt: string;
@@ -36,6 +39,7 @@ async function fetchMyCollectedItems(): Promise<CollectedListItem[]> {
       return {
         id: item.id,
         title: matched.title,
+        type: matched._type,
         typeLabel: getContentTypeLabel(matched._type),
         dateLabel: formatMainTimelineDate(matched.date),
         collectedAt: item.collectedAt,
@@ -104,7 +108,13 @@ function CollectedItemsList({
           >
             <span className="collected-items-list__date">{item.dateLabel}</span>
             <span className="collected-items-list__title">{item.title}</span>
-            <span className="collected-items-list__type">{item.typeLabel}</span>
+            <span className="collected-items-list__type" title={item.typeLabel}>
+              {CONTENT_TYPE_ICONS[item.type] ? (
+                <ContentTypeIcon type={item.type} />
+              ) : (
+                item.typeLabel
+              )}
+            </span>
           </button>
         </li>
       ))}

@@ -4,17 +4,21 @@ import photoIcon from '../assets/icons/photo.svg';
 import videoIcon from '../assets/icons/video.svg';
 import type { ContentType } from '../types/content';
 
-export const CONTENT_TYPE_ICONS: Partial<
-  Record<ContentType | 'video', string>
-> = {
+type IconType = ContentType | 'video';
+
+export const CONTENT_TYPE_ICONS: Partial<Record<IconType, string>> = {
   audioAsset: musicIcon,
   newsletter: newsIcon,
   imageAsset: photoIcon,
   video: videoIcon,
 };
 
+export const CONTENT_TYPE_ICON_SCALE: Partial<Record<IconType, number>> = {
+  newsletter: 1.2,
+};
+
 type ContentTypeIconProps = {
-  type: ContentType | 'video';
+  type: IconType;
   className?: string;
 };
 
@@ -26,7 +30,12 @@ function ContentTypeIcon({ type, className }: ContentTypeIconProps) {
   return (
     <span
       className={`content-type-icon${className ? ` ${className}` : ''}`}
-      style={{ '--content-type-icon': `url("${icon}")` } as React.CSSProperties}
+      style={
+        {
+          '--content-type-icon': `url("${icon}")`,
+          '--content-type-icon-scale': CONTENT_TYPE_ICON_SCALE[type] ?? 1,
+        } as React.CSSProperties
+      }
       aria-hidden="true"
     />
   );

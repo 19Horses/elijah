@@ -115,6 +115,7 @@ export type ProcessedCollected = {
 // alongside items the viewer has actually collected.
 export type ProcessedCollectionPreview = {
   contentId: string;
+  contentType: ContentType;
   slug: string | null;
   imageUrl: string | null;
   title: string;

@@ -19,6 +19,7 @@ import {
   MAIN_GLOW_TRAVEL_BLUR,
   MAIN_GLOW_TRAVEL_MS,
   MAIN_USERNAME,
+  PREVIEW_DATE_SCALE,
   PRIVATE_IMAGE_EFFECT,
   TYPE_HIGHLIGHT_BLUR,
   ZOOM_OUT_GROWTH_POWER,
@@ -29,6 +30,7 @@ import {
   drawMainConnector,
   getMainConnectorPoints,
 } from '../connectors';
+import { getContentTypeIconCanvas } from '../contentTypeIcons';
 import { zoomOutGrowth } from '../geometry';
 import { AUDIO_DISC_SPIN_SPEED, drawAudioDisc } from './drawAudioDisc';
 import {
@@ -103,7 +105,44 @@ export type DateLabel = {
   alpha: number;
   align?: 'center' | 'right' | 'left';
   variant?: 'date' | 'title';
+  scale?: number;
+  icon?: CanvasImageSource;
 };
+
+export function pushItemDateLabels(
+  labels: DateLabel[],
+  item: {
+    left: number;
+    right: number;
+    y: number;
+    text: string;
+    alpha: number;
+    contentType: ContentType;
+  }
+): boolean {
+  labels.push({
+    x: item.right,
+    y: item.y,
+    text: item.text,
+    colour: 255,
+    alpha: item.alpha,
+    align: 'right',
+    scale: PREVIEW_DATE_SCALE,
+  });
+  const icon = getContentTypeIconCanvas(item.contentType);
+  if (!icon) {
+    return false;
+  }
+  labels.push({
+    x: item.left,
+    y: item.y,
+    text: '',
+    colour: 255,
+    alpha: item.alpha,
+    icon,
+  });
+  return true;
+}
 
 export type MainLaneDrawResult = {
   hoveredMain: number;

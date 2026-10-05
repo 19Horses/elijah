@@ -188,6 +188,7 @@ function Home({
 
     return {
       title: contentDetail.title,
+      contentType: contentDetail._type,
       dateLabel: getContentDetailDateLabel(contentDetail),
       description: getContentDetailDescription(contentDetail),
       link: getContentDetailLink(contentDetail),

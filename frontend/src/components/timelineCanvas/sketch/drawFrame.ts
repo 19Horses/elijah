@@ -29,6 +29,9 @@ import {
   PRIVATE_BADGE_TEXT,
   DATE_FONT_SIZE,
   PREVIEW_EXPAND_LERP,
+  PREVIEW_ICON_GAP,
+  PREVIEW_ICON_LIFT,
+  PREVIEW_ICON_SIZE,
   PREVIEW_SWITCH_FADE_MS,
   COLLECT_ANIM_MS,
   COLLECT_HOLD_MS,
@@ -66,6 +69,7 @@ import {
   drawMainLaneConnectors,
   drawMainLaneItems,
   drawMainTimelineGlow,
+  pushItemDateLabels,
   type DateLabel,
   type MainLaneDrawContext,
 } from './drawMainLane';
@@ -922,24 +926,28 @@ export function createDrawFrameHandler(
 
         // Deferred so the date renders above the connectors/nodes, matching
         // every other item's date label.
-        if (!hideDateLabel) {
-          dateLabels.push({
-            x: isTitleShown ? rect.right : rect.left + rect.width / 2,
+        const hasIcon =
+          !hideDateLabel &&
+          pushItemDateLabels(dateLabels, {
+            left: rect.left,
+            right: rect.right,
             y: rect.top - 12,
             text: formatDateForZoom(
               item.anchorTime,
               runtime.zoom,
               runtime.fitZoomLevel
             ),
-            colour: 255,
             alpha: isolate * previewSwitchAlpha,
-            align: isTitleShown ? 'right' : 'center',
+            contentType: item.contentType,
           });
-        }
 
         if (titleAlpha > HIGHLIGHT_FADE_SNAP) {
           dateLabels.push({
-            x: rect.left,
+            x:
+              rect.left +
+              (hasIcon
+                ? (PREVIEW_ICON_SIZE + PREVIEW_ICON_GAP) / runtime.zoom
+                : 0),
             y: rect.top - 12,
             text: item.title,
             colour: 255,
@@ -1010,6 +1018,17 @@ export function createDrawFrameHandler(
       p.noStroke();
       for (const label of dateLabels) {
         dateCtx.globalAlpha = label.alpha * collectFade;
+        if (label.icon) {
+          const iconSize = PREVIEW_ICON_SIZE / runtime.zoom;
+          dateCtx.drawImage(
+            label.icon,
+            label.x,
+            label.y - iconSize - PREVIEW_ICON_LIFT / runtime.zoom,
+            iconSize,
+            iconSize
+          );
+          continue;
+        }
         p.fill(label.colour);
         const horizontalAlign =
           label.align === 'right'
@@ -1021,7 +1040,8 @@ export function createDrawFrameHandler(
         p.textSize(
           (label.variant === 'title'
             ? DATE_FONT_SIZE * 1.15
-            : DATE_FONT_SIZE * dateFontScale) / runtime.zoom
+            : DATE_FONT_SIZE * dateFontScale * (label.scale ?? 1)) /
+            runtime.zoom
         );
         if (label.variant === 'title') {
           p.textStyle(p.BOLD);

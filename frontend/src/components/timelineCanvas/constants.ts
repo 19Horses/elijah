@@ -10,6 +10,10 @@ export const DATE_OFFSET = 24;
 // Screen-space font size (px, independent of zoom) of the date labels above
 // items.
 export const DATE_FONT_SIZE = 16;
+export const PREVIEW_DATE_SCALE = 0.8;
+export const PREVIEW_ICON_SIZE = 12;
+export const PREVIEW_ICON_GAP = 6;
+export const PREVIEW_ICON_LIFT = 3;
 // Date label format switches with zoom, relative to the fit-to-screen level:
 // below DATE_FORMAT_NUMERIC_ZOOM_FACTOR shows "10/2025"; from there up to
 // DATE_FORMAT_FULL_ZOOM_FACTOR shows "Oct 14 2025"; above that, the full

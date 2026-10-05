@@ -133,13 +133,14 @@ export function buildProcessedCollectionPreview(
   items: CollectionContent[]
 ): ProcessedCollectionPreview[] {
   return items
-    .map((item) => {
+    .map((item): ProcessedCollectionPreview | null => {
       const anchorTime = item.date ? new Date(item.date).getTime() : Number.NaN;
       if (Number.isNaN(anchorTime)) {
         return null;
       }
       return {
         contentId: item._id,
+        contentType: item._type,
         slug: item.slug ?? null,
         imageUrl: item.imageUrl,
         title: item.title,

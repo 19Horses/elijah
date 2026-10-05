@@ -1,4 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import type { ContentType } from '../types/content';
+import ContentTypeIcon from './ContentTypeIcon';
 import type { DetailImageRect } from './timelineCanvas/types';
 
 // Height (px) of the fade applied to an overflowing text block's edge.
@@ -69,6 +71,7 @@ function ScrollFadeText({
 
 export type TimelineDetailView = {
   title: string;
+  contentType: ContentType | null;
   dateLabel: string;
   description: string;
   link: string | null;
@@ -162,7 +165,15 @@ function TimelineDetailOverlay({
         className="timeline-detail__meta"
         style={{ maxHeight: `${aboveSpace}px` }}
       >
-        <h2 className="timeline-detail__title">{detail.title}</h2>
+        <h2 className="timeline-detail__title">
+          {detail.contentType ? (
+            <ContentTypeIcon
+              type={detail.contentType}
+              className="timeline-detail__title-icon"
+            />
+          ) : null}
+          {detail.title}
+        </h2>
         {detail.dateLabel ? (
           <p className="timeline-detail__date">{detail.dateLabel}</p>
         ) : null}
