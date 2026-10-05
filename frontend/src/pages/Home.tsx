@@ -14,6 +14,7 @@ import CollectedBranchStrip, {
 } from '../components/CollectedBranchStrip';
 import CollectionCountdown from '../components/CollectionCountdown';
 import CollectionViewer from '../components/CollectionViewer';
+import ContentTypeIcon from '../components/ContentTypeIcon';
 import MediaPlayer from '../components/MediaPlayer';
 import TimelineCanvas from '../components/timelineCanvas';
 import { getContrastText } from '../components/timelineCanvas/canvasEffects';
@@ -568,6 +569,10 @@ function Home({
                               );
                             }}
                           >
+                            <ContentTypeIcon
+                              type={item._type}
+                              className="collection-card-title__icon"
+                            />
                             <span className="collection-card-title__text">
                               {item.title}
                             </span>

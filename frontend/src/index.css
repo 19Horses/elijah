@@ -807,8 +807,27 @@ main.main--home {
   color: #ffffff;
 }
 
+.collection-card-title__text {
+  flex: 1;
+  min-width: 0;
+}
+
 .collection-card-title__plus {
   flex-shrink: 0;
+}
+
+.content-type-icon {
+  background-color: currentColor;
+  display: inline-block;
+  flex-shrink: 0;
+  height: 0.8em;
+  mask: var(--content-type-icon) center / contain no-repeat;
+  -webkit-mask: var(--content-type-icon) center / contain no-repeat;
+  width: 0.8em;
+}
+
+.collection-card-title__icon {
+  align-self: center;
 }
 
 .collect-tooltip {
