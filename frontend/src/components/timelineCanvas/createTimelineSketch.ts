@@ -28,6 +28,8 @@ export function createTimelineSketch(
       view.focusContentId(contentId);
     deps.refs.setCollectionViewActiveRef.current = (active) =>
       view.setCollectionViewActive(active);
+    deps.refs.collectFocusedPreviewRef.current = (contentId) =>
+      view.collectFocusedPreviewContentId(contentId);
     const loadedImages: (p5.Image | null)[] = new Array(
       deps.processed.length
     ).fill(null);

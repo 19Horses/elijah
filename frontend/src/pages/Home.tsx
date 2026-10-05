@@ -7,14 +7,17 @@ import {
   useState,
   type MutableRefObject,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import CollectedBranchStrip, {
   type BranchStripPreviewItem,
 } from '../components/CollectedBranchStrip';
 import CollectionCountdown from '../components/CollectionCountdown';
 import CollectionViewer from '../components/CollectionViewer';
+import ContentTypeIcon from '../components/ContentTypeIcon';
 import MediaPlayer from '../components/MediaPlayer';
 import TimelineCanvas from '../components/timelineCanvas';
+import { getContrastText } from '../components/timelineCanvas/canvasEffects';
 import type {
   AudioPlayerState,
   DetailImageRect,
@@ -153,6 +156,16 @@ function Home({
 
   const currentUsername = useMemo(() => getStoredUser()?.username ?? null, []);
   const branchColour = getStoredColour() ?? DEFAULT_COLOUR;
+  const [titleTooltip, setTitleTooltip] = useState<{
+    slug: string | null;
+    x: number;
+    y: number;
+  } | null>(null);
+  const showTitleTooltip =
+    titleTooltip !== null &&
+    focusSlug !== null &&
+    titleTooltip.slug === focusSlug &&
+    collectingItemId === null;
   const collectedRow =
     collectedRows?.find((row) => row.username === currentUsername) ?? null;
   const collectedContentIds = useMemo(
@@ -175,6 +188,7 @@ function Home({
 
     return {
       title: contentDetail.title,
+      contentType: contentDetail._type,
       dateLabel: getContentDetailDateLabel(contentDetail),
       description: getContentDetailDescription(contentDetail),
       link: getContentDetailLink(contentDetail),
@@ -207,6 +221,9 @@ function Home({
   };
 
   const cancelPreviewCollectRef = useRef<(() => void) | undefined>(undefined);
+  const collectFocusedPreviewRef = useRef<
+    ((contentId: string) => void) | undefined
+  >(undefined);
   const handlePreviewCollect = useCallback(
     (contentId: string) => {
       const currentUser = getStoredUser();
@@ -412,6 +429,7 @@ function Home({
           onPreviewCollectStart={setCollectingItemId}
           onPreviewCollect={handlePreviewCollect}
           cancelPreviewCollectControlRef={cancelPreviewCollectRef}
+          collectFocusedPreviewControlRef={collectFocusedPreviewRef}
           highlightedMainContentId={highlightedContentId}
           focusContentIdControlRef={focusContentIdControlRef}
           resetViewControlRef={resetViewControlRef}
@@ -501,45 +519,75 @@ function Home({
                         } as React.CSSProperties
                       }
                     >
-                      {(collection.content ?? []).map((item, index) => (
-                        <button
-                          key={item._id}
-                          type="button"
-                          className={`collection-card-title${
-                            focusSlug !== null && item.slug === focusSlug
-                              ? ' collection-card-title--active'
-                              : ''
-                          }${
-                            collectedContentIds.has(item._id)
-                              ? ' collection-card-title--collected'
-                              : ''
-                          }`}
-                          style={
-                            { '--title-index': index } as React.CSSProperties
-                          }
-                          onClick={() => {
-                            setSelectedItemIndexByCollection((prev) => ({
-                              ...prev,
-                              [collection._id]: index,
-                            }));
-                            focusContentIdControlRef?.current?.(item._id);
-                          }}
-                          onMouseEnter={() => {
-                            setHoveredCollectionItemId(item._id);
-                            setCenterOnCollectionItemId(item._id);
-                          }}
-                          onMouseLeave={() => {
-                            setHoveredCollectionItemId((current) =>
-                              current === item._id ? null : current
-                            );
-                            setCenterOnCollectionItemId((current) =>
-                              current === item._id ? null : current
-                            );
-                          }}
-                        >
-                          {item.title}
-                        </button>
-                      ))}
+                      {(collection.content ?? []).map((item, index) => {
+                        const isFocused =
+                          focusSlug !== null && item.slug === focusSlug;
+                        return (
+                          <button
+                            key={item._id}
+                            type="button"
+                            className={`collection-card-title${
+                              isFocused ? ' collection-card-title--active' : ''
+                            }${
+                              collectedContentIds.has(item._id)
+                                ? ' collection-card-title--collected'
+                                : ''
+                            }`}
+                            style={
+                              { '--title-index': index } as React.CSSProperties
+                            }
+                            onClick={() => {
+                              if (isFocused) {
+                                collectFocusedPreviewRef.current?.(item._id);
+                                return;
+                              }
+                              setSelectedItemIndexByCollection((prev) => ({
+                                ...prev,
+                                [collection._id]: index,
+                              }));
+                              focusContentIdControlRef?.current?.(item._id);
+                            }}
+                            onMouseEnter={() => {
+                              setHoveredCollectionItemId(item._id);
+                              setCenterOnCollectionItemId(item._id);
+                            }}
+                            onMouseMove={(event) => {
+                              setTitleTooltip({
+                                slug: item.slug,
+                                x: event.clientX,
+                                y: event.clientY,
+                              });
+                            }}
+                            onMouseLeave={() => {
+                              setTitleTooltip((current) =>
+                                current?.slug === item.slug ? null : current
+                              );
+                              setHoveredCollectionItemId((current) =>
+                                current === item._id ? null : current
+                              );
+                              setCenterOnCollectionItemId((current) =>
+                                current === item._id ? null : current
+                              );
+                            }}
+                          >
+                            <ContentTypeIcon
+                              type={item._type}
+                              className="collection-card-title__icon"
+                            />
+                            <span className="collection-card-title__text">
+                              {item.title}
+                            </span>
+                            {isFocused && (
+                              <span
+                                className="collection-card-title__plus"
+                                aria-hidden="true"
+                              >
+                                +
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -577,6 +625,24 @@ function Home({
           />
         </div>
       )}
+      {showTitleTooltip &&
+        titleTooltip &&
+        createPortal(
+          <div
+            className="collect-tooltip"
+            style={
+              {
+                left: titleTooltip.x,
+                top: titleTooltip.y,
+                background: branchColour,
+                color: getContrastText(branchColour),
+              } as React.CSSProperties
+            }
+          >
+            + collect item
+          </div>,
+          document.body
+        )}
     </section>
   );
 }

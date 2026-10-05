@@ -434,6 +434,13 @@ main.main--home {
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
+.timeline-detail__title-icon {
+  height: 0.65em;
+  margin-right: 0.4em;
+  vertical-align: baseline;
+  width: 0.65em;
+}
+
 .timeline-detail__date {
   color: rgba(255, 255, 255, 0.55);
   flex-shrink: 0;
@@ -781,11 +788,14 @@ main.main--home {
 }
 
 .collection-card-title {
+  align-items: baseline;
   background: none;
   border: none;
   color: rgba(255, 255, 255, 0.55);
   cursor: pointer;
-  display: block;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
   width: 100%;
   font-family: 'EB Garamond', 'Times New Roman', Times, serif;
   font-size: 1.15rem;
@@ -802,6 +812,43 @@ main.main--home {
 
 .collection-card-title--active {
   color: #ffffff;
+}
+
+.collection-card-title__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.collection-card-title__plus {
+  flex-shrink: 0;
+}
+
+.content-type-icon {
+  background-color: currentColor;
+  display: inline-block;
+  flex-shrink: 0;
+  height: 0.8em;
+  mask: var(--content-type-icon) center /
+    calc(100% * var(--content-type-icon-scale, 1)) no-repeat;
+  -webkit-mask: var(--content-type-icon) center /
+    calc(100% * var(--content-type-icon-scale, 1)) no-repeat;
+  width: 0.8em;
+}
+
+.collection-card-title__icon {
+  align-self: center;
+}
+
+.collect-tooltip {
+  font-family: 'EB Garamond', 'Times New Roman', Times, serif;
+  font-size: 12px;
+  line-height: 16px;
+  padding: 4px 8px;
+  pointer-events: none;
+  position: fixed;
+  transform: translate(-50%, calc(-100% - 14px));
+  white-space: nowrap;
+  z-index: 1000;
 }
 
 .collection-card-title:hover {
@@ -1953,10 +2000,17 @@ main.main--home {
 }
 
 .collected-items-list__type {
+  align-items: center;
   color: rgba(255, 255, 255, 0.55);
+  display: flex;
   font-size: 0.875rem;
-  text-align: right;
+  justify-content: flex-end;
   white-space: nowrap;
+}
+
+.collected-items-list__type .content-type-icon {
+  height: 1rem;
+  width: 1rem;
 }
 
 @media (prefers-reduced-motion: reduce) {

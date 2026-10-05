@@ -128,20 +128,15 @@ export function createInputHandlers(
           runtime.focusTarget !== null &&
           hitIsolated.lane === runtime.focusTarget.lane &&
           hitIsolated.index === runtime.focusTarget.index;
+        const startedCollect =
+          hitIsolated?.lane === 'preview' &&
+          isSameFocus &&
+          view.startPreviewCollect(hitIsolated.index);
         if (hitIsolated && !isSameFocus) {
           view.focusItem({ lane: hitIsolated.lane, index: hitIsolated.index });
-        } else if (
-          hitIsolated &&
-          hitIsolated.lane === 'preview' &&
-          !runtime.viewAnimating
-        ) {
-          const item = deps.processedPreview[hitIsolated.index];
-          if (item) {
-            runtime.collectStartMs = p.millis();
-            runtime.collectIndex = hitIsolated.index;
-            runtime.collectReported = false;
-            deps.refs.onPreviewCollectStartRef.current?.(item.contentId);
-          }
+        } else if (startedCollect) {
+          runtime.dragLane = null;
+          return;
         } else if (runtime.focusTarget !== null) {
           view.unfocusItem();
         } else {

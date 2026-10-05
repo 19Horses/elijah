@@ -40,6 +40,7 @@ function TimelineCanvas({
   onPreviewCollectStart,
   onPreviewCollect,
   cancelPreviewCollectControlRef,
+  collectFocusedPreviewControlRef,
   highlightedMainContentId = null,
   focusContentIdControlRef,
   resetViewControlRef,
@@ -110,6 +111,11 @@ function TimelineCanvas({
   );
   const cancelPreviewCollectRef =
     cancelPreviewCollectControlRef ?? localCancelPreviewCollectRef;
+  const localCollectFocusedPreviewRef = useRef<
+    ((contentId: string) => void) | undefined
+  >(undefined);
+  const collectFocusedPreviewRef =
+    collectFocusedPreviewControlRef ?? localCollectFocusedPreviewRef;
   const reloadCollectedRef = useRef<
     ((items: ProcessedCollected[]) => void) | undefined
   >(undefined);
@@ -332,6 +338,7 @@ function TimelineCanvas({
         onPreviewCollectStartRef,
         onPreviewCollectRef,
         cancelPreviewCollectRef,
+        collectFocusedPreviewRef,
         reloadCollectedRef,
         highlightedMainContentIdRef,
         focusContentIdRef,

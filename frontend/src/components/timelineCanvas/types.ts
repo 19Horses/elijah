@@ -30,6 +30,9 @@ export type TimelineCanvasProps = {
   onPreviewCollectStart?: (contentId: string) => void;
   onPreviewCollect?: (contentId: string) => void;
   cancelPreviewCollectControlRef?: MutableRefObject<(() => void) | undefined>;
+  collectFocusedPreviewControlRef?: MutableRefObject<
+    ((contentId: string) => void) | undefined
+  >;
   colour?: string | null;
   currentUsername?: string | null;
   highlightedType?: ContentType | null;
@@ -112,6 +115,7 @@ export type ProcessedCollected = {
 // alongside items the viewer has actually collected.
 export type ProcessedCollectionPreview = {
   contentId: string;
+  contentType: ContentType;
   slug: string | null;
   imageUrl: string | null;
   title: string;
@@ -339,6 +343,9 @@ export type TimelineSketchRefs = {
   >;
   onPreviewCollectRef: RefObject<((contentId: string) => void) | undefined>;
   cancelPreviewCollectRef: MutableRefObject<(() => void) | undefined>;
+  collectFocusedPreviewRef: MutableRefObject<
+    ((contentId: string) => void) | undefined
+  >;
   reloadCollectedRef: MutableRefObject<
     ((items: ProcessedCollected[]) => void) | undefined
   >;
