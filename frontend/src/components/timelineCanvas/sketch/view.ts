@@ -1106,6 +1106,14 @@ export function createViewContext(
     if (!runtime.branchIsolateActive) {
       return;
     }
+    if (runtime.focusTarget !== null) {
+      clearBranchFocus();
+      resetCanvasFocus(runtime);
+      deps.refs.onContentUnfocusRef.current?.();
+      runtime.panning = false;
+      runtime.zooming = false;
+      runtime.viewUnfocusing = true;
+    }
     // Keep the row set so the straighten/fade can ease back out; drawFrame
     // clears it once the progress reaches zero.
     runtime.branchIsolateActive = false;
