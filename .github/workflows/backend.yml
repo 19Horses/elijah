@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SANITY_AUTH_TOKEN: ${{ secrets.SANITY_AUTH_TOKEN }}
+      SANITY_STUDIO_VIDEO_UPLOAD_URL: https://7ripsl3j25ak4by6qkdsdyesei0yyvqg.lambda-url.eu-north-1.on.aws/
+      SANITY_STUDIO_VIDEO_CDN_URL: https://d2746yz7ilkjeo.cloudfront.net
 
     steps:
       - name: Checkout
