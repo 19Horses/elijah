@@ -28,7 +28,7 @@ export type ContentDetail = {
 };
 
 const CONTENT_BY_SLUG_QUERY = (slug: string) => `*[
-  _type in ["imageAsset", "audioAsset", "newsletter", "event"] &&
+  _type in ["imageAsset", "audioAsset", "videoAsset", "newsletter", "event"] &&
   slug.current == ${JSON.stringify(slug)} &&
   (public != false || _id in $collectedIds)
 ][0] {
@@ -37,7 +37,7 @@ const CONTENT_BY_SLUG_QUERY = (slug: string) => `*[
   title,
   "slug": slug.current,
   date,
-  _type in ["imageAsset", "audioAsset", "event"] => {
+  _type in ["imageAsset", "audioAsset", "videoAsset", "event"] => {
     description
   },
   _type == "imageAsset" => {
