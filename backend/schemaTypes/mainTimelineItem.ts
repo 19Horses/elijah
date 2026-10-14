@@ -9,7 +9,7 @@ export const mainTimelineItem = defineType({
       name: 'content',
       title: 'Content',
       type: 'reference',
-      to: [{type: 'imageAsset'}, {type: 'audioAsset'}, {type: 'newsletter'}],
+      to: [{type: 'imageAsset'}, {type: 'audioAsset'}, {type: 'videoAsset'}, {type: 'newsletter'}],
       validation: (Rule) => Rule.required(),
     }),
     defineField({
@@ -33,6 +33,7 @@ export const mainTimelineItem = defineType({
       const typeLabels: Record<string, string> = {
         audioAsset: 'Audio',
         imageAsset: 'Image',
+        videoAsset: 'Video',
         newsletter: 'Newsletter',
       }
       return {

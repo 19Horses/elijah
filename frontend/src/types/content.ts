@@ -1,6 +1,11 @@
 import type { ImageDimensions } from '../queries/products';
 
-export type ContentType = 'imageAsset' | 'audioAsset' | 'newsletter' | 'event';
+export type ContentType =
+  | 'imageAsset'
+  | 'audioAsset'
+  | 'videoAsset'
+  | 'newsletter'
+  | 'event';
 
 export type ContentBase = {
   _id: string;
@@ -45,6 +50,15 @@ export type AudioAsset = ContentBase &
     audioUrl: string | null;
   };
 
+// `imageUrl` is the poster image; the video itself lives in S3 at `videoKey`.
+export type VideoAsset = ContentBase &
+  WithOptionalDate &
+  WithOptionalImage & {
+    _type: 'videoAsset';
+    description: string | null;
+    videoKey: string | null;
+  };
+
 export type Newsletter = ContentBase &
   WithOptionalDate &
   WithOptionalImage & {
@@ -62,7 +76,7 @@ export type Event = ContentBase &
 
 export type MediaAsset = ImageAsset | AudioAsset;
 
-export type ContentItem = MediaAsset | Newsletter | Event;
+export type ContentItem = MediaAsset | VideoAsset | Newsletter | Event;
 
 // Collection documents only reference these types.
-export type CollectionContent = MediaAsset | Newsletter;
+export type CollectionContent = MediaAsset | VideoAsset | Newsletter;
