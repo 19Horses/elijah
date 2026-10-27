@@ -1,3 +1,5 @@
+import type { ItemViewer } from '../../services/presence';
+import type { ItemCollector } from './processItems';
 import type { MutableRefObject, RefObject } from 'react';
 import type { MainTimelineItem } from '../../queries/mainTimeline';
 import type { CollectionContent, ContentType } from '../../types/content';
@@ -19,6 +21,8 @@ export type TimelineCanvasProps = {
   highlightedPreviewContentId?: string | null;
   centerOnPreviewContentId?: string | null;
   highlightedMainContentId?: string | null;
+  // Who's currently viewing each item, by slug.
+  viewersBySlug?: Map<string, ItemViewer[]>;
   focusContentIdControlRef?: MutableRefObject<
     ((contentId: string) => void) | undefined
   >;
@@ -155,6 +159,21 @@ export type ConnectorPoint = {
   y: number;
 };
 
+// Which way a connector runs where it meets an item.
+export type RouteDir = 'horizontal' | 'vertical';
+
+// Where several parallel branch-line ends meet one item edge. Lines are routed
+// between these centres and offset sideways to their own ends, so lines
+// sharing a route stay evenly spaced through every bend.
+export type BranchNodeGroup = {
+  centre: ConnectorPoint;
+  // Distance from the centre to the outermost line end.
+  halfSpan: number;
+  // The direction the line ends are spread along (across a main item's
+  // underside, or down a collected item's edge).
+  axis: 'x' | 'y';
+};
+
 // A hoverable connector dot registered while drawing. Used, when an item is
 // focused, to label the node with the timeline it belongs to and the item it
 // connects to at the far end of its line.
@@ -169,6 +188,17 @@ export type NodeHoverRegion = {
   colour: string;
   // The item at the opposite end — focused when the node is clicked.
   target: FocusTarget;
+  // drawDot scale and centre-hole ratio the dot was drawn with, when they
+  // differ from the defaults (a node out at the viewport edge).
+  scale?: number;
+  holeRatio?: number;
+  // No dot is drawn at this end, so its hover dot grows in from nothing.
+  dotless?: boolean;
+  // The viewport edge a node out at the screen edge sits on, which its hover
+  // card opens inward from.
+  side?: 'top' | 'right' | 'bottom' | 'left';
+  // Its edge-node layout key, for nodes out at the screen edge.
+  edgeKey?: string;
 };
 
 export type FocusTarget = {
@@ -268,13 +298,53 @@ export type TimelineRuntime = {
   detailLayout: number;
   // Accumulated rotation (radians) of the focused audio track's CD. Only
   // advances while that track is playing, so it holds still when paused.
-  audioDiscAngle: number;
   // Eased 0-1 grow of the hovered connector node, and the world position and
   // colour of the node it's drawn at (kept while it shrinks back out).
   hoverNodeScale: number;
   hoverNodeX: number;
   hoverNodeY: number;
   hoverNodeColour: string;
+  hoverNodeDotScale: number;
+  hoverNodeHoleRatio: number;
+  hoverNodeDotless: boolean;
+  // The name tags riding hovered timelines, keyed by timeline ('main' or
+  // 'row:<index>'): how far along the timeline's path each one sits (and the
+  // world point that is), how grown in it is (0-1), its colour and the name.
+  lineBlobs: Map<
+    string,
+    {
+      distance: number;
+      x: number;
+      y: number;
+      scale: number;
+      colour: string;
+      name: string;
+      // Which way along the line from the cursor the tag sits (1 ahead,
+      // -1 behind).
+      side: number;
+    }
+  >;
+  // The hovered edge node and its card's size along its viewport edge, so
+  // the edge layout can push the neighbouring nodes clear of it.
+  hoverEdgeNodeKey: string | null;
+  hoverCardExtent: number;
+  // Each edge node's eased push along its edge (screen px), so nodes glide
+  // aside and back as the hover moves from node to node.
+  edgeNodePush: Map<string, number>;
+  // Hover cards open or closing, keyed by node: the node they belong to, how
+  // far open they are (0-1) and their size along the node's edge.
+  nodeCards: Map<
+    string,
+    { region: NodeHoverRegion; grow: number; extent: number }
+  >;
+  // Sprung 0-1 slide of the focused item's branch nodes out to the viewport
+  // edges (briefly past 1 as it overshoots), its per-frame velocity, the
+  // overshoot-free ease their horizontal movement follows, and the item they
+  // belong to (kept while they ease back).
+  edgeNodes: number;
+  edgeNodesVelocity: number;
+  edgeNodesX: number;
+  edgeNodesTarget: FocusTarget | null;
   // Connector dots drawn on the most recent frame while an item is focused, so
   // the input handler can hit-test them for hover labels and click-to-focus.
   nodeRegions: NodeHoverRegion[];
@@ -320,6 +390,9 @@ export type TimelineSketchRefs = {
   highlightedPreviewIdRef: RefObject<string | null>;
   centerOnPreviewIdRef: RefObject<string | null>;
   highlightedMainContentIdRef: RefObject<string | null>;
+  viewersRef: RefObject<Map<string, ItemViewer[]>>;
+  // Who has collected each item, by content id, most recent first.
+  collectorsRef: RefObject<Map<string, ItemCollector[]>>;
   focusContentIdRef: MutableRefObject<
     ((contentId: string) => void) | undefined
   >;
@@ -360,7 +433,8 @@ export type TimelineSketchDeps = {
   previewColour: string;
   itemOffsets: ItemOffset[];
   collectedOffsets: ItemOffset[];
-  backgroundColour: string;
+  // Null leaves the canvas transparent, showing the page background.
+  backgroundColour: string | null;
   // Username of the logged-in viewer, used to trace their own branch.
   currentUsername: string | null;
   audio: AudioController;

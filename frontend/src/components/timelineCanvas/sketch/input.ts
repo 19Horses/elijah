@@ -9,6 +9,7 @@ import type { FocusTarget, TimelineSketchDeps } from '../types';
 import type { BoundsContext } from './bounds';
 import type { GalleryController } from './galleryController';
 import type { ViewContext } from './view';
+import { findEdgeNodeHit } from './edgeNodes';
 
 export function createInputHandlers(
   p: p5,
@@ -147,18 +148,31 @@ export function createInputHandlers(
       }
 
       // A click on a connector dot (while an item is focused) jumps to the
-      // item at the far end of that line. Matches the hover-label hit radius.
+      // item at the far end of that line. Matches the hover hit zones: touching
+      // bands along the screen edges, else the hover-label hit radius.
       if (runtime.focusTarget && runtime.nodeRegions.length > 0) {
-        let hitTarget: FocusTarget | null = null;
+        const edgeHit = findEdgeNodeHit(
+          runtime.nodeRegions.map((region) => ({
+            target: region.target,
+            x: (region.x - runtime.cameraX) * runtime.zoom,
+            y: (region.y - runtime.cameraY) * runtime.zoom,
+            side: region.side,
+          })),
+          p.mouseX,
+          p.mouseY,
+          p.width,
+          p.height
+        );
+        let hitTarget: FocusTarget | null = edgeHit?.target ?? null;
         const growth = zoomOutGrowth(
           runtime.zoom,
           runtime.fitZoomLevel,
           ZOOM_OUT_GROWTH_POWER
         );
         let bestDist = DOT_RADIUS * growth + 8 / runtime.zoom;
-        for (const region of runtime.nodeRegions) {
+        for (const region of hitTarget ? [] : runtime.nodeRegions) {
           const dist = Math.hypot(world.x - region.x, world.y - region.y);
-          if (dist <= bestDist) {
+          if (!region.side && dist <= bestDist) {
             bestDist = dist;
             hitTarget = region.target;
           }

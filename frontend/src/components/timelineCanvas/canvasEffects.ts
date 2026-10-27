@@ -1,11 +1,25 @@
 import type p5 from 'p5';
 import {
+  ITEM_HALO_BLUR_PX,
   LOAD_INITIAL_DELAY_MS,
+  PAGE_BACKGROUND_BOTTOM,
+  PAGE_BACKGROUND_TOP,
   PRIVATE_OVERLAY_ALPHA,
   TYPE_DIM_ALPHA,
   TYPE_DIM_OVERLAY,
 } from './constants';
 import type { ContentType } from '../../types/content';
+
+// A soft white glow around an item, drawn with it, that fades out the lines
+// beneath where they meet the item.
+export function applyItemHalo(
+  p: p5,
+  ctx: CanvasRenderingContext2D,
+  alpha: number
+): void {
+  ctx.shadowBlur = ITEM_HALO_BLUR_PX * p.pixelDensity();
+  ctx.shadowColor = `rgba(255, 255, 255, ${alpha})`;
+}
 
 export function hexToRgba(hex: string, alpha: number): string {
   const value = hex.replace('#', '');
@@ -92,6 +106,37 @@ export function drawDimOverlay(
   p.fill(255);
   p.noStroke();
   ctx.globalAlpha = TYPE_DIM_OVERLAY * strength;
+  p.rect(left, top, width, height);
+  resetCanvasEffects(ctx);
+}
+
+// Fades an item's image by `amount` (0-1) by laying the page background's
+// colour (where the item sits on screen, `screenY` 0 at the top to 1 at the
+// bottom) over it — the same look as drawing it at (1 - amount) opacity, but
+// independent of how the browser handles opacity on shadowed images.
+export function drawBackgroundFade(
+  p: p5,
+  ctx: CanvasRenderingContext2D,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  amount: number,
+  screenY: number
+): void {
+  if (amount <= 0) {
+    return;
+  }
+  p.noStroke();
+  p.fill(
+    mixHex(
+      PAGE_BACKGROUND_TOP,
+      PAGE_BACKGROUND_BOTTOM,
+      Math.min(1, Math.max(0, screenY))
+    )
+  );
+  // On top of whatever the item itself is faded to (e.g. while loading in).
+  ctx.globalAlpha *= amount;
   p.rect(left, top, width, height);
   resetCanvasEffects(ctx);
 }

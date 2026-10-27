@@ -47,7 +47,7 @@ describe('NavDrawer', () => {
     fireEvent.mouseEnter(section);
     expect(screen.getByRole('menuitem', { name: 'Shop' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: 'Login' })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: 'Mailing list' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Mailing List' })).toBeTruthy();
   });
 
   test('the mouse leaving the section keeps it open through a short grace period, then closes it', () => {

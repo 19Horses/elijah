@@ -5,6 +5,9 @@ import {
   DETAIL_TEXT_GAP_PX,
   DETAIL_TEXT_VIEWPORT_LEFT,
   ENTRANCE_ZOOM_START_FACTOR,
+  FIT_VIEW_MARGINS_PX,
+  MAIN_FIT_VIEW_MARGINS_PX,
+  MAIN_FIT_ZOOM_SCALAR,
   FIT_VIEW_PADDING,
   FIT_VIEW_TOP_CLEARANCE_PX,
   FIT_ZOOM_SCALAR,
@@ -129,10 +132,18 @@ export function createViewContext(
   };
 
   // Frame an arbitrary set of item bounds: set the target zoom/camera so the
-  // whole set fits with padding, centred. Returns the framed centre (for the
+  // whole set fits with padding (or, given `screenMargins`, inside the screen
+  // less those pixel margins), centred. Returns the framed centre (for the
   // zoom animation anchor), or null when the set is empty/degenerate.
   const computeFitTargetsForBounds = (
-    list: ContentBounds[]
+    list: ContentBounds[],
+    screenMargins?: {
+      top: number;
+      right: number;
+      bottom: number;
+      left: number;
+    },
+    zoomScalar = FIT_ZOOM_SCALAR
   ): { centerX: number; centerY: number } | null => {
     let minX = Infinity;
     let maxX = -Infinity;
@@ -149,45 +160,59 @@ export function createViewContext(
       return null;
     }
 
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    if (screenMargins) {
+      // Fit into the screen less fixed pixel margins (room for the header and
+      // the labels under and beside the items), centred in what's left.
+      const { top, right, bottom, left } = screenMargins;
+      const availableWidth = Math.max(1, p.width - left - right);
+      const availableHeight = Math.max(1, p.height - top - bottom);
+      runtime.targetZoom =
+        Math.min(
+          availableWidth / (maxX - minX),
+          availableHeight / (maxY - minY)
+        ) * zoomScalar;
+      const screenCentreX = left + availableWidth / 2;
+      const screenCentreY = top + availableHeight / 2;
+      runtime.targetCameraX = centerX - screenCentreX / runtime.targetZoom;
+      runtime.targetCameraY = centerY - screenCentreY / runtime.targetZoom;
+      return { centerX, centerY };
+    }
     const paddedWidth = maxX - minX + FIT_VIEW_PADDING * 2;
     const paddedHeight = maxY - minY + FIT_VIEW_PADDING * 2;
     const zoomX = p.width / paddedWidth;
     const zoomY = p.height / paddedHeight;
     runtime.targetZoom = Math.min(zoomX, zoomY) * FIT_ZOOM_SCALAR;
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
     runtime.targetCameraX = centerX - p.width / (2 * runtime.targetZoom);
     runtime.targetCameraY = centerY - p.height / (2 * runtime.targetZoom);
     return { centerX, centerY };
   };
 
   const computeFitViewTargets = () => {
-    // Size the zoom on the MAIN timeline's width so it spans the screen
-    // edge-to-edge; the branches above/below then overflow the top and bottom.
-    const mainBounds = bounds.getAllBounds();
-    let minX = Infinity;
-    let maxX = -Infinity;
-    mainBounds.forEach((b) => {
-      minX = Math.min(minX, b.left);
-      maxX = Math.max(maxX, b.right);
-    });
-
-    if (Number.isFinite(minX) && maxX > minX) {
-      const paddedWidth = maxX - minX + FIT_VIEW_PADDING * 2;
-      runtime.targetZoom = (p.width / paddedWidth) * FIT_ZOOM_SCALAR;
-      const centerX = (minX + maxX) / 2;
-      runtime.targetCameraX = centerX - p.width / (2 * runtime.targetZoom);
-      // Keeps the main line exactly vertically centred on initial load; the
-      // extra top clearance for the user card only applies to how far branches
-      // can be dragged/zoomed toward it (see getContentExtent), not the
-      // default framing.
-      runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
-    } else {
+    // Item and line sizing is measured against the zoom that frames the whole
+    // map — the main timeline and every branch above and below it (collected
+    // rows at their settled spacing, row growth 1) — so take that first.
+    // The margins leave room for the header (top-left logo and menu) and for
+    // the labels hung under and beside the items.
+    const wholeMap = computeFitTargetsForBounds(
+      [...bounds.getAllBounds(), ...bounds.getCollectedBounds(1)],
+      FIT_VIEW_MARGINS_PX
+    );
+    const wholeMapZoom = wholeMap ? runtime.targetZoom : 1;
+    // The view itself starts on the main timeline, spanning the screen; the
+    // branches above and below overflow it until you zoom out.
+    const framed = computeFitTargetsForBounds(
+      bounds.getAllBounds(),
+      MAIN_FIT_VIEW_MARGINS_PX,
+      MAIN_FIT_ZOOM_SCALAR
+    );
+    if (!framed) {
       runtime.targetZoom = 1;
       runtime.targetCameraX = 0;
       runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
     }
-    runtime.fitZoomLevel = runtime.targetZoom;
+    runtime.fitZoomLevel = wholeMapZoom;
   };
 
   const computeFocusViewTargets = (focusBounds: ContentBounds) => {
