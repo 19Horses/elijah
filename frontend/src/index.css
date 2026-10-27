@@ -1,4 +1,20 @@
 @font-face {
+  font-family: 'Akzidenz Grotesk Pro';
+  src: url('./AkzidenzGroteskPro-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Akzidenz Grotesk Pro Medium';
+  src: url('./AkzidenzGroteskPro-Medium.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
   font-family: 'EB Garamond';
   src: url('./EBGaramond-Regular.ttf') format('truetype');
   font-weight: 400;
@@ -24,7 +40,7 @@
 }
 
 body {
-  background-color: #000000;
+  background: linear-gradient(to bottom, #fff, #e0e0e0) fixed;
   margin: 0;
 }
 
@@ -323,7 +339,7 @@ main.main--home {
 /* Positioned (left/top/width/height set inline) to overlay the focused image
    exactly; the meta sits just above it and the description just below. */
 .timeline-detail {
-  color: #ffffff;
+  color: #969696;
   opacity: 0;
   pointer-events: none;
   position: fixed;
@@ -382,41 +398,52 @@ main.main--home {
   top: calc(100% + 16px);
 }
 
-/* Newsletter content beside the image, spanning the full window height (top /
-   height / padding-top set inline) and scrolling within it. */
+/* Newsletters caption the image from below: title, then a small row holding
+   the collected count and date. */
+.timeline-detail--newsletter .timeline-detail__meta {
+  align-items: baseline;
+  bottom: auto;
+  gap: 0.25rem 1.5rem;
+  top: calc(100% + 0.6rem);
+}
+
+.timeline-detail--newsletter .timeline-detail__title {
+  flex-basis: 100%;
+}
+
+.timeline-detail--newsletter .timeline-detail__date {
+  font-size: 0.8125rem;
+  order: 2;
+  text-transform: uppercase;
+}
+
+/* Newsletter content beside the image, spanning the full window height (left
+   / top / height / padding set inline) and scrolling within it. */
 .timeline-detail__side {
-  background: linear-gradient(
-    to left,
-    rgba(0, 0, 0, 0) 0%,
-    rgba(0, 0, 0, 0.55) 5%,
-    rgba(0, 0, 0, 0.55) 95%,
-    rgba(0, 0, 0, 0) 100%
-  );
-  border-radius: 10px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  left: calc(100% + 16px);
-  /* Fade the scrolling text into black at the top and bottom edges. */
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 72px,
-    #000 calc(100% - 72px),
-    transparent 100%
-  );
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 72px,
-    #000 calc(100% - 72px),
-    transparent 100%
-  );
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 1.5rem 1.75rem;
   pointer-events: auto;
   position: absolute;
+  /* Still scrolls, just without a visible scrollbar. */
+  scrollbar-width: none;
+}
+
+/* A music track's info, beside its artwork and vertically centred on it. */
+.timeline-detail__side--audio {
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.timeline-detail__side--audio .timeline-detail__title,
+.timeline-detail__side--audio .timeline-detail__description {
+  flex: 0 1 auto;
+}
+
+.timeline-detail__side::-webkit-scrollbar {
+  display: none;
 }
 
 /* Let the side container do the scrolling; the body just flows inside it. */
@@ -427,27 +454,18 @@ main.main--home {
 
 .timeline-detail__title {
   flex: 1;
-  font-size: 1.5rem;
-  line-height: 1.25;
+  font-size: 1.2rem;
+  line-height: 1.1;
   margin: 0;
   min-width: 0;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
-}
-
-.timeline-detail__title-icon {
-  height: 0.65em;
-  margin-right: 0.4em;
-  vertical-align: baseline;
-  width: 0.65em;
+  font-weight: 600;
 }
 
 .timeline-detail__date {
-  color: rgba(255, 255, 255, 0.55);
   flex-shrink: 0;
   font-size: 0.875rem;
   margin: 0;
   white-space: nowrap;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
 .timeline-detail__description {
@@ -461,25 +479,11 @@ main.main--home {
   white-space: pre-wrap;
 }
 
-.timeline-detail__collected {
-  color: rgba(255, 255, 255, 0.55);
-  /* Sits in the meta flex row; full basis forces it onto its own line below
-     the title/date. */
-  flex-basis: 100%;
-  flex-shrink: 0;
-  font-size: 0.8125rem;
-  margin: 0;
-}
-
-.timeline-detail__collected-count {
-  color: #ffffff;
-}
-
 .timeline-detail__body {
   flex: 1;
-  font-size: 1.2rem;
-  letter-spacing: -2%;
-  line-height: 1.65;
+  font-size: 18px;
+  line-height: 25px;
+  font-weight: 100;
   margin: 0;
   min-height: 0;
   overflow-y: auto;
@@ -488,7 +492,7 @@ main.main--home {
 }
 
 .timeline-detail__link {
-  color: #ffffff;
+  color: inherit;
   display: block;
   flex-shrink: 0;
   font-size: 0.875rem;
@@ -501,7 +505,7 @@ main.main--home {
 }
 
 .timeline-detail__link:hover {
-  color: rgba(255, 255, 255, 0.7);
+  color: #606060;
 }
 
 .timeline-canvas canvas {
@@ -1486,22 +1490,7 @@ main.main--home {
   content: '';
   position: absolute;
   inset: -3rem -1.5rem -3rem -6rem;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  mask-image: linear-gradient(
-      to left,
-      #000 0%,
-      #000 calc(100% - 6rem),
-      transparent 100%
-    ),
-    linear-gradient(
-      to bottom,
-      transparent 0%,
-      #000 3rem,
-      #000 calc(100% - 3rem),
-      transparent 100%
-    );
+
   mask-composite: intersect;
   pointer-events: none;
   z-index: -1;
@@ -1735,8 +1724,8 @@ main.main--home {
 /* ── E menu ────────────────────────── */
 
 .e-menu {
-  top: 1.5rem;
-  left: 1.5rem;
+  top: 2.25rem;
+  left: 2.25rem;
   position: fixed;
   z-index: 12;
   opacity: 0;
@@ -1749,23 +1738,7 @@ main.main--home {
   right: -1.5rem;
   bottom: -6rem;
   left: -1.5rem;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  mask-image: linear-gradient(
-      to right,
-      #000 0%,
-      #000 calc(100% - 4rem),
-      transparent 100%
-    ),
-    linear-gradient(
-      to bottom,
-      transparent 0%,
-      #000 2rem,
-      #000 calc(100% - 2rem),
-      transparent 100%
-    );
-  mask-composite: intersect;
+
   pointer-events: none;
   transform: translateY(var(--e-ink-shift, 0px));
   transition: right 0.28s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1793,11 +1766,11 @@ main.main--home {
 .e-menu__trigger {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.85);
+  color: #606060;
   cursor: pointer;
   display: block;
   font-family: 'EB Garamond', 'Times New Roman', Times, serif;
-  font-size: 10rem;
+  font-size: 10.75rem;
   line-height: 0.1;
   padding: 0;
   position: relative;
@@ -1810,12 +1783,14 @@ main.main--home {
   align-items: flex-start;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  left: calc(100% + 0.75rem);
+  gap: 0.125rem;
+  left: calc(100% + 1.5rem);
   pointer-events: none;
   position: absolute;
   top: 50%;
-  transform: translateY(calc(-50% + var(--e-ink-shift, 1.1rem)));
+  /* Centred on the glyph's ink, then nudged up so the first item's cap height
+     lines up with the top of the "e". */
+  transform: translateY(calc(-50% + var(--e-ink-shift, 1.1rem) - 0.175rem));
   z-index: 2;
 }
 
@@ -1826,10 +1801,10 @@ main.main--home {
 .e-menu__item {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.92);
+  color: #606060;
   cursor: pointer;
   font-family: 'EB Garamond', 'Times New Roman', Times, serif;
-  font-size: 0.9rem;
+  font-size: 1.1rem;
   line-height: 1.15;
   opacity: 0;
   padding: 0;
@@ -1915,7 +1890,7 @@ main.main--home {
   box-sizing: border-box;
   height: 100%;
   overflow-y: auto;
-  padding: 8rem 1.5rem 2rem;
+  padding: 10rem 1.5rem 2rem;
 }
 
 .nav-drawer__content .product-grid {

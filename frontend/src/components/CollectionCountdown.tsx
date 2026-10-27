@@ -4,7 +4,7 @@ import {
   DEBUG_TIMERS_EVENT,
   getEffectiveExpiresAt,
 } from '../services/debugTimers';
-import { DEFAULT_COLOUR, getStoredColour } from '../services/userColor';
+import { getDisplayColour } from '../services/userColor';
 
 type CollectionCountdownProps = {
   collection: Collection;
@@ -74,7 +74,7 @@ function CollectionCountdown({
 
   if (remaining <= 0) return null;
 
-  const colour = getStoredColour() ?? DEFAULT_COLOUR;
+  const colour = getDisplayColour();
 
   return (
     <button

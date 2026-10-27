@@ -48,16 +48,55 @@ export function buildProcessedItems(
   }));
 }
 
-export function buildProcessedCollected(
+export type ItemCollector = { username: string; colour: string };
+
+// Who has collected each item, by content id, most recent first: one entry
+// per collector, placed by when they last collected it.
+export function collectorsByContent(
   rows: CollectedUserRow[]
+): Map<string, ItemCollector[]> {
+  const latest = new Map<string, Map<string, ItemCollector & { at: number }>>();
+  rows.forEach((row) => {
+    row.items.forEach((item) => {
+      const at = new Date(item.collectedAt).getTime() || 0;
+      const byUser = latest.get(item.content._id) ?? new Map();
+      const previous = byUser.get(row.userId);
+      if (!previous || at > previous.at) {
+        byUser.set(row.userId, {
+          username: row.username,
+          colour: row.colour,
+          at,
+        });
+      }
+      latest.set(item.content._id, byUser);
+    });
+  });
+  return new Map(
+    [...latest].map(([id, byUser]) => [
+      id,
+      [...byUser.values()]
+        .sort((a, b) => b.at - a.at)
+        .map(({ username, colour }) => ({ username, colour })),
+    ])
+  );
+}
+
+export function buildProcessedCollected(
+  rows: CollectedUserRow[],
+  mainItems: MainTimelineItem[]
 ): ProcessedCollected[] {
   const byContentId = new Map<string, ProcessedCollected>();
+  const mainContentIds = new Set(mainItems.map((item) => item._id));
 
   rows.forEach((row, rowIndex) => {
     row.items.forEach((item) => {
-      // Events never get a duplicate tile in the collected lane; they only
-      // ever appear once, in the main timeline itself.
-      if (item.content._type === 'event') {
+      // Events, and anything already on the main timeline, never get a
+      // duplicate tile in the collected lane; they only ever appear once, in
+      // the main timeline itself.
+      if (
+        item.content._type === 'event' ||
+        mainContentIds.has(item.content._id)
+      ) {
         return;
       }
 
@@ -73,6 +112,10 @@ export function buildProcessedCollected(
       const existing = byContentId.get(contentId);
 
       if (existing) {
+        // The same collector holding an item twice still gets one line to it.
+        if (existing.sources.some((s) => s.rowIndex === rowIndex)) {
+          return;
+        }
         existing.sources.push(source);
         existing.rowIndex = Math.min(existing.rowIndex, rowIndex);
         return;

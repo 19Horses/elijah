@@ -1,28 +1,31 @@
 import {
-  BRANCH_MERGE_TRANSITION_FACTOR,
-  BRANCH_MERGE_ZOOM_FACTOR,
-  BRANCH_NODE_GAP,
+  BRANCH_LINE_GAP_PX,
   COLLECTED_ROW_EXTRA_GAP,
   DATE_OFFSET,
   IMAGE_HEIGHT,
   ITEM_GAP,
   ITEM_WIDTH,
+  ITEM_ZOOM_OUT_GROWTH_MAX,
   LANE_GAP,
   LANE_GAP_GROWTH_POWER,
+  MAIN_ITEM_SCALE,
   MAIN_LINE_Y,
   PADDING_X,
   PADDING_Y,
   PREVIEW_EXPAND_SCALE,
 } from '../constants';
-import { getBranchPoints, getSteppedBranchPoints } from '../connectors';
+import { getBranchRoute } from '../connectors';
 import {
+  connectorWeight,
   getContentBounds,
   getFittedSize,
-  zoomMergeProgress,
+  itemZoomScale,
   zoomOutGrowth,
 } from '../geometry';
 import type {
+  BranchNodeGroup,
   ConnectorPoint,
+  RouteDir,
   ContentBounds,
   FocusTarget,
   ProcessedCollected,
@@ -48,14 +51,23 @@ export type IsolatedLine = {
 export type BranchSegment = {
   from: ConnectorPoint;
   to: ConnectorPoint;
-  // Draw as a stepped 5-point line instead of the default branch shape.
-  stepped?: boolean;
+  // Which way the line leaves `from` and meets `to`: vertical at an item's
+  // top or bottom, horizontal at its side.
+  fromDir: RouteDir;
+  toDir: RouteDir;
+  // Set when running along the target's row would cross another item on it:
+  // the line runs along the gap beside the row at this y instead.
+  corridorY?: number;
   // Titles of the items at each end, for labelling the endpoint nodes.
   fromItemTitle?: string;
   toItemTitle?: string;
   // The items at each end, for focusing when an endpoint node is clicked.
   fromItemTarget?: FocusTarget;
   toItemTarget?: FocusTarget;
+  // The node each end shares with other lines meeting the same item edge;
+  // ends without one get their own dot.
+  fromNode?: BranchNodeGroup;
+  toNode?: BranchNodeGroup;
 };
 
 export type BoundsContext = {
@@ -85,6 +97,12 @@ export type BoundsContext = {
   // gap). The rest of the main line — before, after, and gaps it skips over —
   // is left untouched.
   getBranchDetouredGaps: (rowIndex: number) => Set<number>;
+  getBranchMainTravel: (rowIndex: number) => Set<number>;
+  getBranchMainItems: (
+    rowIndex: number,
+    mainBounds: ContentBounds[],
+    collectedBounds: ContentBounds[]
+  ) => Set<number>;
   // Row spacing grows as the camera zooms out (see getCollectedBounds), so
   // collected-item Y positions are zoom-dependent. Pass rowGrowthOverride (1 =
   // settled) to get the positions at a fixed growth instead of the live zoom —
@@ -123,12 +141,6 @@ function mainBranchEdgeY(
   return itemBounds.centerY < main.centerY ? main.top : main.top + main.height;
 }
 
-// Whether a segment's ends sit on opposite sides of the main line (one above,
-// one below) — such a branch is drawn stepped so the crossing reads clearly.
-function crossesMainLine(from: ConnectorPoint, to: ConnectorPoint): boolean {
-  return (from.y - MAIN_LINE_Y) * (to.y - MAIN_LINE_Y) < 0;
-}
-
 // Branch rows alternate sides of the main line: even rows stack downward below
 // it, odd rows stack upward above it, so the main timeline sits in the middle.
 // `gap` (main line to nearest row) and `rowHeight` (between further rows)
@@ -159,23 +171,52 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
   // deps.processedPreview in place (see getIsolatedMergedLine below), so it
   // must be read fresh off deps each call rather than snapshotted once here.
 
-  // Fan-out spacing for parallel branch nodes/lines eases down to 0 below
-  // BRANCH_MERGE_ZOOM_FACTOR (of the fit-to-screen zoom), so lines sharing the
-  // same route converge into what reads as a single line at low zoom, then
-  // ease back out to their normal fan as you zoom in past the threshold.
-  const branchOffsetScale = (): number =>
-    1 -
-    zoomMergeProgress(
-      runtime.zoom,
-      runtime.fitZoomLevel,
-      BRANCH_MERGE_ZOOM_FACTOR,
-      BRANCH_MERGE_TRANSITION_FACTOR
-    );
+  // How wide the line of the collector at `${index}:${sourceIndex}` (a
+  // segment key's last two parts) is drawn: thickened while its timeline is
+  // hovered, easing with its name tag (see drawCollectedLaneConnectors).
+  const lineWeightForKey = (key: string): number => {
+    const [index, sourceIndex] = key.split(':').slice(-2).map(Number);
+    const rowIndex = processedCollected[index]?.sources[sourceIndex]?.rowIndex;
+    const grow =
+      rowIndex === undefined
+        ? 0
+        : runtime.lineBlobs.get(`row:${rowIndex}`)?.scale ?? 0;
+    return connectorWeight(runtime.zoom, runtime.fitZoomLevel) * (1 + grow);
+  };
 
-  const getAllBounds = () =>
-    processed.map((item, index) =>
-      getContentBounds(index, item, itemOffsets[index], slotLeft(index))
+  // Centre offsets for parallel lines of the given widths laid side by side,
+  // each a fixed on-screen gap clear of the next (whatever their widths or the
+  // zoom), the bundle centred on 0. A thickened line pushes its neighbours out.
+  const packLines = (weights: number[]): number[] => {
+    const gap = runtime.zoom > 0 ? BRANCH_LINE_GAP_PX / runtime.zoom : 0;
+    const total =
+      weights.reduce((sum, weight) => sum + weight, 0) +
+      gap * Math.max(0, weights.length - 1);
+    let edge = -total / 2;
+    return weights.map((weight) => {
+      const centre = edge + weight / 2;
+      edge += weight + gap;
+      return centre;
+    });
+  };
+  const halfSpanOf = (offsets: number[]) =>
+    Math.max(0, ...offsets.map((offset) => Math.abs(offset)));
+
+  // Items shrink less than the world as the camera zooms out (see
+  // itemZoomScale), each growing about its own centre.
+  const itemScale = () => itemZoomScale(runtime.zoom, runtime.fitZoomLevel);
+
+  // Main timeline items are drawn a size up from branch items, still capped
+  // (as zooming out grows them) so neighbours never grow into each other.
+  const getAllBounds = () => {
+    const scale = Math.min(
+      itemScale() * MAIN_ITEM_SCALE,
+      Math.max(MAIN_ITEM_SCALE, ITEM_ZOOM_OUT_GROWTH_MAX)
     );
+    return processed.map((item, index) =>
+      getContentBounds(index, item, itemOffsets[index], slotLeft(index), scale)
+    );
+  };
 
   const slotCenterX = (index: number) => slotLeft(index) + ITEM_WIDTH / 2;
 
@@ -305,6 +346,41 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     return prevIndex;
   };
 
+  // A line from the main timeline into a collected item's side normally runs
+  // along that item's row; when another item on the row sits in its way, it
+  // runs along the gap beside the row (on the main line's side) instead,
+  // turning into the row just before its item. Returns that gap's y, or
+  // undefined when the row is clear.
+  const rowCorridorY = (
+    from: ConnectorPoint,
+    index: number,
+    collectedBounds: ContentBounds[]
+  ): number | undefined => {
+    const itemBounds = collectedBounds[index];
+    const rowY = itemBounds.centerY;
+    const minX = Math.min(from.x, itemBounds.left);
+    const maxX = Math.max(from.x, itemBounds.right);
+    const blocked = collectedBounds.some(
+      (other, otherIndex) =>
+        otherIndex !== index &&
+        other.top < rowY &&
+        other.top + other.height > rowY &&
+        other.right > minX &&
+        other.left < maxX
+    );
+    if (!blocked) {
+      return undefined;
+    }
+    const towardMain = Math.sign(MAIN_LINE_Y - rowY) || 1;
+    const rowGrowth = zoomOutGrowth(
+      runtime.zoom,
+      runtime.fitZoomLevel,
+      LANE_GAP_GROWTH_POWER
+    );
+    const gap = Math.min(LANE_GAP, COLLECTED_ROW_EXTRA_GAP) * rowGrowth;
+    return rowY + towardMain * (IMAGE_HEIGHT / 2 + gap / 2);
+  };
+
   // A branch line from a main item's near edge (its underside for branches
   // below the main line, its top for branches above) to the nearest edge of a
   // collected item.
@@ -410,6 +486,14 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     );
   };
 
+  // Whether a chain's head links back to the main item before it. A chain that
+  // starts before the first main item has no earlier item to spring from, so
+  // it only joins the timeline where its tail rejoins; a lone item there still
+  // links to the first main item so it isn't left floating.
+  const branchesFromMain = (index: number, collectorRowIndex: number) =>
+    getPreviousMainIndex(processedCollected[index].anchorTime) >= 0 ||
+    !hasChainSuccessor(index, collectorRowIndex);
+
   const applySpread = (
     endpoints: { from: ConnectorPoint; to: ConnectorPoint },
     sourceIndex: number,
@@ -454,17 +538,21 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       return -1;
     }
     // Branches straight out from the previous main item.
-    return mainBounds.length > 0 ? Math.max(0, gapIndex) : -1;
+    return mainBounds.length > 0 && branchesFromMain(index, source.rowIndex)
+      ? Math.max(0, gapIndex)
+      : -1;
   };
 
-  // Every branch that meets a main item's underside gets an evenly spaced node
-  // across that item's width, ordered left-to-right by the branch's target, so
-  // the nodes never pile up at the centre. Keyed by `${index}:${sourceIndex}`.
-  // Cached per frame by the bounds array references it was built from.
+  // Every branch that meets a main item's underside gets an evenly spaced line
+  // end across that item's width, ordered left-to-right by the branch's target,
+  // so the lines run side by side. Keyed by `${index}:${sourceIndex}`;
+  // `halfSpans` holds each main item's bundle half-width. Cached per frame by
+  // the bounds array references it was built from.
   let branchNodeXCache: {
     main: ContentBounds[];
     collected: ContentBounds[];
     map: Map<string, number>;
+    halfSpans: Map<number, number>;
   } | null = null;
   const getBranchNodeXMap = (
     mainBounds: ContentBounds[],
@@ -509,6 +597,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     });
 
     const map = new Map<string, number>();
+    const halfSpans = new Map<number, number>();
     perMain.forEach((list, mainIndex) => {
       const mb = mainBounds[mainIndex];
       // Left-to-right by target so the branches fan out without crossing each
@@ -516,23 +605,43 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       list.sort(
         (a, b) => a.targetX - b.targetX || a.sourceIndex - b.sourceIndex
       );
-      const n = list.length;
       const center = mb.left + mb.width / 2;
-      // Tight, fixed, equal spacing centred on the item. A fixed gap (rather
-      // than one scaled to the item width) keeps the nodes clearly separated
-      // even on the first main item, which collects many branches; the bundle
-      // is allowed to extend past a narrow item rather than collapsing.
-      const offsetScale = branchOffsetScale();
+      // Tight, fixed gaps centred on the item. A fixed gap (rather than one
+      // scaled to the item width) keeps the lines clearly separated even on
+      // the first main item, which collects many branches; the bundle is
+      // allowed to extend past a narrow item rather than collapsing.
+      const offsets = packLines(
+        list.map((entry) => lineWeightForKey(entry.key))
+      );
       list.forEach((entry, k) => {
-        map.set(
-          entry.key,
-          center + (k - (n - 1) / 2) * BRANCH_NODE_GAP * offsetScale
-        );
+        map.set(entry.key, center + offsets[k]);
       });
+      halfSpans.set(mainIndex, halfSpanOf(offsets));
     });
 
-    branchNodeXCache = { main: mainBounds, collected: collectedBounds, map };
+    branchNodeXCache = {
+      main: mainBounds,
+      collected: collectedBounds,
+      map,
+      halfSpans,
+    };
     return map;
+  };
+
+  // The bundle branches form on a main item's top or underside (at `y`).
+  const mainNodeGroup = (
+    mainIndex: number,
+    y: number,
+    mainBounds: ContentBounds[],
+    collectedBounds: ContentBounds[]
+  ): BranchNodeGroup => {
+    getBranchNodeXMap(mainBounds, collectedBounds);
+    const mb = mainBounds[mainIndex];
+    return {
+      centre: { x: mb.left + mb.width / 2, y },
+      halfSpan: branchNodeXCache?.halfSpans.get(mainIndex) ?? 0,
+      axis: 'x',
+    };
   };
 
   // Which side of a collected item a branch coming from `fromX` attaches to.
@@ -542,20 +651,34 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
   ): 'left' | 'right' =>
     fromX <= (itemBounds.left + itemBounds.right) / 2 ? 'left' : 'right';
 
+  // Order along a collected item's edge for a branch from a main node at
+  // `nodeX`: it turns the corner from vertical to horizontal, so the line on
+  // the inside of that turn at the main item stays on the inside at the item
+  // and neighbouring lines never cross.
+  const mainBranchOrder = (
+    nodeX: number,
+    side: 'left' | 'right',
+    itemBounds: ContentBounds
+  ): number => {
+    const dirX = side === 'left' ? 1 : -1;
+    const dirY = itemBounds.centerY > MAIN_LINE_Y ? 1 : -1;
+    return -dirX * dirY * nodeX;
+  };
+
   // Mirror of getBranchNodeXMap for the collected-item side: every branch
   // endpoint that meets an item's edge gets an evenly spaced y along that edge,
-  // grouped by (item, side), so multiple lines into/out of one item don't
-  // collapse onto a single node. Keyed `${role}:${index}:${sourceIndex}`,
+  // grouped by (item, side), so the lines into/out of one item stay visible
+  // side by side. `node` describes the bundle they're part of. Keyed `${role}:${index}:${sourceIndex}`,
   // value is the resolved {x, y}. Cached per frame by the bounds references.
   let itemAttachCache: {
     main: ContentBounds[];
     collected: ContentBounds[];
-    map: Map<string, { x: number; y: number }>;
+    map: Map<string, { x: number; y: number; node: BranchNodeGroup }>;
   } | null = null;
   const getItemAttachMap = (
     mainBounds: ContentBounds[],
     collectedBounds: ContentBounds[]
-  ): Map<string, { x: number; y: number }> => {
+  ): Map<string, { x: number; y: number; node: BranchNodeGroup }> => {
     if (
       itemAttachCache &&
       itemAttachCache.main === mainBounds &&
@@ -618,39 +741,51 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
             const nodeX =
               nodeXMap.get(`${index}:${sourceIndex}`) ??
               (itemBounds.left + itemBounds.right) / 2;
+            const side = branchEdgeSide(nodeX, itemBounds);
             add(
               index,
-              branchEdgeSide(nodeX, itemBounds),
+              side,
               `rejoinTo:${index}:${sourceIndex}`,
-              nodeX
+              mainBranchOrder(nodeX, side, itemBounds)
             );
           }
-        } else {
+        } else if (branchesFromMain(index, source.rowIndex)) {
           // Branch straight out from a main item.
           const nodeX =
             nodeXMap.get(`${index}:${sourceIndex}`) ??
             (itemBounds.left + itemBounds.right) / 2;
+          const side = branchEdgeSide(nodeX, itemBounds);
           add(
             index,
-            branchEdgeSide(nodeX, itemBounds),
+            side,
             `branchTo:${index}:${sourceIndex}`,
-            nodeX
+            mainBranchOrder(nodeX, side, itemBounds)
           );
         }
       });
     });
 
-    const map = new Map<string, { x: number; y: number }>();
-    const offsetScale = branchOffsetScale();
+    const map = new Map<
+      string,
+      { x: number; y: number; node: BranchNodeGroup }
+    >();
     groups.forEach((list, groupKey) => {
       const itemIndex = Number(groupKey.slice(0, groupKey.indexOf(':')));
       const centerY = collectedBounds[itemIndex].centerY;
       list.sort((a, b) => a.orderY - b.orderY || a.key.localeCompare(b.key));
-      const n = list.length;
+      const offsets = packLines(
+        list.map((entry) => lineWeightForKey(entry.key))
+      );
+      const halfSpan = halfSpanOf(offsets);
       list.forEach((entry, k) => {
         map.set(entry.key, {
           x: entry.x,
-          y: centerY + (k - (n - 1) / 2) * BRANCH_NODE_GAP * offsetScale,
+          y: centerY + offsets[k],
+          node: {
+            centre: { x: entry.x, y: centerY },
+            halfSpan,
+            axis: 'y',
+          },
         });
       });
     });
@@ -692,23 +827,26 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     if (chainFrom) {
       // Chained items sit side by side, so link the predecessor's right edge
       // to this item's left edge rather than branching off the main line. Both
-      // ends use spaced edge nodes so several chains never pile on one point.
-      const chainFromPt = attach.get(`chainFrom:${index}:${sourceIndex}`) ?? {
-        x: chainFrom.right,
-        y: chainFrom.centerY,
-      };
-      const chainToPt = attach.get(`chainTo:${index}:${sourceIndex}`) ?? {
-        x: itemBounds.left,
-        y: itemBounds.centerY,
-      };
+      // ends use spaced line ends so several chains never pile on one point.
+      const chainFromAttach = attach.get(`chainFrom:${index}:${sourceIndex}`);
+      const chainToAttach = attach.get(`chainTo:${index}:${sourceIndex}`);
+      const chainFromPt = chainFromAttach
+        ? { x: chainFromAttach.x, y: chainFromAttach.y }
+        : { x: chainFrom.right, y: chainFrom.centerY };
+      const chainToPt = chainToAttach
+        ? { x: chainToAttach.x, y: chainToAttach.y }
+        : { x: itemBounds.left, y: itemBounds.centerY };
       segments.push({
         from: chainFromPt,
         to: chainToPt,
-        stepped: crossesMainLine(chainFromPt, chainToPt),
+        fromDir: 'horizontal',
+        toDir: 'horizontal',
         fromItemTitle: processedCollected[predIndex]?.title,
         toItemTitle: thisTitle,
         fromItemTarget: { lane: 'collected', index: predIndex },
         toItemTarget: thisTarget,
+        fromNode: chainFromAttach?.node,
+        toNode: chainToAttach?.node,
       });
 
       // The tail of the chain rejoins the main timeline at the next item.
@@ -725,12 +863,21 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
           };
           segments.push({
             from: rejoinFrom,
-            to: rejoinTo,
-            stepped: crossesMainLine(rejoinFrom, rejoinTo),
+            to: { x: rejoinTo.x, y: rejoinTo.y },
+            fromDir: 'vertical',
+            corridorY: rowCorridorY(rejoinFrom, index, collectedBounds),
+            toDir: 'horizontal',
             fromItemTitle: rejoinTitle,
             toItemTitle: thisTitle,
             fromItemTarget: rejoinTarget,
             toItemTarget: thisTarget,
+            fromNode: mainNodeGroup(
+              gapIndex + 1,
+              rejoinFrom.y,
+              mainBounds,
+              collectedBounds
+            ),
+            toNode: rejoinTo.node,
           });
         } else {
           const spread = applySpread(
@@ -741,7 +888,9 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
           );
           segments.push({
             ...spread,
-            stepped: crossesMainLine(spread.from, spread.to),
+            fromDir: 'vertical',
+            corridorY: rowCorridorY(spread.from, index, collectedBounds),
+            toDir: 'horizontal',
             fromItemTitle: rejoinTitle,
             toItemTitle: thisTitle,
             fromItemTarget: rejoinTarget,
@@ -749,11 +898,8 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
           });
         }
       }
-    } else {
-      // Branch straight from the main line. If this item is also reached by
-      // another collector's chain, route it as a stepped 5-point line so the
-      // long jump from the main item reads clearly.
-      const stepped = getChainPredecessorIndex(index) >= 0;
+    } else if (branchesFromMain(index, source.rowIndex)) {
+      // Branch straight from the main line.
       const prevIndex = getPreviousMainIndex(item.anchorTime);
       const mainIndex = prevIndex >= 0 ? prevIndex : 0;
       const mainTitle = processed[mainIndex]?.title;
@@ -764,12 +910,21 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
         const branchFrom = { x: nodeX, y: mainBranchEdgeY(main, itemBounds) };
         segments.push({
           from: branchFrom,
-          to: branchTo,
-          stepped: stepped || crossesMainLine(branchFrom, branchTo),
+          to: { x: branchTo.x, y: branchTo.y },
+          fromDir: 'vertical',
+          corridorY: rowCorridorY(branchFrom, index, collectedBounds),
+          toDir: 'horizontal',
           fromItemTitle: mainTitle,
           toItemTitle: thisTitle,
           fromItemTarget: mainTarget,
           toItemTarget: thisTarget,
+          fromNode: mainNodeGroup(
+            mainIndex,
+            branchFrom.y,
+            mainBounds,
+            collectedBounds
+          ),
+          toNode: branchTo.node,
         });
       } else {
         const spread = applySpread(
@@ -780,7 +935,9 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
         );
         segments.push({
           ...spread,
-          stepped: stepped || crossesMainLine(spread.from, spread.to),
+          fromDir: 'vertical',
+          corridorY: rowCorridorY(spread.from, index, collectedBounds),
+          toDir: 'horizontal',
           fromItemTitle: mainTitle,
           toItemTitle: thisTitle,
           fromItemTarget: mainTarget,
@@ -824,9 +981,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       if (!backward) {
         continue;
       }
-      const poly = backward.stepped
-        ? getSteppedBranchPoints(backward.from, backward.to)
-        : getBranchPoints(backward.from, backward.to);
+      const poly = getBranchRoute(backward.from, backward.to, backward);
       path.push(...poly);
     }
     return path;
@@ -845,6 +1000,79 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     return gaps;
   };
 
+  // Main connectors (by index: connector k joins main items k and k+1) that a
+  // collector's timeline runs along between its branches: from where one
+  // stretch of their picks rejoins the main line to where the next branches
+  // off it. A stretch of two or more picks rejoins at the main item after its
+  // gap; a lone pick is a spur, so the timeline carries on from where it left.
+  // Main items that are part of a collector's timeline: ones they collected,
+  // ones their branches leave from or rejoin at, and ones their timeline runs
+  // along the main line through.
+  const getBranchMainItems = (
+    rowIndex: number,
+    mainBounds: ContentBounds[],
+    collectedBounds: ContentBounds[]
+  ): Set<number> => {
+    const onTimeline = new Set<number>();
+    let username: string | undefined;
+    processedCollected.forEach((item, index) => {
+      const sourceIndex = item.sources.findIndex(
+        (s) => s.rowIndex === rowIndex
+      );
+      if (sourceIndex < 0) {
+        return;
+      }
+      username = item.sources[sourceIndex].username;
+      getSourceBranchSegments(
+        index,
+        sourceIndex,
+        mainBounds,
+        collectedBounds
+      ).forEach(({ fromItemTarget, toItemTarget }) => {
+        [fromItemTarget, toItemTarget].forEach((target) => {
+          if (target?.lane === 'main') {
+            onTimeline.add(target.index);
+          }
+        });
+      });
+    });
+    getBranchMainTravel(rowIndex).forEach((connector) => {
+      onTimeline.add(connector);
+      onTimeline.add(connector + 1);
+    });
+    if (username !== undefined) {
+      items.forEach((item, index) => {
+        const collectors = deps.refs.collectorsRef.current?.get(item._id);
+        if (collectors?.some((c) => c.username === username)) {
+          onTimeline.add(index);
+        }
+      });
+    }
+    return onTimeline;
+  };
+
+  const getBranchMainTravel = (rowIndex: number): Set<number> => {
+    const picksPerGap = new Map<number, number>();
+    processedCollected.forEach((item) => {
+      if (item.sources.some((s) => s.rowIndex === rowIndex)) {
+        const gap = getPreviousMainIndex(item.anchorTime);
+        picksPerGap.set(gap, (picksPerGap.get(gap) ?? 0) + 1);
+      }
+    });
+    const gaps = [...picksPerGap.keys()].sort((a, b) => a - b);
+    const travel = new Set<number>();
+    for (let k = 0; k < gaps.length - 1; k++) {
+      const gap = gaps[k];
+      const rejoins =
+        (picksPerGap.get(gap) ?? 0) >= 2 && gap + 1 < processed.length;
+      const resumeAt = rejoins ? gap + 1 : Math.max(0, gap);
+      for (let index = resumeAt; index < gaps[k + 1]; index++) {
+        travel.add(index);
+      }
+    }
+    return travel;
+  };
+
   const getCollectedBounds = (rowGrowthOverride?: number): ContentBounds[] => {
     // Grows the row spacing as the camera zooms out, faster than the
     // nodes/lines themselves thicken (LANE_GAP_GROWTH_POWER > the line/node
@@ -855,8 +1083,13 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     const rowGrowth =
       rowGrowthOverride ??
       zoomOutGrowth(runtime.zoom, runtime.fitZoomLevel, LANE_GAP_GROWTH_POWER);
-    const rowGap = LANE_GAP * rowGrowth;
+    // The nearest rows also clear the main items' extra size.
+    const rowGap =
+      LANE_GAP * rowGrowth + (IMAGE_HEIGHT * (MAIN_ITEM_SCALE - 1)) / 2;
     const rowHeight = IMAGE_HEIGHT + COLLECTED_ROW_EXTRA_GAP * rowGrowth;
+    // A pinned (settled) layout is at or past the fit level, where items are
+    // their base size.
+    const scale = rowGrowthOverride === undefined ? itemScale() : 1;
 
     const bounds: ContentBounds[] = new Array(processedCollected.length);
     const placedRow = new Array<number>(processedCollected.length).fill(-1);
@@ -912,16 +1145,19 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       const rowTop = rowTopForRowIndex(rowIndex, rowGap, rowHeight);
       const baseTop = rowTop + (IMAGE_HEIGHT - height) / 2;
       const offset = collectedOffsets[index];
-      const left = baseLeft + offset.dx;
-      const top = baseTop + offset.dy;
+      // Laid out at base size, then grown about its centre.
+      const scaledWidth = width * scale;
+      const scaledHeight = height * scale;
+      const left = baseLeft + offset.dx - (scaledWidth - width) / 2;
+      const top = baseTop + offset.dy - (scaledHeight - height) / 2;
       bounds[index] = {
         left,
-        right: left + width,
-        centerY: top + height / 2,
+        right: left + scaledWidth,
+        centerY: top + scaledHeight / 2,
         top,
-        width,
-        height,
-        dateBottom: top + height + DATE_OFFSET,
+        width: scaledWidth,
+        height: scaledHeight,
+        dateBottom: top + scaledHeight + DATE_OFFSET,
       };
     }
 
@@ -1111,8 +1347,8 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       }
       const item = deps.processedPreview[e.index];
       const fitted = getFittedSize(item.aspectRatio, ITEM_WIDTH, IMAGE_HEIGHT);
-      const width = fitted.width * sizeScale;
-      const height = fitted.height * sizeScale;
+      const width = fitted.width * sizeScale * itemScale();
+      const height = fitted.height * sizeScale * itemScale();
       const left = targetCenterX - width / 2;
       const top = MAIN_LINE_Y - height / 2;
       const rect: ContentBounds = {
@@ -1148,6 +1384,8 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     getSourceBranchSegments,
     getUserTimelinePath,
     getBranchDetouredGaps,
+    getBranchMainTravel,
+    getBranchMainItems,
     getCollectedBounds,
     getIsolatedLineTargets,
     getIsolatedMergedLine,

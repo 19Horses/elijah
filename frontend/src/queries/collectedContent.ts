@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { muteColour } from '../constants/pickerColors';
 import { getApiUrl } from '../sanityIntegration';
 import { getUserCollections } from '../services/collectedContent';
 import { getMyCollectedIds } from '../services/collectItem';
@@ -61,7 +62,7 @@ async function fetchCollectedTimeline(): Promise<CollectedUserRow[]> {
       return {
         userId: user.userId,
         username: user.username,
-        colour: user.colour,
+        colour: muteColour(user.colour),
         items,
       };
     })

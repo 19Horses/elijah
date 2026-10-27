@@ -46,7 +46,13 @@ import {
 } from '../queries/mainTimeline';
 import { collectItem, hasCollectedFrom } from '../services/collectItem';
 import { DEBUG_TIMERS_EVENT } from '../services/debugTimers';
-import { DEFAULT_COLOUR, getStoredColour } from '../services/userColor';
+import {
+  setViewing,
+  subscribeToViewers,
+  VIEWING_HEARTBEAT_MS,
+  type ItemViewer,
+} from '../services/presence';
+import { getDisplayColour } from '../services/userColor';
 import { getStoredUser } from '../services/userStorage';
 import type { CollectionContent, ContentType } from '../types/content';
 import { prefersReducedMotion } from '../utils/motionPreference';
@@ -146,6 +152,35 @@ function Home({
     setCollectingItemId(null);
   }, []);
 
+  // Tell everyone which item this viewer is looking at, re-stamping it while
+  // they stay on it, and clear it when they leave it (or the page).
+  useEffect(() => {
+    const report = (slug: string | null) => {
+      setViewing(slug).catch(() => undefined);
+    };
+    report(focusSlug);
+    if (!focusSlug) {
+      return undefined;
+    }
+    const heartbeat = window.setInterval(
+      () => report(focusSlug),
+      VIEWING_HEARTBEAT_MS
+    );
+    const clear = () => report(null);
+    window.addEventListener('pagehide', clear);
+    return () => {
+      window.clearInterval(heartbeat);
+      window.removeEventListener('pagehide', clear);
+      clear();
+    };
+  }, [focusSlug]);
+
+  // Who's viewing each item right now, for the canvas's viewer dots.
+  const [viewersBySlug, setViewersBySlug] = useState<Map<string, ItemViewer[]>>(
+    () => new Map()
+  );
+  useEffect(() => subscribeToViewers(setViewersBySlug), []);
+
   const handleDetailLayoutStart = useCallback(() => {
     setDetailReady(true);
   }, []);
@@ -155,7 +190,7 @@ function Home({
   }, []);
 
   const currentUsername = useMemo(() => getStoredUser()?.username ?? null, []);
-  const branchColour = getStoredColour() ?? DEFAULT_COLOUR;
+  const branchColour = getDisplayColour();
   const [titleTooltip, setTitleTooltip] = useState<{
     slug: string | null;
     x: number;
@@ -179,24 +214,16 @@ function Home({
       return null;
     }
 
-    // How many other people (besides the viewer) have collected this item.
-    const collectedByOthers = (collectedRows ?? []).filter(
-      (row) =>
-        row.username !== currentUsername &&
-        row.items.some((entry) => entry.content.slug === focusSlug)
-    ).length;
-
     return {
       title: contentDetail.title,
-      contentType: contentDetail._type,
       dateLabel: getContentDetailDateLabel(contentDetail),
       description: getContentDetailDescription(contentDetail),
       link: getContentDetailLink(contentDetail),
       newsletterContent: getContentDetailNewsletterContent(contentDetail),
       presentAsNewsletter: getContentDetailIsSingleImage(contentDetail),
-      collectedByOthers,
+      isAudio: contentDetail._type === 'audioAsset',
     };
-  }, [contentDetail, detailReady, focusSlug, collectedRows, currentUsername]);
+  }, [contentDetail, detailReady, focusSlug]);
 
   // The collection whose badge is currently expanded — its items are what
   // merge into the isolated timeline on canvas.
@@ -265,7 +292,7 @@ function Home({
             {
               userId: currentUser.id,
               username: currentUser.username,
-              colour: getStoredColour() ?? DEFAULT_COLOUR,
+              colour: getDisplayColour(),
               items: [optimisticItem],
             },
           ];
@@ -422,7 +449,7 @@ function Home({
           items={timeline.items}
           collectedRows={collectedRows}
           previewItems={expandedCollection?.content ?? undefined}
-          previewColour={getStoredColour() ?? DEFAULT_COLOUR}
+          previewColour={getDisplayColour()}
           highlightedPreviewContentId={highlightedCollectionItemId}
           centerOnPreviewContentId={centerOnCollectionItemId}
           onPreviewItemHover={setHoveredCollectionItemId}
@@ -442,6 +469,7 @@ function Home({
           focusItemControlRef={focusItemControlRef}
           audioControlRef={audioControlRef}
           onAudioStateChange={setAudioState}
+          viewersBySlug={viewersBySlug}
           onContentFocus={handleContentFocus}
           onContentUnfocus={handleContentUnfocus}
           onDetailLayoutStart={handleDetailLayoutStart}
@@ -600,7 +628,7 @@ function Home({
         }`}
         style={
           {
-            '--flash-colour': getStoredColour() ?? DEFAULT_COLOUR,
+            '--flash-colour': getDisplayColour(),
           } as React.CSSProperties
         }
       />

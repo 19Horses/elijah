@@ -1,6 +1,9 @@
 import type p5 from 'p5';
+import { formatFullDate } from '../../../utils/formatDate';
 import { getContentTypeColour } from '../../../constants/contentTypes';
 import {
+  applyItemHalo,
+  drawBackgroundFade,
   drawDimOverlay,
   drawPrivateOverlay,
   getCombinedAlpha,
@@ -12,8 +15,16 @@ import {
 import {
   BRANCH_DIM_COLOUR,
   BRANCH_DIM_ITEM_ALPHA,
-  CONNECTOR_HOVER_THRESHOLD,
+  CANVAS_LABEL_FONT,
+  CANVAS_LABEL_FONT_MEDIUM,
+  CONNECTOR_HOVER_THRESHOLD_PX,
+  DOT_RADIUS,
+  ITEM_LABEL_LETTER_SPACING,
+  ITEM_LABEL_LINE_HEIGHT,
+  ITEM_WIDTH,
   LOAD_ALPHA_SNAP,
+  ITEM_LABEL_COLOUR,
+  ITEM_LABEL_SCALE,
   PRIVATE_IMAGE_EFFECT,
   TYPE_HIGHLIGHT_BLUR,
   ZOOM_OUT_GROWTH_POWER,
@@ -22,11 +33,11 @@ import {
   distanceToPolyline,
   drawBranchConnector,
   drawDot,
-  getBranchPoints,
-  getSteppedBranchPoints,
+  getBranchRoute,
 } from '../connectors';
-import { zoomOutGrowth } from '../geometry';
+import { connectorWeight, zoomOutGrowth } from '../geometry';
 import type {
+  BranchNodeGroup,
   CollectedSource,
   ConnectorPoint,
   ContentBounds,
@@ -34,7 +45,14 @@ import type {
   TimelineSketchDeps,
 } from '../types';
 import type { BoundsContext } from './bounds';
-import { AUDIO_DISC_SPIN_SPEED, drawAudioDisc } from './drawAudioDisc';
+import {
+  drawEdgeNodeStub,
+  edgeNodeDotScale,
+  edgeNodeHoleRatio,
+  edgeNodeKey,
+  edgeNodePosition,
+  edgeNodeRunOn,
+} from './edgeNodes';
 import {
   drawContainedImage,
   drawGalleryControls,
@@ -42,26 +60,23 @@ import {
 } from './drawGalleryControls';
 import type { GalleryController } from './galleryController';
 import { drawPlayPauseButton } from './drawPlayPauseButton';
-import type { MainLaneDrawContext } from './drawMainLane';
-import { formatDateForZoom } from '../timelineRuntime';
+import {
+  collectedByFor,
+  drawViewerDots,
+  type MainLaneDrawContext,
+} from './drawMainLane';
 
 export type CollectedLaneDrawResult = {
   hoveredCollected: number;
   hoveredCollectedIsImage: boolean;
   hoveredUserRow: number | null;
+  // World distance from the cursor to the hovered branch line (Infinity when
+  // the hover isn't on a line).
+  hoveredLineDistance: number;
 };
 
 // Slide a branch endpoint out to the revealing CD's right edge when it sits on
 // the focused audio item's right edge; otherwise leave it untouched.
-function shiftAudioNode(
-  pt: ConnectorPoint,
-  ctx: MainLaneDrawContext
-): ConnectorPoint {
-  return ctx.audioNodeX !== null && Math.abs(pt.x - ctx.audioNodeX) < 0.5
-    ? { x: pt.x + ctx.audioNodeShift, y: pt.y }
-    : pt;
-}
-
 // A source's branch colour, eased toward grey while another branch is hovered.
 function branchSourceColour(
   runtime: TimelineRuntime,
@@ -106,7 +121,11 @@ export function computeCollectedLaneHover(
     }
   }
 
+  let hoveredLineDistance = Infinity;
   if (hoveredCollected === -1 && !isFocusActive) {
+    // Lines are slim, so the hit zone reaches a fixed distance on screen either
+    // side; the nearest line in reach wins so tight bundles stay pickable.
+    const reach = CONNECTOR_HOVER_THRESHOLD_PX / deps.runtime.zoom;
     for (let index = deps.processedCollected.length - 1; index >= 0; index--) {
       if (!isItemHoverable(index)) {
         continue;
@@ -123,27 +142,25 @@ export function computeCollectedLaneHover(
           mainBounds,
           collectedBounds
         );
-        const hit = segments.some(({ from, to, stepped }) => {
-          const points = stepped
-            ? getSteppedBranchPoints(from, to)
-            : getBranchPoints(from, to);
-          return (
-            distanceToPolyline(points, mouseWorld) <= CONNECTOR_HOVER_THRESHOLD
-          );
+        segments.forEach((segment) => {
+          const points = getBranchRoute(segment.from, segment.to, segment);
+          const distance = distanceToPolyline(points, mouseWorld);
+          if (distance <= reach && distance < hoveredLineDistance) {
+            hoveredLineDistance = distance;
+            hoveredCollected = index;
+            hoveredUserRow = item.sources[sourceIndex].rowIndex;
+          }
         });
-        if (hit) {
-          hoveredCollected = index;
-          hoveredUserRow = item.sources[sourceIndex].rowIndex;
-          break;
-        }
-      }
-      if (hoveredCollected !== -1) {
-        break;
       }
     }
   }
 
-  return { hoveredCollected, hoveredCollectedIsImage, hoveredUserRow };
+  return {
+    hoveredCollected,
+    hoveredCollectedIsImage,
+    hoveredUserRow,
+    hoveredLineDistance,
+  };
 }
 
 export function drawCollectedLaneConnectors(
@@ -156,10 +173,9 @@ export function drawCollectedLaneConnectors(
   hover: CollectedLaneDrawResult
 ): void {
   const collectedCtx = p.drawingContext as CanvasRenderingContext2D;
-  const lineWeight = zoomOutGrowth(
+  const lineWeight = connectorWeight(
     deps.runtime.zoom,
-    deps.runtime.fitZoomLevel,
-    ZOOM_OUT_GROWTH_POWER
+    deps.runtime.fitZoomLevel
   );
 
   deps.processedCollected.forEach((item, index) => {
@@ -201,16 +217,82 @@ export function drawCollectedLaneConnectors(
         collectedCtx.globalAlpha = connectorLoadAlpha * ctx.isolateOtherAlpha;
       }
 
-      segments.forEach(({ from, to, stepped }) =>
+      segments.forEach((segment, segmentIndex) => {
+        const edge = ctx.edgeNodes;
+        const progress = edge?.progress ?? 0;
+        // An end on the focused item rides its node out to the viewport
+        // edge, the line moving with it. Its bundle's centre moves with it
+        // (so the line keeps its shape as it sets off), and its last
+        // straight stretches to run on past the edge, off-screen.
+        const moveEnd = (
+          pt: ConnectorPoint,
+          node: BranchNodeGroup | undefined,
+          end: 'from' | 'to'
+        ) => {
+          const shifted = pt;
+          const shiftedNode = node;
+          const edgeNode = edge?.nodes.get(
+            edgeNodeKey(index, sourceIndex, segmentIndex, end)
+          );
+          if (!edgeNode) {
+            return { pt: shifted, node: shiftedNode, stubExtra: 0, edgeNode };
+          }
+          const moved = edge
+            ? edgeNodePosition(shifted, edgeNode, edge)
+            : shifted;
+          return {
+            pt: moved,
+            node: shiftedNode && {
+              ...shiftedNode,
+              centre: {
+                x: shiftedNode.centre.x + moved.x - shifted.x,
+                y: shiftedNode.centre.y + moved.y - shifted.y,
+              },
+            },
+            stubExtra: edge ? edgeNodeRunOn(edge, deps.runtime.zoom) : 0,
+            edgeNode,
+          };
+        };
+        const start = moveEnd(segment.from, segment.fromNode, 'from');
+        const end = moveEnd(segment.to, segment.toNode, 'to');
+        const route = getBranchRoute(
+          start.pt,
+          end.pt,
+          { ...segment, fromNode: start.node, toNode: end.node },
+          start.stubExtra,
+          end.stubExtra
+        );
+        // Viewing an item fades the lines away; its edge nodes' stubs stay.
+        const lineAlpha = collectedCtx.globalAlpha;
+        collectedCtx.globalAlpha = lineAlpha * ctx.otherContentAlpha;
+        // A hovered timeline thickens to double width, easing with its tag.
+        const hoverGrow =
+          deps.runtime.lineBlobs.get(`row:${source.rowIndex}`)?.scale ?? 0;
         drawBranchConnector(
           p,
-          shiftAudioNode(from, ctx),
-          shiftAudioNode(to, ctx),
+          route,
           branchColour,
-          stepped,
-          lineWeight
-        )
-      );
+          lineWeight * (1 + hoverGrow)
+        );
+        ctx.drawnLines.push(route);
+        collectedCtx.globalAlpha = lineAlpha;
+        const edgeDotRadius =
+          DOT_RADIUS * edgeNodeDotScale(deps.runtime.zoom, progress);
+        [start, end].forEach(({ pt, edgeNode }) => {
+          if (edgeNode) {
+            drawEdgeNodeStub(
+              p,
+              deps.runtime,
+              pt,
+              edgeNode.side,
+              branchColour,
+              edgeDotRadius,
+              lineWeight,
+              progress
+            );
+          }
+        });
+      });
       resetCanvasEffects(collectedCtx);
     });
   });
@@ -223,7 +305,6 @@ export function drawCollectedLaneItems(
   collectedBounds: ContentBounds[],
   ctx: MainLaneDrawContext,
   hover: CollectedLaneDrawResult,
-  cdImage: p5.Image | null,
   gallery: GalleryController
 ): void {
   const collectedCtx = p.drawingContext as CanvasRenderingContext2D;
@@ -249,17 +330,6 @@ export function drawCollectedLaneItems(
       item.contentType,
       ctx.highlightedType
     );
-    const hideDateLabel =
-      ctx.isFocusedTarget('collected', index) &&
-      ctx.isDetailLayoutActive &&
-      deps.runtime.detailLayout > 0;
-
-    const hoveredUserSource =
-      hover.hoveredUserRow !== null && !hover.hoveredCollectedIsImage
-        ? item.sources.find(
-            (source) => source.rowIndex === hover.hoveredUserRow
-          )
-        : undefined;
 
     // Items not in the hovered/zoomed branch's timeline fade toward grey. The
     // eased branchDimStrength drives the transition in and back out.
@@ -273,13 +343,11 @@ export function drawCollectedLaneItems(
         : 0;
     const branchDimAlpha = 1 - branchDimT * (1 - BRANCH_DIM_ITEM_ALPHA);
 
-    // Selected audio track: the image stays put while the spinning CD slides
-    // out to the right from behind it. `detailLayout` drives the reveal.
+    // The selected audio track gets a play/pause control (drawn below).
     const isAudioFocused =
       item.contentType === 'audioAsset' &&
       ctx.isFocusActive &&
       ctx.isFocusedTarget('collected', index);
-    const audioReveal = isAudioFocused ? deps.runtime.detailLayout : 0;
     const imageLeft = left;
 
     // Selected image asset with multiple images: show every image in a strip
@@ -295,46 +363,17 @@ export function drawCollectedLaneItems(
       galleryImages = item.galleryUrls.map((url) => gallery.getImage(url));
     }
 
-    if (audioReveal > 0) {
-      // Only spin the disc while its track is actually playing; hold the angle
-      // otherwise so it freezes in place rather than snapping back.
-      if (item.audioUrl && deps.audio.isPlaying(item.audioUrl)) {
-        deps.runtime.audioDiscAngle += p.deltaTime * AUDIO_DISC_SPIN_SPEED;
-      }
-      drawAudioDisc(
-        p,
-        collectedCtx,
-        { left, top, width, height },
-        deps.backgroundColour,
-        visibilityAlpha,
-        cdImage,
-        audioReveal,
-        deps.runtime.audioDiscAngle
-      );
-    }
-
     const isExternallyHighlighted =
       item.contentId === ctx.highlightedMainContentId;
 
     if (ctx.isFocusActive && ctx.isFocusedTarget('collected', index)) {
-      // Selected image: no glow.
+      // Selected image: no coloured glow, just the halo.
+      applyItemHalo(p, collectedCtx, visibilityAlpha);
     } else if (isExternallyHighlighted) {
       collectedCtx.shadowBlur = 22;
       collectedCtx.shadowColor = hexToRgba(
         deps.previewColour,
         0.55 * visibilityAlpha
-      );
-    } else if (hover.hoveredCollected === index) {
-      collectedCtx.shadowBlur = 22;
-      collectedCtx.shadowColor = hexToRgba(
-        item.sources[0].colour,
-        0.45 * visibilityAlpha
-      );
-    } else if (hoveredUserSource) {
-      collectedCtx.shadowBlur = 22;
-      collectedCtx.shadowColor = hexToRgba(
-        hoveredUserSource.colour,
-        0.45 * visibilityAlpha
       );
     } else if (typeMatch && ctx.isTypeHighlightActive) {
       collectedCtx.shadowBlur = TYPE_HIGHLIGHT_BLUR * ctx.typeHighlightStrength;
@@ -342,20 +381,19 @@ export function drawCollectedLaneItems(
         getContentTypeColour(item.contentType),
         0.55 * ctx.typeHighlightStrength * visibilityAlpha
       );
-    }
-
-    // Audio tracks get a drop shadow so the image reads as lifted off the disc.
-    if (item.contentType === 'audioAsset') {
-      collectedCtx.shadowColor = hexToRgba('#000000', 0.35 * visibilityAlpha);
-      collectedCtx.shadowBlur = 18;
-      collectedCtx.shadowOffsetY = 8;
-    }
-
-    if (ctx.isTypeHighlightActive && !typeMatch) {
-      collectedCtx.globalAlpha =
-        getCombinedAlpha(visibilityAlpha, ctx.dimAlpha) * branchDimAlpha;
     } else {
-      collectedCtx.globalAlpha = visibilityAlpha * branchDimAlpha;
+      applyItemHalo(p, collectedCtx, visibilityAlpha);
+    }
+
+    // The image's branch fade is laid over it afterwards (drawBackgroundFade)
+    // rather than applied as opacity here.
+    if (ctx.isTypeHighlightActive && !typeMatch) {
+      collectedCtx.globalAlpha = getCombinedAlpha(
+        visibilityAlpha,
+        ctx.dimAlpha
+      );
+    } else {
+      collectedCtx.globalAlpha = visibilityAlpha;
     }
 
     if (galleryActive && galleryImages) {
@@ -388,6 +426,18 @@ export function drawCollectedLaneItems(
     }
 
     resetCanvasEffects(collectedCtx);
+
+    collectedCtx.globalAlpha = visibilityAlpha;
+    drawBackgroundFade(
+      p,
+      collectedCtx,
+      imageLeft,
+      top,
+      width,
+      height,
+      1 - branchDimAlpha,
+      ((top - deps.runtime.cameraY) * deps.runtime.zoom) / p.height
+    );
 
     if (ctx.isTypeHighlightActive && !typeMatch) {
       drawDimOverlay(
@@ -426,23 +476,56 @@ export function drawCollectedLaneItems(
       resetCanvasEffects(collectedCtx);
     }
 
-    if (!hideDateLabel) {
-      // Deferred so dates render above the connectors/nodes.
+    // The item's title over its date, deferred so it renders
+    // above the connectors/nodes; hidden on the item being viewed.
+    if (
+      !(
+        ctx.isFocusedTarget('collected', index) &&
+        ctx.isDetailLayoutActive &&
+        deps.runtime.detailLayout > 0
+      )
+    ) {
       ctx.dateLabels.push({
         x: imageLeft + width / 2,
-        y: top - 12,
-        text: formatDateForZoom(
-          item.anchorTime,
-          deps.runtime.zoom,
-          deps.runtime.fitZoomLevel
+        y: top + height + 12,
+        below: true,
+        font: CANVAS_LABEL_FONT,
+        scale: ITEM_LABEL_SCALE,
+        letterSpacing: ITEM_LABEL_LETTER_SPACING,
+        textFont: CANVAS_LABEL_FONT_MEDIUM,
+        collectedBy: collectedByFor(
+          deps.refs.collectorsRef.current?.get(item.contentId)
         ),
-        colour: 255,
+        lineHeight: ITEM_LABEL_LINE_HEIGHT,
+        outlined: true,
+        anchor: {
+          left: imageLeft,
+          right: imageLeft + width,
+          top,
+          bottom: top + height,
+        },
+        text: item.title,
+        secondary: formatFullDate(item.anchorTime),
+        // Wraps within roughly the item's own width (a narrow item still
+        // gets a reasonable measure), well clear of its neighbours'.
+        maxWidth: Math.max(width, ITEM_WIDTH * 0.8),
+        colour: ITEM_LABEL_COLOUR,
         alpha:
           (ctx.isTypeHighlightActive && !typeMatch
             ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
             : visibilityAlpha) * branchDimAlpha,
       });
     }
+
+    collectedCtx.globalAlpha = visibilityAlpha;
+    drawViewerDots(
+      p,
+      item.slug ? deps.refs.viewersRef.current?.get(item.slug) : undefined,
+      imageLeft + width,
+      top,
+      deps.runtime.zoom
+    );
+    resetCanvasEffects(collectedCtx);
 
     // Play/pause control on top of the selected audio track's image.
     if (isAudioFocused && item.audioUrl) {
@@ -532,39 +615,75 @@ export function drawCollectedLaneConnectorDots(
         collectedCtx.globalAlpha = connectorLoadAlpha * ctx.isolateOtherAlpha;
       }
       segments.forEach(
-        ({
-          from,
-          to,
-          fromItemTitle,
-          toItemTitle,
-          fromItemTarget,
-          toItemTarget,
-        }) => {
-          const sFrom = shiftAudioNode(from, ctx);
-          const sTo = shiftAudioNode(to, ctx);
-          drawDot(p, sFrom.x, sFrom.y, branchColour, dotScale);
-          drawDot(p, sTo.x, sTo.y, branchColour, dotScale);
+        (
+          {
+            from,
+            to,
+            fromItemTitle,
+            toItemTitle,
+            fromItemTarget,
+            toItemTarget,
+          },
+          segmentIndex
+        ) => {
+          // Lines run straight into their items with no dot, except a node on
+          // the focused item, drawn on its way out to (or settled at) the
+          // viewport edge at that node's own size, growing in as it goes.
+          const placeDot = (pt: ConnectorPoint, end: 'from' | 'to') => {
+            const shifted = pt;
+            const edge = ctx.edgeNodes;
+            const edgeKey = edgeNodeKey(index, sourceIndex, segmentIndex, end);
+            const node = edge?.nodes.get(edgeKey);
+            if (!edge || !node) {
+              return {
+                ...shifted,
+                scale: dotScale,
+                holeRatio: undefined,
+                onEdge: false,
+                side: undefined,
+                edgeKey: undefined,
+              };
+            }
+            return {
+              ...edgeNodePosition(shifted, node, edge),
+              scale: edgeNodeDotScale(deps.runtime.zoom, edge.progress),
+              holeRatio: edgeNodeHoleRatio(edge.progress),
+              onEdge: true,
+              side: node.side,
+              edgeKey,
+            };
+          };
+          const drawEdgeDot = (d: ReturnType<typeof placeDot>) => {
+            if (!d.onEdge || !ctx.edgeNodes) {
+              return;
+            }
+            drawDot(p, d.x, d.y, branchColour, d.scale, d.holeRatio);
+          };
+          const dFrom = placeDot(from, 'from');
+          const dTo = placeDot(to, 'to');
+          drawEdgeDot(dFrom);
+          drawEdgeDot(dTo);
           if (ctx.isFocusActive) {
             // The `from` dot connects along the line to the item at `to`; the
             // `to` dot connects back to the item at `from`.
             if (toItemTitle && toItemTarget) {
               ctx.nodeRegions.push({
-                x: sFrom.x,
-                y: sFrom.y,
+                ...dFrom,
                 title: toItemTitle,
                 timeline: source.username,
                 colour: source.colour,
                 target: toItemTarget,
+                dotless: !dFrom.onEdge,
               });
             }
             if (fromItemTitle && fromItemTarget) {
               ctx.nodeRegions.push({
-                x: sTo.x,
-                y: sTo.y,
+                ...dTo,
                 title: fromItemTitle,
                 timeline: source.username,
                 colour: source.colour,
                 target: fromItemTarget,
+                dotless: !dTo.onEdge,
               });
             }
           }
