@@ -2032,3 +2032,14 @@ main.main--home {
     transition: none;
   }
 }
+
+.timeline-detail__video {
+  position: absolute;
+  inset: 0;
+  background: #000;
+}
+
+.timeline-detail__video > div {
+  position: absolute;
+  inset: 0;
+}
