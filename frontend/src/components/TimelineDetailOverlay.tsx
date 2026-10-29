@@ -72,8 +72,6 @@ export type TimelineDetailView = {
   dateLabel: string;
   description: string;
   link: string | null;
-  videoUrl: string | null;
-  posterUrl: string | null;
   newsletterContent: string | null;
   // A solitary image is laid out like a newsletter (description beside the
   // image) even though it has no newsletter content of its own.

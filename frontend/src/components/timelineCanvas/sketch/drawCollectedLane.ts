@@ -396,115 +396,83 @@ export function drawCollectedLaneItems(
       collectedCtx.globalAlpha = visibilityAlpha;
     }
 
-    const isFocusedVideo =
-      item.contentType === 'videoAsset' &&
-      ctx.isFocusActive &&
-      ctx.isFocusedTarget('collected', index);
-    const videoPosterFade = isFocusedVideo
-      ? Math.max(0, 1 - deps.runtime.detailLayout * 5)
-      : 1;
-    const isVideoOut =
-      Boolean(deps.refs.activeVideoSlugRef.current) &&
-      deps.refs.activeVideoSlugRef.current === item.slug &&
-      !isFocusedVideo;
-
-    if (isVideoOut) {
-      // While out in mini player mode, show just a dotted border on the timeline.
-      collectedCtx.globalAlpha =
-        (ctx.isTypeHighlightActive && !typeMatch
-          ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
-          : visibilityAlpha) * branchDimAlpha;
-      p.noFill();
-      p.stroke(255);
-      p.strokeWeight(1.5);
-      collectedCtx.setLineDash([3, 4]);
+    if (galleryActive && galleryImages) {
+      drawGalleryStrip(
+        p,
+        { left: imageLeft, top, width, height },
+        galleryImages,
+        gallery.getDisplayIndex()
+      );
+    } else if (img) {
+      // Contain (not fill) so the full image shows without cropping when its
+      // true aspect ratio differs from the slot's.
+      drawContainedImage(
+        p,
+        img,
+        { left: imageLeft, top, width, height },
+        item.isPrivate ? PRIVATE_IMAGE_EFFECT : undefined
+      );
+    } else {
+      p.fill(245);
+      p.stroke(220);
       p.rect(imageLeft, top, width, height);
-      collectedCtx.setLineDash([]);
-      resetCanvasEffects(collectedCtx);
-    } else if (videoPosterFade > 0.02) {
-      if (isFocusedVideo) {
-        collectedCtx.globalAlpha *= videoPosterFade;
+
+      if (!item.imageUrl) {
+        p.fill(120);
+        p.noStroke();
+        p.textAlign(p.CENTER, p.CENTER);
+        p.text(item.title, imageLeft + width / 2, top + height / 2);
       }
-      if (galleryActive && galleryImages) {
-        drawGalleryStrip(
-          p,
-          { left: imageLeft, top, width, height },
-          galleryImages,
-          gallery.getDisplayIndex()
-        );
-      } else if (img) {
-        // Contain (not fill) so the full image shows without cropping when its
-        // true aspect ratio differs from the slot's.
-        drawContainedImage(
-          p,
-          img,
-          { left: imageLeft, top, width, height },
-          item.isPrivate ? PRIVATE_IMAGE_EFFECT : undefined
-        );
-      } else {
-        p.fill(245);
-        p.stroke(220);
-        p.rect(imageLeft, top, width, height);
+    }
 
-        if (!item.imageUrl) {
-          p.fill(120);
-          p.noStroke();
-          p.textAlign(p.CENTER, p.CENTER);
-          p.text(item.title, imageLeft + width / 2, top + height / 2);
-        }
-      }
+    resetCanvasEffects(collectedCtx);
 
-      resetCanvasEffects(collectedCtx);
+    collectedCtx.globalAlpha = visibilityAlpha;
+    drawBackgroundFade(
+      p,
+      collectedCtx,
+      imageLeft,
+      top,
+      width,
+      height,
+      1 - branchDimAlpha,
+      ((top - deps.runtime.cameraY) * deps.runtime.zoom) / p.height
+    );
 
-      collectedCtx.globalAlpha = visibilityAlpha * videoPosterFade;
-      drawBackgroundFade(
+    if (ctx.isTypeHighlightActive && !typeMatch) {
+      drawDimOverlay(
         p,
         collectedCtx,
         imageLeft,
         top,
         width,
         height,
-        1 - branchDimAlpha,
-        ((top - deps.runtime.cameraY) * deps.runtime.zoom) / p.height
+        ctx.typeHighlightStrength * visibilityAlpha
       );
+    }
 
-      if (ctx.isTypeHighlightActive && !typeMatch) {
-        drawDimOverlay(
-          p,
-          collectedCtx,
-          imageLeft,
-          top,
-          width,
-          height,
-          ctx.typeHighlightStrength * visibilityAlpha
-        );
-      }
+    if (item.isPrivate) {
+      drawPrivateOverlay(
+        p,
+        collectedCtx,
+        imageLeft,
+        top,
+        width,
+        height,
+        visibilityAlpha
+      );
+    }
 
-      if (item.isPrivate) {
-        drawPrivateOverlay(
-          p,
-          collectedCtx,
-          imageLeft,
-          top,
-          width,
-          height,
-          visibilityAlpha
-        );
-      }
-
-      // White border on every item except the selected (focused) one.
-      if (!(ctx.isFocusActive && ctx.isFocusedTarget('collected', index))) {
-        collectedCtx.globalAlpha =
-          (ctx.isTypeHighlightActive && !typeMatch
-            ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
-            : visibilityAlpha) * branchDimAlpha;
-        p.noFill();
-        p.stroke(255);
-        p.strokeWeight(1);
-        p.rect(imageLeft, top, width, height);
-        resetCanvasEffects(collectedCtx);
-      }
-    } else {
+    // White border on every item except the selected (focused) one.
+    if (!(ctx.isFocusActive && ctx.isFocusedTarget('collected', index))) {
+      collectedCtx.globalAlpha =
+        (ctx.isTypeHighlightActive && !typeMatch
+          ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
+          : visibilityAlpha) * branchDimAlpha;
+      p.noFill();
+      p.stroke(255);
+      p.strokeWeight(1);
+      p.rect(imageLeft, top, width, height);
       resetCanvasEffects(collectedCtx);
     }
 

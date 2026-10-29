@@ -191,10 +191,6 @@ export function createDrawFrameHandler(
   const previewHighlightProgress = new Map<string, number>();
   const previewExpandProgress = new Map<string, number>();
   const isolatedLineX = new Map<string, number>();
-  // True while the pointer is inside the active video's timeline slot, so we
-  // only dismiss the mini player on a real cross-in, not because the pointer
-  // was already over the item after zooming out.
-  let pointerInsideActiveVideoSlot = false;
 
   const reportAudioState = (isFocusActive: boolean) => {
     const current = deps.audio.getCurrent();
@@ -607,44 +603,6 @@ export function createDrawFrameHandler(
       mouseWorld,
       hoverSuppressed
     );
-
-    // Dismiss the mini player only when the pointer *crosses into* the video's
-    // timeline slot from outside — not because it is still sitting over the
-    // item after zooming in/out.
-    const activeVideoSlug = deps.refs.activeVideoSlugRef.current;
-    let insideActiveVideoSlot = false;
-    if (activeVideoSlug) {
-      const hitSlot = (b: ContentBounds | undefined) =>
-        Boolean(
-          b &&
-            mouseWorld.x >= b.left &&
-            mouseWorld.x <= b.right &&
-            mouseWorld.y >= b.top &&
-            mouseWorld.y <= b.top + b.height
-        );
-      const activeMainIdx = deps.processed.findIndex(
-        (item) => item.slug === activeVideoSlug
-      );
-      const activeCollectedIdx = deps.processedCollected.findIndex(
-        (item) => item.slug === activeVideoSlug
-      );
-      insideActiveVideoSlot =
-        hitSlot(bounds[activeMainIdx]) ||
-        hitSlot(collectedBounds[activeCollectedIdx]);
-    }
-    const canDismissVideo =
-      Boolean(activeVideoSlug) &&
-      !isFocusActive &&
-      !runtime.viewUnfocusing &&
-      !runtime.viewAnimating;
-    if (
-      canDismissVideo &&
-      insideActiveVideoSlot &&
-      !pointerInsideActiveVideoSlot
-    ) {
-      deps.refs.onDismissVideoRef.current?.();
-    }
-    pointerInsideActiveVideoSlot = insideActiveVideoSlot;
 
     // Rebuilt each frame and shared with the input handler for click-to-focus.
     const nodeRegions: NodeHoverRegion[] = [];

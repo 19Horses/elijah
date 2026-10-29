@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { getApiUrl } from '../sanityIntegration';
-import { VIDEO_CDN_URL } from '../constants/video';
 import { getMyCollectedIds } from '../services/collectItem';
 import { BANDSINTOWN_SLUG_PREFIX } from './bandsintownEvents';
 import type { ContentType } from '../types/content';
@@ -20,8 +19,6 @@ export type ContentDetail = {
   description: string | null;
   content: string | null;
   link: string | null;
-  videoKey: string | null;
-  imageUrl: string | null;
   // Number of images on an imageAsset (null for other types). A count of 1 (or a
   // legacy single `image` field, which yields null) means a solitary image.
   imageCount: number | null;
@@ -45,10 +42,6 @@ const CONTENT_BY_SLUG_QUERY = (slug: string) => `*[
   },
   _type == "event" => {
     link
-  },
-  _type == "videoAsset" => {
-    "videoKey": video.key,
-    "imageUrl": poster.asset->url
   },
   _type == "newsletter" => {
     content
@@ -84,8 +77,6 @@ function toContentDetail(item: MainTimelineEvent): ContentDetail {
     description: item.description,
     content: null,
     link: item.link,
-    videoKey: null,
-    imageUrl: null,
     imageCount: null,
   };
 }
@@ -141,22 +132,6 @@ export function getContentDetailNewsletterContent(
     return detail.content;
   }
   return null;
-}
-
-export function getVideoPlaybackUrl(
-  videoKey: string | null | undefined
-): string | null {
-  if (!videoKey) {
-    return null;
-  }
-  return `${VIDEO_CDN_URL}/${videoKey}`;
-}
-
-export function getContentDetailVideoUrl(detail: ContentDetail): string | null {
-  if (detail._type !== 'videoAsset') {
-    return null;
-  }
-  return getVideoPlaybackUrl(detail.videoKey);
 }
 
 export function getContentDetailDateLabel(detail: ContentDetail): string {

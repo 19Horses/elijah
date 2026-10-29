@@ -16,9 +16,6 @@ import CollectionCountdown from '../components/CollectionCountdown';
 import CollectionViewer from '../components/CollectionViewer';
 import ContentTypeIcon from '../components/ContentTypeIcon';
 import MediaPlayer from '../components/MediaPlayer';
-import VideoOverlayPlayer, {
-  type VideoPlayerState,
-} from '../components/VideoOverlayPlayer';
 import TimelineCanvas from '../components/timelineCanvas';
 import { getContrastText } from '../components/timelineCanvas/canvasEffects';
 import type {
@@ -33,8 +30,6 @@ import {
   getContentDetailDateLabel,
   getContentDetailDescription,
   getContentDetailIsSingleImage,
-  getContentDetailVideoUrl,
-  getVideoPlaybackUrl,
   getContentDetailLink,
   getContentDetailNewsletterContent,
   useContentDetail,
@@ -141,152 +136,8 @@ function Home({
     undefined
   );
   const [audioState, setAudioState] = useState<AudioPlayerState | null>(null);
-  const [videoState, setVideoState] = useState<VideoPlayerState | null>(null);
 
   const { data: contentDetail } = useContentDetail(focusSlug, timeline?.items);
-
-  const isVideoFocused = Boolean(
-    videoState !== null && focusSlug !== null && focusSlug === videoState.slug
-  );
-  const isVideoZoomedIn = Boolean(
-    isVideoFocused && detailReady && detailImageRect !== null
-  );
-
-  const handleAudioStateChange = useCallback(
-    (state: AudioPlayerState | null) => {
-      setAudioState(state);
-      if (state?.playing) {
-        setVideoState((prev) =>
-          prev?.playing ? { ...prev, playing: false } : prev
-        );
-      }
-    },
-    []
-  );
-
-  const handleToggleVideoPlay = useCallback(() => {
-    setVideoState((prev) => {
-      if (!prev) return null;
-      const nextPlaying = !prev.playing;
-      if (nextPlaying && audioState?.playing) {
-        audioControlRef.current?.(audioState.src);
-      }
-      return { ...prev, playing: nextPlaying };
-    });
-  }, [audioState?.playing]);
-
-  const handleVideoPlay = useCallback(() => {
-    setVideoState((prev) => (prev ? { ...prev, playing: true } : null));
-    if (audioState?.playing) {
-      audioControlRef.current?.(audioState.src);
-    }
-  }, [audioState?.playing]);
-
-  const handleVideoPause = useCallback(() => {
-    setVideoState((prev) => (prev ? { ...prev, playing: false } : null));
-  }, []);
-
-  const handleVideoEnded = useCallback(() => {
-    setVideoState((prev) => (prev ? { ...prev, playing: false } : null));
-  }, []);
-
-  const [videoFadingOut, setVideoFadingOut] = useState(false);
-  const fadeOutTimerRef = useRef<number | null>(null);
-
-  const handleDismissVideo = useCallback(() => {
-    if (videoFadingOut || !videoState) return;
-    // Still zoomed in on this video — the pointer sitting over the item
-    // after click/zoom must not count as a cross.
-    if (focusSlug === videoState.slug) return;
-    setVideoFadingOut(true);
-    if (fadeOutTimerRef.current) {
-      window.clearTimeout(fadeOutTimerRef.current);
-    }
-    fadeOutTimerRef.current = window.setTimeout(() => {
-      setVideoState(null);
-      setVideoFadingOut(false);
-      fadeOutTimerRef.current = null;
-    }, 450);
-  }, [videoFadingOut, videoState, focusSlug]);
-
-  const handleCloseVideo = useCallback(() => {
-    if (fadeOutTimerRef.current) {
-      window.clearTimeout(fadeOutTimerRef.current);
-    }
-    setVideoFadingOut(false);
-    setVideoState(null);
-  }, []);
-
-  const handleJumpToVideoItem = useCallback(() => {
-    if (videoState?.focusTarget) {
-      focusItemControlRef.current?.(videoState.focusTarget);
-    }
-  }, [videoState?.focusTarget]);
-
-  useEffect(() => {
-    if (!focusSlug) {
-      return;
-    }
-    const timelineItem = timeline?.items.find(
-      (item) => item.slug === focusSlug && item._type === 'videoAsset'
-    );
-    const detailIsVideo =
-      contentDetail?._type === 'videoAsset' && contentDetail.slug === focusSlug
-        ? contentDetail
-        : null;
-    const videoUrl =
-      (detailIsVideo ? getContentDetailVideoUrl(detailIsVideo) : null) ??
-      getVideoPlaybackUrl(
-        timelineItem && 'videoKey' in timelineItem
-          ? timelineItem.videoKey
-          : null
-      );
-    if (!videoUrl) {
-      return;
-    }
-    const title = detailIsVideo?.title ?? timelineItem?.title;
-    if (!title) {
-      return;
-    }
-    const posterUrl = detailIsVideo?.imageUrl ?? timelineItem?.imageUrl ?? null;
-    const itemIndex = timeline?.items.findIndex(
-      (item) => item.slug === focusSlug
-    );
-    const focusTarget: FocusTarget | null =
-      itemIndex !== undefined && itemIndex !== -1
-        ? { lane: 'main', index: itemIndex }
-        : null;
-
-    if (fadeOutTimerRef.current) {
-      window.clearTimeout(fadeOutTimerRef.current);
-      fadeOutTimerRef.current = null;
-    }
-    setVideoFadingOut(false);
-
-    setVideoState((prev) => {
-      if (prev?.slug === focusSlug && prev.url === videoUrl) {
-        return {
-          ...prev,
-          title,
-          posterUrl,
-          focusTarget: focusTarget ?? prev.focusTarget,
-          playing: true,
-        };
-      }
-      return {
-        url: videoUrl,
-        title,
-        posterUrl,
-        slug: focusSlug,
-        focusTarget,
-        playing: true,
-      };
-    });
-
-    if (audioState?.playing) {
-      audioControlRef.current?.(audioState.src);
-    }
-  }, [focusSlug, contentDetail, timeline?.items, audioState?.playing]);
 
   const handleContentFocus = useCallback((slug: string) => {
     setFocusSlug(slug);
@@ -368,8 +219,6 @@ function Home({
       dateLabel: getContentDetailDateLabel(contentDetail),
       description: getContentDetailDescription(contentDetail),
       link: getContentDetailLink(contentDetail),
-      videoUrl: getContentDetailVideoUrl(contentDetail),
-      posterUrl: contentDetail.imageUrl,
       newsletterContent: getContentDetailNewsletterContent(contentDetail),
       presentAsNewsletter: getContentDetailIsSingleImage(contentDetail),
       isAudio: contentDetail._type === 'audioAsset',
@@ -619,7 +468,7 @@ function Home({
           isolateControlRef={isolateOwnBranchRef}
           focusItemControlRef={focusItemControlRef}
           audioControlRef={audioControlRef}
-          onAudioStateChange={handleAudioStateChange}
+          onAudioStateChange={setAudioState}
           viewersBySlug={viewersBySlug}
           onContentFocus={handleContentFocus}
           onContentUnfocus={handleContentUnfocus}
@@ -627,8 +476,6 @@ function Home({
           onDetailImageRect={handleDetailImageRect}
           onEntranceComplete={onEntranceComplete}
           onBranchIsolationExit={handleBranchIsolationExit}
-          activeVideoSlug={videoState ? videoState.slug : null}
-          onDismissVideo={handleDismissVideo}
         />
         <TimelineDetailOverlay
           detail={timelineDetail}
@@ -647,19 +494,6 @@ function Home({
               onJumpToItem={() =>
                 focusItemControlRef.current?.(audioState.focusTarget)
               }
-            />
-          )}
-          {videoState && !isVideoFocused && (
-            <VideoOverlayPlayer
-              state={videoState}
-              isZoomedIn={false}
-              fading={videoFadingOut}
-              onTogglePlay={handleToggleVideoPlay}
-              onPlay={handleVideoPlay}
-              onPause={handleVideoPause}
-              onEnded={handleVideoEnded}
-              onClose={handleCloseVideo}
-              onJumpToItem={handleJumpToVideoItem}
             />
           )}
           {!canvasHidden &&
@@ -787,20 +621,6 @@ function Home({
                 </div>
               ))}
         </div>
-        {videoState && isVideoZoomedIn && (
-          <VideoOverlayPlayer
-            state={videoState}
-            isZoomedIn={true}
-            imageRect={detailImageRect}
-            fading={collectingItemId !== null}
-            onTogglePlay={handleToggleVideoPlay}
-            onPlay={handleVideoPlay}
-            onPause={handleVideoPause}
-            onEnded={handleVideoEnded}
-            onClose={handleCloseVideo}
-            onJumpToItem={handleJumpToVideoItem}
-          />
-        )}
       </div>
       <div
         className={`screen-border-flash${
