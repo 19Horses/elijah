@@ -1,8 +1,9 @@
 import p5 from 'p5';
+import type { ItemViewer } from '../../services/presence';
 import { memo, useEffect, useRef, useState } from 'react';
 import type { CollectedUserRow } from '../../queries/collectedContent';
 import type { CollectionContent, ContentType } from '../../types/content';
-import { DEFAULT_BACKGROUND, PREVIEW_SWITCH_FADE_MS } from './constants';
+import { PREVIEW_SWITCH_FADE_MS } from './constants';
 import { createTimelineSketch } from './createTimelineSketch';
 import {
   createAudioController,
@@ -12,6 +13,7 @@ import {
   buildProcessedCollected,
   buildProcessedCollectionPreview,
   buildProcessedItems,
+  collectorsByContent,
 } from './processItems';
 import P5CanvasHost from './P5CanvasHost';
 import { createTimelineRuntime } from './timelineRuntime';
@@ -27,6 +29,7 @@ import type {
 // undefined, which (being a new reference each time) would otherwise re-fire
 // the canvas-mount effect below on every unrelated re-render of the caller.
 const EMPTY_COLLECTED_ROWS: CollectedUserRow[] = [];
+const EMPTY_VIEWERS = new Map<string, ItemViewer[]>();
 const EMPTY_PREVIEW_ITEMS: CollectionContent[] = [];
 
 function TimelineCanvas({
@@ -42,6 +45,7 @@ function TimelineCanvas({
   cancelPreviewCollectControlRef,
   collectFocusedPreviewControlRef,
   highlightedMainContentId = null,
+  viewersBySlug = EMPTY_VIEWERS,
   focusContentIdControlRef,
   resetViewControlRef,
   isCollectionView = false,
@@ -126,6 +130,8 @@ function TimelineCanvas({
   const highlightedMainContentIdRef = useRef<string | null>(
     highlightedMainContentId
   );
+  const viewersRef = useRef(viewersBySlug);
+  const collectorsRef = useRef(collectorsByContent(collectedRows));
   const reloadPreviewRef = useRef<
     | ((items: ReturnType<typeof buildProcessedCollectionPreview>) => void)
     | undefined
@@ -205,6 +211,7 @@ function TimelineCanvas({
 
   useEffect(() => {
     collectedRowsRef.current = collectedRows;
+    collectorsRef.current = collectorsByContent(collectedRows);
     if (
       appliedCollectedRowsRef.current === null ||
       appliedCollectedRowsRef.current === collectedRows ||
@@ -213,12 +220,16 @@ function TimelineCanvas({
       return;
     }
     appliedCollectedRowsRef.current = collectedRows;
-    reloadCollectedRef.current(buildProcessedCollected(collectedRows));
-  }, [collectedRows]);
+    reloadCollectedRef.current(buildProcessedCollected(collectedRows, items));
+  }, [collectedRows, items]);
 
   useEffect(() => {
     highlightedMainContentIdRef.current = highlightedMainContentId ?? null;
   }, [highlightedMainContentId]);
+
+  useEffect(() => {
+    viewersRef.current = viewersBySlug;
+  }, [viewersBySlug]);
 
   useEffect(() => {
     setCollectionViewActiveRef.current?.(isCollectionView);
@@ -303,9 +314,13 @@ function TimelineCanvas({
     const processed = buildProcessedItems(items);
     const mountedCollectedRows = collectedRowsRef.current;
     appliedCollectedRowsRef.current = mountedCollectedRows;
-    const processedCollected = buildProcessedCollected(mountedCollectedRows);
+    const processedCollected = buildProcessedCollected(
+      mountedCollectedRows,
+      items
+    );
     const processedPreview = buildProcessedCollectionPreview(previewItems);
-    const backgroundColour = colour || DEFAULT_BACKGROUND;
+    // No CMS colour: leave the canvas transparent so the page gradient shows.
+    const backgroundColour = colour || null;
     const itemOffsets = processed.map(() => ({ dx: 0, dy: 0 }));
     const collectedOffsets = processedCollected.map(() => ({ dx: 0, dy: 0 }));
     const runtime = createTimelineRuntime();
@@ -353,6 +368,8 @@ function TimelineCanvas({
         collectFocusedPreviewRef,
         reloadCollectedRef,
         highlightedMainContentIdRef,
+        viewersRef,
+        collectorsRef,
         focusContentIdRef,
         setCollectionViewActiveRef,
         activeVideoSlugRef,
@@ -376,7 +393,9 @@ function TimelineCanvas({
       const latestRows = collectedRowsRef.current;
       if (appliedCollectedRowsRef.current !== latestRows) {
         appliedCollectedRowsRef.current = latestRows;
-        reloadCollectedRef.current?.(buildProcessedCollected(latestRows));
+        reloadCollectedRef.current?.(
+          buildProcessedCollected(latestRows, items)
+        );
       }
     });
 

@@ -4,11 +4,8 @@ import { VIDEO_CDN_URL } from '../constants/video';
 import { getMyCollectedIds } from '../services/collectItem';
 import { BANDSINTOWN_SLUG_PREFIX } from './bandsintownEvents';
 import type { ContentType } from '../types/content';
-import {
-  formatMainTimelineDate,
-  type MainTimelineEvent,
-  type MainTimelineItem,
-} from './mainTimeline';
+import { formatFullDate } from '../utils/formatDate';
+import type { MainTimelineEvent, MainTimelineItem } from './mainTimeline';
 
 type SanityResponse<T> = {
   result: T;
@@ -163,7 +160,7 @@ export function getContentDetailVideoUrl(detail: ContentDetail): string | null {
 }
 
 export function getContentDetailDateLabel(detail: ContentDetail): string {
-  return formatMainTimelineDate(detail.date);
+  return detail.date ? formatFullDate(new Date(detail.date).getTime()) : '';
 }
 
 // A solitary image (no gallery) is presented like a newsletter: the image on

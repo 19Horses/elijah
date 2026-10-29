@@ -1,3 +1,4 @@
+import { formatFullDate } from '../../utils/formatDate';
 import {
   DATE_FORMAT_FULL_ZOOM_FACTOR,
   DATE_FORMAT_NUMERIC_ZOOM_FACTOR,
@@ -75,11 +76,22 @@ export function createTimelineRuntime(): TimelineRuntime {
     focusContentFade: 0,
     detailPhase: 'none',
     detailLayout: 0,
-    audioDiscAngle: 0,
     hoverNodeScale: 0,
     hoverNodeX: 0,
     hoverNodeY: 0,
     hoverNodeColour: '#ffffff',
+    hoverNodeDotScale: 1,
+    hoverNodeHoleRatio: 0.5,
+    hoverNodeDotless: false,
+    lineBlobs: new Map(),
+    hoverEdgeNodeKey: null,
+    hoverCardExtent: 0,
+    edgeNodePush: new Map(),
+    nodeCards: new Map(),
+    edgeNodes: 0,
+    edgeNodesVelocity: 0,
+    edgeNodesX: 0,
+    edgeNodesTarget: null,
     nodeRegions: [],
     isolatedRegions: [],
   };
@@ -220,11 +232,7 @@ export function formatDateForZoom(
   }
   const relativeZoom = fitZoomLevel > 0 ? zoom / fitZoomLevel : 1;
   if (relativeZoom >= DATE_FORMAT_FULL_ZOOM_FACTOR) {
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
+    return formatFullDate(time);
   }
   if (relativeZoom >= DATE_FORMAT_NUMERIC_ZOOM_FACTOR) {
     return date.toLocaleDateString('en-US', {

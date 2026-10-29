@@ -75,9 +75,9 @@ function VideoOverlayPlayer({
   const handleToggleFullscreen = useCallback(() => {
     if (!containerRef.current) return;
     if (document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => {});
+      void document.exitFullscreen().catch(() => undefined);
     } else {
-      void containerRef.current.requestFullscreen().catch(() => {});
+      void containerRef.current.requestFullscreen().catch(() => undefined);
     }
   }, []);
 

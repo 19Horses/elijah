@@ -279,7 +279,7 @@ function NavDrawer({
             className="e-menu__item e-menu__item--mailing"
             tabIndex={listOpen ? 0 : -1}
           >
-            Mailing list
+            Mailing List
           </button>
         </div>
       </div>

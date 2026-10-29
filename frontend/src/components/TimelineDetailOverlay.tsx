@@ -1,6 +1,4 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import type { ContentType } from '../types/content';
-import ContentTypeIcon from './ContentTypeIcon';
 import type { DetailImageRect } from './timelineCanvas/types';
 
 // Height (px) of the fade applied to an overflowing text block's edge.
@@ -71,7 +69,6 @@ function ScrollFadeText({
 
 export type TimelineDetailView = {
   title: string;
-  contentType: ContentType | null;
   dateLabel: string;
   description: string;
   link: string | null;
@@ -81,8 +78,9 @@ export type TimelineDetailView = {
   // A solitary image is laid out like a newsletter (description beside the
   // image) even though it has no newsletter content of its own.
   presentAsNewsletter: boolean;
-  // Number of other people (besides the viewer) who have collected this item.
-  collectedByOthers: number;
+  // Music tracks show all their info (title, date, description) beside the
+  // artwork.
+  isAudio: boolean;
 };
 
 type TimelineDetailOverlayProps = {
@@ -91,10 +89,13 @@ type TimelineDetailOverlayProps = {
   fading?: boolean;
 };
 
-// Gap between the image and the text placed above/below/beside it.
+// Gap between the image and the text placed above/below it.
 const TEXT_GAP_PX = 16;
-// Padding kept between the side text and the right edge of the viewport.
-const EDGE_PADDING_PX = 48;
+// Gutter between the image and the side text column: a share of the viewport
+// width, clamped so it neither collapses nor sprawls.
+const SIDE_GAP_VW = 0.068;
+const SIDE_GAP_MIN_PX = 32;
+const SIDE_GAP_MAX_PX = 96;
 
 function TimelineDetailOverlay({
   detail,
@@ -114,18 +115,24 @@ function TimelineDetailOverlay({
   );
 
   // Newsletters (and solitary images) put their body text to the right of the
-  // image, filling the remaining viewport width; everything else stacks below.
+  // image, ending as far from the right edge of the viewport as the image
+  // starts from the left, so the text sits as far from the right edge node as
+  // the image does from the left one; everything else stacks below.
   const isNewsletter =
     detail.presentAsNewsletter || Boolean(detail.newsletterContent);
   // Real newsletters carry their own content; a solitary image reuses its
   // description as the side body.
   const sideBody = detail.newsletterContent ?? detail.description;
+  const sideGap = Math.min(
+    SIDE_GAP_MAX_PX,
+    Math.max(SIDE_GAP_MIN_PX, window.innerWidth * SIDE_GAP_VW)
+  );
   const sideWidth = Math.max(
     0,
     window.innerWidth -
+      imageRect.left -
       (imageRect.left + imageRect.width) -
-      TEXT_GAP_PX -
-      EDGE_PADDING_PX
+      sideGap
   );
 
   const linkNode = detail.link ? (
@@ -139,22 +146,11 @@ function TimelineDetailOverlay({
     </a>
   ) : null;
 
-  const collectedNode =
-    detail.collectedByOthers > 0 ? (
-      <p className="timeline-detail__collected">
-        Collected by{' '}
-        <span className="timeline-detail__collected-count">
-          {detail.collectedByOthers} other
-          {detail.collectedByOthers === 1 ? '' : 's'}
-        </span>
-      </p>
-    ) : null;
-
   return (
     <aside
       className={`timeline-detail timeline-detail--visible${
-        fading ? ' timeline-detail--fading' : ''
-      }`}
+        isNewsletter ? ' timeline-detail--newsletter' : ''
+      }${fading ? ' timeline-detail--fading' : ''}`}
       aria-label={detail.title}
       style={{
         left: `${imageRect.left}px`,
@@ -163,35 +159,52 @@ function TimelineDetailOverlay({
         height: `${imageRect.height}px`,
       }}
     >
-      <div
-        className="timeline-detail__meta"
-        style={{ maxHeight: `${aboveSpace}px` }}
-      >
-        <h2 className="timeline-detail__title">
-          {detail.contentType ? (
-            <ContentTypeIcon
-              type={detail.contentType}
-              className="timeline-detail__title-icon"
-            />
+      {detail.isAudio ? (
+        <div
+          className="timeline-detail__side timeline-detail__side--audio"
+          style={{
+            left: `calc(100% + ${sideGap}px)`,
+            width: `${sideWidth}px`,
+            top: 0,
+            height: `${imageRect.height}px`,
+          }}
+        >
+          <h2 className="timeline-detail__title">{detail.title}</h2>
+          {detail.dateLabel ? (
+            <p className="timeline-detail__date">{detail.dateLabel}</p>
           ) : null}
-          {detail.title}
-        </h2>
-        {detail.dateLabel ? (
-          <p className="timeline-detail__date">{detail.dateLabel}</p>
-        ) : null}
-        {collectedNode}
-      </div>
-      {isNewsletter ? (
+          {detail.description ? (
+            <ScrollFadeText className="timeline-detail__description">
+              {detail.description}
+            </ScrollFadeText>
+          ) : null}
+          {linkNode}
+        </div>
+      ) : (
+        <div
+          className="timeline-detail__meta"
+          // Newsletters caption the image from below; everything else titles
+          // it from above.
+          style={{ maxHeight: `${isNewsletter ? belowSpace : aboveSpace}px` }}
+        >
+          <h2 className="timeline-detail__title">{detail.title}</h2>
+          {detail.dateLabel ? (
+            <p className="timeline-detail__date">{detail.dateLabel}</p>
+          ) : null}
+        </div>
+      )}
+      {detail.isAudio ? null : isNewsletter ? (
         <div
           className="timeline-detail__side"
           style={{
+            left: `calc(100% + ${sideGap}px)`,
             width: `${sideWidth}px`,
             // Span the full window height (so the text can scroll across it)
             // while keeping the first line at the image's top via top padding.
             top: `${-imageRect.top}px`,
             height: `${window.innerHeight}px`,
-            paddingTop: `calc(${imageRect.top}px + 1.5rem)`,
-            paddingBottom: `calc(${imageRect.top}px + 1.5rem)`,
+            paddingTop: `${imageRect.top}px`,
+            paddingBottom: `${imageRect.top}px`,
           }}
         >
           <div className="timeline-detail__body">{sideBody}</div>

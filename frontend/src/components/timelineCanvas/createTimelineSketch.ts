@@ -1,5 +1,5 @@
 import type p5 from 'p5';
-import blankCdUrl from '../../Blank_cd.png';
+import { CANVAS_LABEL_FONT, CANVAS_LABEL_FONT_MEDIUM } from './constants';
 import garamondUrl from '../../EBGaramond-Regular.ttf';
 import type {
   ProcessedCollected,
@@ -176,7 +176,6 @@ export function createTimelineSketch(
         view.startCollectReturn(collectedIndex, runtime.collectFinalRect);
       }
     };
-    const cdImageRef: { current: p5.Image | null } = { current: null };
     const gallery = createGalleryController(p);
 
     const input = createInputHandlers(p, deps, boundsCtx, view, gallery);
@@ -188,7 +187,6 @@ export function createTimelineSketch(
       loadedImages,
       loadedCollectedImages,
       loadedPreviewImages,
-      cdImageRef,
       gallery
     );
 
@@ -207,18 +205,13 @@ export function createTimelineSketch(
         }
       );
       p.textSize(12);
+      // Canvas labels use Akzidenz (see CANVAS_LABEL_FONT); canvas text alone
+      // doesn't make the browser fetch a web font, so ask for it up front.
+      [CANVAS_LABEL_FONT, CANVAS_LABEL_FONT_MEDIUM].forEach((font) => {
+        void document.fonts.load(`16px ${font}`).catch(() => undefined);
+      });
       view.playEntranceAnimation();
       deps.runtime.loadStartMs = p.millis();
-
-      p.loadImage(
-        blankCdUrl,
-        (img) => {
-          cdImageRef.current = img;
-        },
-        () => {
-          cdImageRef.current = null;
-        }
-      );
 
       deps.processed.forEach((item, index) => {
         if (!item.imageUrl) {

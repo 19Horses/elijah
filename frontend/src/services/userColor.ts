@@ -1,4 +1,4 @@
-import { DEFAULT_PICKER_COLOUR } from '../constants/pickerColors';
+import { DEFAULT_PICKER_COLOUR, muteColour } from '../constants/pickerColors';
 
 const COLOUR_KEY = 'elijah:colour';
 
@@ -14,6 +14,11 @@ function getContrastTextColour(hex: string): string {
 
 export function getStoredColour(): string | null {
   return localStorage.getItem(COLOUR_KEY);
+}
+
+// The signed-in user's colour as it's shown on the timeline (muted).
+export function getDisplayColour(): string {
+  return muteColour(getStoredColour() ?? DEFAULT_COLOUR);
 }
 
 export function storeColour(colour: string): void {
