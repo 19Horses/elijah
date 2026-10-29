@@ -146,11 +146,20 @@ export function getContentDetailNewsletterContent(
   return null;
 }
 
-export function getContentDetailVideoUrl(detail: ContentDetail): string | null {
-  if (detail._type !== 'videoAsset' || !detail.videoKey) {
+export function getVideoPlaybackUrl(
+  videoKey: string | null | undefined
+): string | null {
+  if (!videoKey) {
     return null;
   }
-  return `${VIDEO_CDN_URL}/${detail.videoKey}`;
+  return `${VIDEO_CDN_URL}/${videoKey}`;
+}
+
+export function getContentDetailVideoUrl(detail: ContentDetail): string | null {
+  if (detail._type !== 'videoAsset') {
+    return null;
+  }
+  return getVideoPlaybackUrl(detail.videoKey);
 }
 
 export function getContentDetailDateLabel(detail: ContentDetail): string {

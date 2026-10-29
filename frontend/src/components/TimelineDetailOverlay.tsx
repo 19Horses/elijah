@@ -1,5 +1,4 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import ReactPlayer from 'react-player';
 import type { ContentType } from '../types/content';
 import ContentTypeIcon from './ContentTypeIcon';
 import type { DetailImageRect } from './timelineCanvas/types';
@@ -129,19 +128,6 @@ function TimelineDetailOverlay({
       EDGE_PADDING_PX
   );
 
-  const videoNode = detail.videoUrl ? (
-    <div className="timeline-detail__video">
-      <ReactPlayer
-        url={detail.videoUrl}
-        width="100%"
-        height="100%"
-        controls
-        playsinline
-        light={detail.posterUrl ?? false}
-      />
-    </div>
-  ) : null;
-
   const linkNode = detail.link ? (
     <a
       className="timeline-detail__link"
@@ -195,7 +181,6 @@ function TimelineDetailOverlay({
         ) : null}
         {collectedNode}
       </div>
-      {videoNode}
       {isNewsletter ? (
         <div
           className="timeline-detail__side"
