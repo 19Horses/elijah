@@ -67,6 +67,8 @@ export type TimelineCanvasProps = {
   onDetailImageRect?: (rect: DetailImageRect) => void;
   onEntranceComplete?: () => void;
   onBranchIsolationExit?: () => void;
+  activeVideoSlug?: string | null;
+  onDismissVideo?: () => void;
 };
 
 export type DetailImageRect = {
@@ -422,6 +424,8 @@ export type TimelineSketchRefs = {
   reloadCollectedRef: MutableRefObject<
     ((items: ProcessedCollected[]) => void) | undefined
   >;
+  activeVideoSlugRef: RefObject<string | null>;
+  onDismissVideoRef: RefObject<(() => void) | undefined>;
 };
 
 export type TimelineSketchDeps = {
