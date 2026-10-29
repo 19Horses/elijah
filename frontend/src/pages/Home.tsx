@@ -29,6 +29,7 @@ import TimelineDetailOverlay, {
 import {
   getContentDetailDateLabel,
   getContentDetailDescription,
+  getContentDetailImageUrls,
   getContentDetailIsSingleImage,
   getContentDetailLink,
   getContentDetailNewsletterContent,
@@ -104,7 +105,6 @@ function Home({
   const [expandedCollectionId, setExpandedCollectionId] = useState<
     string | null
   >(null);
-  const borderFlashActive = expandedCollectionId !== null;
   // Each collection remembers its own selected item index independently.
   const [selectedItemIndexByCollection, setSelectedItemIndexByCollection] =
     useState<Record<string, number>>({});
@@ -222,6 +222,7 @@ function Home({
       newsletterContent: getContentDetailNewsletterContent(contentDetail),
       presentAsNewsletter: getContentDetailIsSingleImage(contentDetail),
       isAudio: contentDetail._type === 'audioAsset',
+      imageUrls: getContentDetailImageUrls(contentDetail),
     };
   }, [contentDetail, detailReady, focusSlug]);
 
@@ -564,16 +565,15 @@ function Home({
                             style={
                               { '--title-index': index } as React.CSSProperties
                             }
+                            // Adds the item to the viewer's timeline and takes
+                            // them back out to the full map (or, for one
+                            // they've already collected, just takes them back).
                             onClick={() => {
-                              if (isFocused) {
-                                collectFocusedPreviewRef.current?.(item._id);
-                                return;
-                              }
                               setSelectedItemIndexByCollection((prev) => ({
                                 ...prev,
                                 [collection._id]: index,
                               }));
-                              focusContentIdControlRef?.current?.(item._id);
+                              collectFocusedPreviewRef.current?.(item._id);
                             }}
                             onMouseEnter={() => {
                               setHoveredCollectionItemId(item._id);
@@ -622,16 +622,6 @@ function Home({
               ))}
         </div>
       </div>
-      <div
-        className={`screen-border-flash${
-          borderFlashActive ? ' screen-border-flash--visible' : ''
-        }`}
-        style={
-          {
-            '--flash-colour': getDisplayColour(),
-          } as React.CSSProperties
-        }
-      />
       {viewerOpen && collections?.[0] && (
         <div
           className={`collection-view${

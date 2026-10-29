@@ -188,6 +188,8 @@ function NavDrawer({
           aria-expanded={listOpen}
           onClick={() => {
             clearCloseTimeout();
+            // The e always brings the canvas back to the full map.
+            resetViewControlRef?.current?.();
             if (drawerOpen) {
               navigate('/home');
               return;

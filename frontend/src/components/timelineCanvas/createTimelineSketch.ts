@@ -17,8 +17,9 @@ export function createTimelineSketch(
   return (p: p5) => {
     const boundsCtx = createBoundsContext(deps);
     const view = createViewContext(p, deps, boundsCtx);
-    // Cancel button (top bar) → animate back to the default fit view.
-    deps.refs.resetViewRef.current = () => view.unfocusItem();
+    // Cancel button (top bar), the e, or opening the drawer → animate back out
+    // to the full map.
+    deps.refs.resetViewRef.current = () => view.showFullMap();
     // User-card click → isolate the viewer's own branch into a straight line.
     deps.refs.isolateOwnBranchRef.current = () =>
       view.toggleOwnBranchIsolation();

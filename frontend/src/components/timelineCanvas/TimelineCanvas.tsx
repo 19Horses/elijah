@@ -251,12 +251,33 @@ function TimelineCanvas({
         return;
       }
 
+      // A picture open full screen: nothing behind it scrolls or zooms.
+      if (
+        event.target instanceof Element &&
+        event.target.closest('.full-screen-image')
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+
       const overlay = document.querySelector('.timeline-detail');
 
       // A detail is open: the wheel scrolls its text (wherever the cursor is,
       // since the image fills much of the screen) and never zooms the canvas.
       if (overlay) {
         const step = event.deltaMode === 1 ? 16 : 1;
+        // Over a photo gallery's column, the wheel scrolls its pictures.
+        const gallery =
+          event.target instanceof Element
+            ? event.target.closest('.timeline-detail__gallery')
+            : null;
+        if (gallery instanceof HTMLElement) {
+          gallery.scrollTop += event.deltaY * step;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
         // Nudge every text container; only the one that overflows actually
         // moves, so we don't need to know which is the scroll element.
         overlay

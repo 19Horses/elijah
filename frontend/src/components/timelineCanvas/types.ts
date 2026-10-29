@@ -185,6 +185,8 @@ export type NodeHoverRegion = {
   title: string;
   // Timeline the node belongs to (a collector's username, or the main line).
   timeline: string;
+  // How many other timelines' nodes to the same item it stands in for.
+  others?: number;
   colour: string;
   // The item at the opposite end — focused when the node is clicked.
   target: FocusTarget;
@@ -337,12 +339,11 @@ export type TimelineRuntime = {
     string,
     { region: NodeHoverRegion; grow: number; extent: number }
   >;
-  // Sprung 0-1 slide of the focused item's branch nodes out to the viewport
-  // edges (briefly past 1 as it overshoots), its per-frame velocity, the
-  // overshoot-free ease their horizontal movement follows, and the item they
-  // belong to (kept while they ease back).
+  // Eased 0-1 slide of the focused item's branch nodes out to the viewport
+  // edges (vertically and, the same, horizontally), the linear progress it's
+  // eased from, and the item they belong to (kept while they ease back).
   edgeNodes: number;
-  edgeNodesVelocity: number;
+  edgeNodesLinear: number;
   edgeNodesX: number;
   edgeNodesTarget: FocusTarget | null;
   // Connector dots drawn on the most recent frame while an item is focused, so

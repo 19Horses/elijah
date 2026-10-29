@@ -40,7 +40,7 @@
 }
 
 body {
-  background: linear-gradient(to bottom, #fff, #e0e0e0) fixed;
+  background: linear-gradient(to bottom, #f0f0f0, #d2d2d2) fixed;
   margin: 0;
 }
 
@@ -431,7 +431,93 @@ main.main--home {
   scrollbar-width: none;
 }
 
-/* A music track's info, beside its artwork and vertically centred on it. */
+/* A photo gallery's pictures, stacked in a full-height column that scrolls
+   in the image's place (over the canvas's own copy of the cover). Its
+   background is the page's, so the gaps between pictures read as the page. */
+.timeline-detail__gallery {
+  background: linear-gradient(to bottom, #f0f0f0, #d2d2d2) fixed;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  left: 0;
+  right: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: auto;
+  position: absolute;
+  /* Still scrolls, just without a visible scrollbar. */
+  scrollbar-width: none;
+}
+
+.timeline-detail__gallery::-webkit-scrollbar {
+  display: none;
+}
+
+.timeline-detail__gallery-image {
+  display: block;
+  height: auto;
+  width: 100%;
+}
+
+/* Each gallery picture (and a single picture, drawn on the canvas beneath)
+   opens full screen when clicked. */
+.timeline-detail__gallery-button,
+.timeline-detail__image-button {
+  background: none;
+  border: 0;
+  cursor: zoom-in;
+  padding: 0;
+}
+
+.timeline-detail__gallery-button {
+  display: block;
+  flex: none;
+  width: 100%;
+}
+
+.timeline-detail__image-button {
+  inset: 0;
+  pointer-events: auto;
+  position: absolute;
+}
+
+/* A picture shown full screen over everything, on the page background. */
+.full-screen-image {
+  align-items: center;
+  animation: full-screen-image-enter 0.2s ease-out;
+  background: linear-gradient(to bottom, #f0f0f0, #d2d2d2);
+  border: 0;
+  box-sizing: border-box;
+  cursor: zoom-out;
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 2rem;
+  outline: none;
+  position: fixed;
+  z-index: 100;
+}
+
+@keyframes full-screen-image-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Scaled up or down to fill the screen without cropping. */
+.full-screen-image__picture {
+  display: block;
+  height: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
+/* A music track's (or photo gallery's) info, beside its pictures and
+   vertically centred on them. */
 .timeline-detail__side--audio {
   gap: 0.5rem;
   justify-content: center;
@@ -875,21 +961,6 @@ main.main--home {
   opacity: 1;
   transform: translateY(0);
   pointer-events: auto;
-}
-
-.screen-border-flash {
-  box-sizing: border-box;
-  box-shadow: inset 0 0 2.5rem -0.5rem var(--flash-colour, #ffffff);
-  inset: 0;
-  opacity: 0;
-  pointer-events: none;
-  position: fixed;
-  transition: opacity 400ms ease;
-  z-index: 40;
-}
-
-.screen-border-flash--visible {
-  opacity: 1;
 }
 
 .collection-countdown__label {
@@ -1774,6 +1845,8 @@ main.main--home {
   line-height: 0.1;
   padding: 0;
   position: relative;
+  /* A soft white glow lifts it off the timeline lines behind it. */
+  text-shadow: 0 0 24px #ffffff, 0 0 8px #ffffff;
   transition: color 0.15s ease;
   user-select: none;
   z-index: 1;
@@ -1809,6 +1882,10 @@ main.main--home {
   opacity: 0;
   padding: 0;
   text-decoration: none;
+  /* A white glow like the e's, firmed up with tight layers so it still masks
+     the lines at this small size. */
+  text-shadow: 0 0 1px #ffffff, 0 0 2px #ffffff, 0 0 3px #ffffff,
+    0 0 6px #ffffff, 0 0 12px #ffffff;
   transform: translateX(-8px);
   transition: opacity 0.28s cubic-bezier(0.4, 0, 0.2, 1),
     transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), color 0.15s ease;

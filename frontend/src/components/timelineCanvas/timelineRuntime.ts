@@ -89,7 +89,7 @@ export function createTimelineRuntime(): TimelineRuntime {
     edgeNodePush: new Map(),
     nodeCards: new Map(),
     edgeNodes: 0,
-    edgeNodesVelocity: 0,
+    edgeNodesLinear: 0,
     edgeNodesX: 0,
     edgeNodesTarget: null,
     nodeRegions: [],

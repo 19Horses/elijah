@@ -1,7 +1,12 @@
 import type { ItemViewer } from '../../../services/presence';
 import type { ItemCollector } from '../processItems';
 import type p5 from 'p5';
-import type { CollectedBy, LabelRect } from '../labels';
+import {
+  countLabelClashes,
+  drawKindTag,
+  type CollectedBy,
+  type LabelRect,
+} from '../labels';
 import { formatFullDate } from '../../../utils/formatDate';
 import { getContentTypeColour } from '../../../constants/contentTypes';
 import {
@@ -14,13 +19,14 @@ import {
   matchesHighlightedType,
   mixHex,
   resetCanvasEffects,
+  drawGreyOut,
+  drawSheen,
 } from '../canvasEffects';
 import {
   BRANCH_DIM_ITEM_ALPHA,
   CANVAS_LABEL_FONT,
   CANVAS_LABEL_FONT_MEDIUM,
   CONNECTOR_HOVER_THRESHOLD_PX,
-  DATE_LABEL_COLOUR,
   DOT_RADIUS,
   ITEM_LABEL_LETTER_SPACING,
   ITEM_LABEL_LINE_HEIGHT,
@@ -36,13 +42,14 @@ import {
   MAIN_USERNAME,
   ITEM_LABEL_COLOUR,
   ITEM_LABEL_SCALE,
-  PREVIEW_DATE_SCALE,
   PRIVATE_IMAGE_EFFECT,
   TYPE_HIGHLIGHT_BLUR,
   VIEWER_DOT_GAP_PX,
+  VIEWER_DOT_COLUMNS,
   VIEWER_DOT_INSET_PX,
   VIEWER_DOT_RADIUS_PX,
   VIEWER_DOT_RING_PX,
+  SHEEN_STAGGER_MS,
 } from '../constants';
 import {
   distanceToPolyline,
@@ -52,7 +59,6 @@ import {
   getMainConnectorPoints,
   polylineLength,
 } from '../connectors';
-import { getContentTypeIconCanvas } from '../contentTypeIcons';
 import { connectorWeight } from '../geometry';
 import {
   drawContainedImage,
@@ -70,6 +76,7 @@ import type {
   TimelineSketchDeps,
 } from '../types';
 import type { BoundsContext } from './bounds';
+import type { TimelineSegment, ViewerDotTarget } from './viewerDots';
 import {
   drawEdgeNodeStub,
   edgeNodeDotScale,
@@ -125,6 +132,15 @@ export type MainLaneDrawContext = {
   nodeRegions: NodeHoverRegion[];
   // Multiplier that fades connectors out while a branch is isolated (1 = none).
   isolateOtherAlpha: number;
+  // How far (0-1) item pictures are greyed out and their labels hidden, while
+  // a collection is being viewed.
+  isolateGrey: number;
+  // The viewer's own branch row while a collection is being viewed (its lines
+  // stay as the other collectors' fade out), else null.
+  isolatedRow: number | null;
+  // Content ids of the collection being viewed (empty otherwise), whose items
+  // keep their labels while the others' are hidden.
+  collectionContentIds: Set<string>;
   // The focused item's branch nodes on their way out to the viewport edges, or
   // null when every node sits on its item.
   edgeNodes: EdgeNodeLayout | null;
@@ -133,6 +149,10 @@ export type MainLaneDrawContext = {
   dateLabels: DateLabel[];
   // Every connector line drawn this frame, so labels can find a clear spot.
   drawnLines: ConnectorPoint[][];
+  // The same lines with the items they join, for viewers' flashes to follow.
+  timelineSegments: TimelineSegment[];
+  // Where each current viewer's dot belongs this frame, drawn after the items.
+  viewerDots: ViewerDotTarget[];
 };
 
 export type DateLabel = {
@@ -185,65 +205,74 @@ export function collectedByFor(
   };
 }
 
-// A dot for each person currently viewing an item, along its top edge from
-// the top-right corner inward, each in that person's colour.
-export function drawViewerDots(
-  p: p5,
+// Places a dot for each person currently viewing an item, in a grid of
+// VIEWER_DOT_COLUMNS beside the image's top corner: on its right, or on its
+// left when that side has fewer lines running through. They're drawn later,
+// all together (see viewerDots.ts), so a dot can travel between items.
+export function placeViewerDots(
+  targets: ViewerDotTarget[],
   viewers: ItemViewer[] | undefined,
-  right: number,
-  top: number,
-  zoom: number
+  slug: string,
+  image: LabelRect,
+  zoom: number,
+  alpha: number,
+  lines: ConnectorPoint[][]
 ): void {
   if (!viewers || viewers.length === 0) {
     return;
   }
   const radius = VIEWER_DOT_RADIUS_PX / zoom;
   const ring = VIEWER_DOT_RING_PX / zoom;
-  const step = (radius + ring) * 2 + VIEWER_DOT_GAP_PX / zoom;
-  const firstX = right - VIEWER_DOT_INSET_PX / zoom - radius - ring;
-  p.noStroke();
+  const outer = radius + ring;
+  const step = outer * 2 + VIEWER_DOT_GAP_PX / zoom;
+  const inset = VIEWER_DOT_INSET_PX / zoom;
+  const columns = Math.min(viewers.length, VIEWER_DOT_COLUMNS);
+  const rows = Math.ceil(viewers.length / VIEWER_DOT_COLUMNS);
+  const gridWidth = outer * 2 + (columns - 1) * step;
+  const gridHeight = outer * 2 + (rows - 1) * step;
+  const gridRect = (side: 1 | -1): LabelRect => {
+    const near = side === 1 ? image.right + inset : image.left - inset;
+    return {
+      left: side === 1 ? near : near - gridWidth,
+      right: side === 1 ? near + gridWidth : near,
+      top: image.top,
+      bottom: image.top + gridHeight,
+    };
+  };
+  const side: 1 | -1 =
+    countLabelClashes(gridRect(-1), lines, []) <
+    countLabelClashes(gridRect(1), lines, [])
+      ? -1
+      : 1;
+  // The first dot sits nearest the image; rows fill outward, then downward.
+  const firstX =
+    (side === 1 ? image.right + inset : image.left - inset) + side * outer;
+  const firstY = image.top + outer;
   viewers.forEach((viewer, k) => {
-    const x = firstX - k * step;
-    p.fill(255);
-    p.circle(x, top, (radius + ring) * 2);
-    p.fill(viewer.colour);
-    p.circle(x, top, radius * 2);
+    targets.push({
+      ...viewer,
+      slug,
+      x: firstX + side * (k % VIEWER_DOT_COLUMNS) * step,
+      y: firstY + Math.floor(k / VIEWER_DOT_COLUMNS) * step,
+      alpha,
+    });
   });
 }
 
-export function pushItemDateLabels(
-  labels: DateLabel[],
-  item: {
-    left: number;
-    right: number;
-    y: number;
-    text: string;
-    alpha: number;
-    contentType: ContentType;
+// The kind of an item, in caps, for the tag in its image's bottom-right corner.
+export function contentKicker(type: ContentType): string | undefined {
+  switch (type) {
+    case 'imageAsset':
+      return 'PHOTOS';
+    case 'audioAsset':
+      return 'MUSIC';
+    case 'newsletter':
+      return 'LETTER';
+    case 'event':
+      return 'EVENT';
+    default:
+      return undefined;
   }
-): boolean {
-  labels.push({
-    x: item.right,
-    y: item.y,
-    text: item.text,
-    colour: DATE_LABEL_COLOUR,
-    alpha: item.alpha,
-    align: 'right',
-    scale: PREVIEW_DATE_SCALE,
-  });
-  const icon = getContentTypeIconCanvas(item.contentType);
-  if (!icon) {
-    return false;
-  }
-  labels.push({
-    x: item.left,
-    y: item.y,
-    text: '',
-    colour: DATE_LABEL_COLOUR,
-    alpha: item.alpha,
-    icon,
-  });
-  return true;
 }
 
 export type MainLaneDrawResult = {
@@ -461,6 +490,12 @@ export function drawMainLaneConnectors(
       ctx.mainConnectorColour(index)
     );
     ctx.drawnLines.push(drawn);
+    ctx.timelineSegments.push({
+      owner: MAIN_USERNAME,
+      from: { key: `main:${index}`, slug: deps.processed[index].slug },
+      to: { key: `main:${index + 1}`, slug: deps.processed[index + 1].slug },
+      points: drawn,
+    });
     mainCtx.globalAlpha = lineAlpha;
     if (edge) {
       const edgeDotRadius =
@@ -538,12 +573,16 @@ export function drawMainLaneItems(
       galleryImages = item.galleryUrls.map((url) => gallery.getImage(url));
     }
 
+    // The item's height on screen, for its halo's colour.
+    const haloScreenY =
+      ((top + height / 2 - deps.runtime.cameraY) * deps.runtime.zoom) /
+      p.height;
     const isExternallyHighlighted =
       deps.items[index]._id === ctx.highlightedMainContentId;
 
     if (ctx.isFocusActive && ctx.isFocusedTarget('main', index)) {
       // Selected image: no coloured glow, just the halo.
-      applyItemHalo(p, mainCtx, visibilityAlpha);
+      applyItemHalo(p, mainCtx, visibilityAlpha, haloScreenY);
     } else if (isExternallyHighlighted) {
       mainCtx.shadowBlur = 22;
       mainCtx.shadowColor = hexToRgba(
@@ -557,7 +596,7 @@ export function drawMainLaneItems(
         0.55 * ctx.typeHighlightStrength * visibilityAlpha
       );
     } else {
-      applyItemHalo(p, mainCtx, visibilityAlpha);
+      applyItemHalo(p, mainCtx, visibilityAlpha, haloScreenY);
     }
 
     if (ctx.isTypeHighlightActive && !typeMatch) {
@@ -596,6 +635,33 @@ export function drawMainLaneItems(
     }
 
     resetCanvasEffects(mainCtx);
+
+    // Viewing a collection greys out every picture of the viewer's own (the
+    // collection's not-yet-collected items, drawn elsewhere, stay in colour).
+    if (!ctx.isFocusedTarget('main', index)) {
+      drawGreyOut(
+        mainCtx,
+        imageLeft,
+        top,
+        width,
+        height,
+        ctx.isolateGrey,
+        imageAlpha
+      );
+    }
+    // The collection's own items catch a sweeping sheen while it's viewed.
+    if (ctx.collectionContentIds.has(deps.items[index]._id)) {
+      drawSheen(
+        mainCtx,
+        imageLeft,
+        top,
+        width,
+        height,
+        p.millis(),
+        index * SHEEN_STAGGER_MS,
+        ctx.isolateGrey * imageAlpha
+      );
+    }
 
     mainCtx.globalAlpha = imageAlpha;
     drawBackgroundFade(
@@ -655,48 +721,82 @@ export function drawMainLaneItems(
         deps.runtime.detailLayout > 0
       )
     ) {
-      ctx.dateLabels.push({
-        x: imageLeft + width / 2,
-        y: top + height + 12,
-        below: true,
-        font: CANVAS_LABEL_FONT,
-        scale: ITEM_LABEL_SCALE,
-        letterSpacing: ITEM_LABEL_LETTER_SPACING,
-        textFont: CANVAS_LABEL_FONT_MEDIUM,
-        collectedBy: collectedByFor(
-          deps.refs.collectorsRef.current?.get(deps.items[index]._id)
-        ),
-        lineHeight: ITEM_LABEL_LINE_HEIGHT,
-        outlined: true,
-        anchor: {
+      // The kind tag and label are hidden while a collection is being viewed,
+      // unless it's one of the collection's own items.
+      const labelHide = ctx.collectionContentIds.has(deps.items[index]._id)
+        ? 0
+        : ctx.isolateGrey;
+      const kind = contentKicker(item.contentType);
+      if (kind && labelHide < 1) {
+        mainCtx.globalAlpha =
+          (ctx.isTypeHighlightActive && !typeMatch
+            ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
+            : visibilityAlpha) *
+          (1 - labelHide);
+        drawKindTag(
+          p,
+          kind,
+          imageLeft + width,
+          top + height,
+          deps.runtime.zoom
+        );
+        resetCanvasEffects(mainCtx);
+      }
+      if (labelHide < 1) {
+        ctx.dateLabels.push({
+          x: imageLeft + width / 2,
+          y: top + height + 12,
+          below: true,
+          font: CANVAS_LABEL_FONT,
+          scale: ITEM_LABEL_SCALE,
+          letterSpacing: ITEM_LABEL_LETTER_SPACING,
+          textFont: CANVAS_LABEL_FONT_MEDIUM,
+          collectedBy: collectedByFor(
+            deps.refs.collectorsRef.current?.get(deps.items[index]._id)
+          ),
+          lineHeight: ITEM_LABEL_LINE_HEIGHT,
+          outlined: true,
+          anchor: {
+            left: imageLeft,
+            right: imageLeft + width,
+            top,
+            bottom: top + height,
+          },
+          text: item.title,
+          secondary: deps.items[index]?.date
+            ? formatFullDate(
+                new Date(deps.items[index].date as string).getTime()
+              )
+            : undefined,
+          // Wraps within roughly the item's own width (a narrow item still
+          // gets a reasonable measure), well clear of its neighbours'.
+          maxWidth: Math.max(width, ITEM_WIDTH * 0.8),
+          colour: ITEM_LABEL_COLOUR,
+          alpha:
+            (ctx.isTypeHighlightActive && !typeMatch
+              ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
+              : visibilityAlpha) *
+            (1 - labelHide),
+        });
+      }
+    }
+
+    if (item.slug) {
+      placeViewerDots(
+        ctx.viewerDots,
+        deps.refs.viewersRef.current?.get(item.slug),
+        item.slug,
+        {
           left: imageLeft,
           right: imageLeft + width,
           top,
           bottom: top + height,
         },
-        text: item.title,
-        secondary: deps.items[index]?.date
-          ? formatFullDate(new Date(deps.items[index].date as string).getTime())
-          : undefined,
-        // Wraps within roughly the item's own width (a narrow item still
-        // gets a reasonable measure), well clear of its neighbours'.
-        maxWidth: Math.max(width, ITEM_WIDTH * 0.8),
-        colour: ITEM_LABEL_COLOUR,
-        alpha:
-          ctx.isTypeHighlightActive && !typeMatch
-            ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
-            : visibilityAlpha,
-      });
+        deps.runtime.zoom,
+        visibilityAlpha,
+        ctx.drawnLines
+      );
     }
-
-    mainCtx.globalAlpha = visibilityAlpha;
-    drawViewerDots(
-      p,
-      item.slug ? deps.refs.viewersRef.current?.get(item.slug) : undefined,
-      imageLeft + width,
-      top,
-      deps.runtime.zoom
-    );
     resetCanvasEffects(mainCtx);
 
     // Play/pause control on top of the selected audio track's image.
@@ -744,11 +844,11 @@ function mainConnectorAlpha(
   connectorLoadAlpha: number
 ): number {
   const travelAlpha = ctx.mainConnectorTravelAlpha(index);
+  // The main timeline stays in place while a branch is isolated, so its
+  // lines don't fade out with the other collectors'.
   return ctx.isTypeHighlightActive
-    ? getCombinedAlpha(connectorLoadAlpha, ctx.dimAlpha) *
-        travelAlpha *
-        ctx.isolateOtherAlpha
-    : connectorLoadAlpha * travelAlpha * ctx.isolateOtherAlpha;
+    ? getCombinedAlpha(connectorLoadAlpha, ctx.dimAlpha) * travelAlpha
+    : connectorLoadAlpha * travelAlpha;
 }
 
 // The main line runs straight into its items with no dot drawn, except an end
@@ -786,6 +886,8 @@ export function drawMainLaneConnectorDots(
           dotless: true,
           side: undefined,
           edgeKey: undefined,
+          hidden: false,
+          others: undefined,
         };
       }
       return {
@@ -795,13 +897,15 @@ export function drawMainLaneConnectorDots(
         dotless: false,
         side: node.side,
         edgeKey,
+        hidden: node.hidden ?? false,
+        others: node.others,
       };
     };
     const dFrom = place({ x: fromBounds.right, y: fromBounds.centerY }, 'from');
     const dTo = place({ x: toBounds.left, y: toBounds.centerY }, 'to');
     mainCtx.globalAlpha = mainConnectorAlpha(ctx, index, connectorLoadAlpha);
     [dFrom, dTo].forEach((d) => {
-      if (!d.dotless) {
+      if (!d.dotless && !d.hidden) {
         drawDot(p, d.x, d.y, MAIN_LINE_COLOUR, d.scale, d.holeRatio);
       }
     });
@@ -809,20 +913,24 @@ export function drawMainLaneConnectorDots(
     if (ctx.isFocusActive) {
       // The end on item `index` connects rightward to item `index + 1`, and
       // the end on item `index + 1` connects leftward to item `index`.
-      ctx.nodeRegions.push({
-        ...dFrom,
-        title: deps.processed[index + 1].title,
-        timeline: MAIN_USERNAME,
-        colour: MAIN_LINE_COLOUR,
-        target: { lane: 'main', index: index + 1 },
-      });
-      ctx.nodeRegions.push({
-        ...dTo,
-        title: deps.processed[index].title,
-        timeline: MAIN_USERNAME,
-        colour: MAIN_LINE_COLOUR,
-        target: { lane: 'main', index },
-      });
+      if (!dFrom.hidden) {
+        ctx.nodeRegions.push({
+          ...dFrom,
+          title: deps.processed[index + 1].title,
+          timeline: MAIN_USERNAME,
+          colour: MAIN_LINE_COLOUR,
+          target: { lane: 'main', index: index + 1 },
+        });
+      }
+      if (!dTo.hidden) {
+        ctx.nodeRegions.push({
+          ...dTo,
+          title: deps.processed[index].title,
+          timeline: MAIN_USERNAME,
+          colour: MAIN_LINE_COLOUR,
+          target: { lane: 'main', index },
+        });
+      }
     }
   }
 }

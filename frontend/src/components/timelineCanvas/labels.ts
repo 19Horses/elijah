@@ -6,6 +6,11 @@ import {
   LINE_TAG_RADIUS_PX,
   MAX_VISIBLE_COLLECTOR_LABELS,
   OTHERS_LABEL_BG,
+  KIND_TAG_BACKGROUND,
+  KIND_TAG_FONT_PX,
+  KIND_TAG_INSET_PX,
+  KIND_TAG_PAD_X_PX,
+  KIND_TAG_PAD_Y_PX,
 } from './constants';
 import { getContrastText } from './canvasEffects';
 import type { CollectedSource, ConnectorPoint, NodeHoverRegion } from './types';
@@ -183,7 +188,10 @@ const NODE_CARD_SUBTITLE_LEADING = 16;
 // the card open from the node. Returns the card's full (unscaled) size.
 function drawNodeCardText(
   p: p5,
-  node: Pick<NodeHoverRegion, 'title' | 'timeline' | 'colour' | 'side'>,
+  node: Pick<
+    NodeHoverRegion,
+    'title' | 'timeline' | 'colour' | 'side' | 'others'
+  >,
   x: number,
   y: number,
   nodeRadius: number,
@@ -193,7 +201,10 @@ function drawNodeCardText(
   p.textSize(NODE_CARD_TITLE_SIZE);
   const titleLines = wrapText(p, node.title, NODE_CARD_MAX_TEXT_WIDTH);
   const titleWidth = Math.max(...titleLines.map((line) => p.textWidth(line)));
-  const subtitle = `Owned by ${node.timeline.toUpperCase()}`;
+  const others = node.others ?? 0;
+  const subtitle = `Owned by ${node.timeline.toUpperCase()}${
+    others > 0 ? ` and ${others} other${others === 1 ? '' : 's'}` : ''
+  }`;
   p.textStyle(p.NORMAL);
   p.textSize(NODE_CARD_SUBTITLE_SIZE);
   const subtitleWidth = p.textWidth(subtitle);
@@ -415,6 +426,32 @@ function drawLineTagText(
   p.text(detail, x, top + 25 * scale);
 }
 
+// A small tag naming an item's kind (e.g. "MUSIC"), tucked inside its image's
+// bottom-right corner: white caps on a grey box, the same size on screen at
+// any zoom.
+function drawKindTagText(
+  p: p5,
+  text: string,
+  imageRight: number,
+  imageBottom: number,
+  zoom: number
+): void {
+  const inset = KIND_TAG_INSET_PX / zoom;
+  const padX = KIND_TAG_PAD_X_PX / zoom;
+  const padY = KIND_TAG_PAD_Y_PX / zoom;
+  p.textSize(KIND_TAG_FONT_PX / zoom);
+  const width = p.textWidth(text) + padX * 2;
+  const height = KIND_TAG_FONT_PX / zoom + padY * 2;
+  const right = imageRight - inset;
+  const top = imageBottom - inset - height;
+  p.noStroke();
+  p.fill(KIND_TAG_BACKGROUND);
+  p.rect(right - width, top, width, height);
+  p.fill(255);
+  p.textAlign(p.RIGHT, p.CENTER);
+  p.text(text, right - padX, top + height / 2);
+}
+
 // Runs `draw` with the canvas label font, then puts the canvas's own font back.
 function withLabelFont<T>(p: p5, draw: () => T): T {
   const previous = p.textFont();
@@ -445,6 +482,10 @@ export function drawCollectedSourcesLabel(
   ...args: Parameters<typeof drawCollectedSourcesLabelText>
 ): void {
   withLabelFont(args[0], () => drawCollectedSourcesLabelText(...args));
+}
+
+export function drawKindTag(...args: Parameters<typeof drawKindTagText>): void {
+  withLabelFont(args[0], () => drawKindTagText(...args));
 }
 
 export function drawLineTag(...args: Parameters<typeof drawLineTagText>): void {

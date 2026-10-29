@@ -51,15 +51,15 @@ export const SECONDARY_LABEL_GAP = 0.15;
 export const LABEL_OUTLINE_PX = 4;
 // The page background's gradient (top to bottom), mirroring `body` in
 // index.css, for colouring label outlines to match it.
-export const PAGE_BACKGROUND_TOP = '#ffffff';
-export const PAGE_BACKGROUND_BOTTOM = '#e0e0e0';
+export const PAGE_BACKGROUND_TOP = '#f0f0f0';
+export const PAGE_BACKGROUND_BOTTOM = '#d2d2d2';
 // Screen-pixel blur of the white drop shadow behind the date labels.
 export const DATE_LABEL_SHADOW_BLUR_PX = 6;
 export const DOT_RADIUS = 3;
 // Stroke colour of the main timeline line (and its flares into the nodes).
 export const MAIN_LINE_COLOUR = '#969696';
-// Screen-pixel blur of the soft white halo around each item, which fades out
-// the connector lines beneath it where they meet the item.
+// Screen-pixel blur of the soft background-coloured halo around each item,
+// which fades out the connector lines beneath it where they meet the item.
 export const ITEM_HALO_BLUR_PX = 24;
 // Screen-pixel radius each connector line's bends are rounded to.
 export const LINE_CORNER_RADIUS_PX = 6;
@@ -83,28 +83,56 @@ export const LINE_TAG_RADIUS_PX = 6;
 export const LINE_TAG_DETAIL_ALPHA = 0.7;
 // While an item is focused, the branch nodes on its edges slide out to the
 // matching edge of the viewport: inset this far from it, spaced this far apart,
-// drawn at a fixed on-screen radius with a smaller centre hole, and tied to the
-// edge by a thin stub. Vertically they spring out (a slight overshoot, then
-// settling) with this per-frame stiffness and velocity damping; horizontally
-// they ease out by EDGE_NODE_X_LERP per frame with no overshoot.
-export const EDGE_NODE_INSET_PX = 22;
-export const EDGE_NODE_GAP_PX = 35;
-export const EDGE_NODE_RADIUS_PX = 9.5;
-// Dots along an item's top edge, one per person viewing it right now: their
-// screen-pixel radius, the white ring around each, the gap between them and
-// how far in from the item's top-right corner the row starts.
+// drawn at a fixed on-screen radius with a see-through centre hole, and tied
+// to the edge by a thin stub. They slide out (and back) with an ease-in-out over
+// EDGE_NODE_ANIM_MS.
+export const EDGE_NODE_INSET_PX = 36;
+export const EDGE_NODE_GAP_PX = 42;
+export const EDGE_NODE_RADIUS_PX = 13;
+// Dots beside an item's top corner, one per person viewing it right now: their
+// screen-pixel radius, the background-coloured ring masking lines around each, the gap between them, how
+// far out from the image's side the grid starts, and how many dots per row.
 export const VIEWER_DOT_RADIUS_PX = 5;
 export const VIEWER_DOT_RING_PX = 1.5;
 export const VIEWER_DOT_GAP_PX = 4;
-export const VIEWER_DOT_INSET_PX = 8;
+export const VIEWER_DOT_INSET_PX = 6;
+export const VIEWER_DOT_COLUMNS = 3;
+// The tag naming an item's kind in its image's bottom-right corner (screen px):
+// how far in from the corner, its padding, text size and box colour.
+export const KIND_TAG_INSET_PX = 6;
+export const KIND_TAG_PAD_X_PX = 4;
+export const KIND_TAG_PAD_Y_PX = 3;
+export const KIND_TAG_FONT_PX = 9;
+export const KIND_TAG_BACKGROUND = '#606060';
+// A viewer moving on to another item: their dot fades out there and back in
+// at the new item over this long.
+export const VIEWER_DOT_FADE_MS = 220;
+// A hovered viewer dot grows by this fraction of its radius, easing at this
+// rate per frame.
+export const VIEWER_DOT_HOVER_GROW = 0.3;
+export const VIEWER_DOT_HOVER_LERP = 0.25;
+// A viewer moving on to another item also sends a white flash along the
+// timelines joining the two: this long and thick (screen px, plus its glow),
+// at this steady pace (screen px per ms), taking at least / at most this long.
+export const VIEWER_FLASH_LENGTH_PX = 160;
+export const VIEWER_FLASH_WEIGHT_PX = 3;
+export const VIEWER_FLASH_GLOW_PX = 10;
+export const VIEWER_FLASH_SPEED_PX_PER_MS = 2.2;
+export const VIEWER_FLASH_MIN_MS = 300;
+export const VIEWER_FLASH_MAX_MS = 1200;
+// The flash is drawn as this many strokes stacked about its middle, each
+// shorter than the last and this strong, so it fades smoothly to either end.
+export const VIEWER_FLASH_LAYERS = 10;
+export const VIEWER_FLASH_LAYER_ALPHA = 0.3;
+// How much less a route along someone else's timeline is favoured than one
+// along the viewer's own or the main one.
+export const VIEWER_FLASH_OTHER_TIMELINE_COST = 3;
 // Space kept between a hovered edge node's open card and the nodes beside it.
 export const EDGE_NODE_CARD_CLEARANCE_PX = 8;
 // How far past an edge node's dot its hover band reaches.
 export const EDGE_NODE_HIT_PAD_PX = 8;
-export const EDGE_NODE_HOLE_RATIO = 0.35;
-export const EDGE_NODE_SPRING_STIFFNESS = 0.04;
-export const EDGE_NODE_SPRING_DAMPING = 0.8;
-export const EDGE_NODE_X_LERP = 0.18;
+export const EDGE_NODE_HOLE_RATIO = 0.45;
+export const EDGE_NODE_ANIM_MS = 400;
 // Screen pixels of clear space between parallel branch lines where several
 // meet one item (its underside, or one of its edges), the same at every zoom
 // and through every bend, like lines on a metro map.
@@ -121,6 +149,33 @@ export const DATE_FONT_MERGE_SHRINK = 0.2;
 export const MAIN_CONNECTOR_DIM_ALPHA = 0.2;
 export const DRAG_THRESHOLD = 5;
 export const FIT_VIEW_PADDING = 80;
+// How far greyed-out item pictures (while viewing a collection) are washed
+// toward white, on top of going greyscale.
+export const GREY_OUT_LIGHTEN = 0.85;
+// The band of light that sweeps across the collection's item pictures while
+// it's being viewed: every SHEEN_PERIOD_MS it takes SHEEN_SWEEP_MS to cross a
+// picture, at SHEEN_ANGLE (radians) and up to SHEEN_STRENGTH white, each
+// picture starting SHEEN_STAGGER_MS after the one before.
+export const SHEEN_PERIOD_MS = 3200;
+export const SHEEN_SWEEP_MS = 1300;
+export const SHEEN_ANGLE = 0.4;
+export const SHEEN_STRENGTH = 0.55;
+export const SHEEN_STAGGER_MS = 160;
+// Screen px kept clear around a collection's framed timeline: either side
+// (room for labels hung beside its items, the right one before the panel's
+// gap), at the top (the header, plus a label hung above an item) and at the
+// bottom (a label hung below one), so it reads centred labels and all.
+export const COLLECTION_FRAME_SIDE_PX = 120;
+export const COLLECTION_FRAME_TOP_PX = 240;
+export const COLLECTION_FRAME_BOTTOM_PX = 130;
+// Hovering a collection item in its panel zooms in this many times closer
+// than the collection view's framing — the same for every item.
+export const COLLECTION_HOVER_ZOOM = 7;
+// World units between the main timeline's pictures and the row of a
+// collection's items shown above it when the viewer has no branch yet.
+export const COLLECTION_ROW_GAP = 150;
+// Screen px kept between a collection's framed timeline and its panel.
+export const COLLECTION_PANEL_GAP_PX = 24;
 // Screen-pixel margins the default whole-map view keeps clear: the header
 // (logo and menu) at the top, and the labels hung under and beside items.
 export const FIT_VIEW_MARGINS_PX = {
@@ -196,7 +251,8 @@ export const PRIVATE_PIXEL_CELL_PX = 14;
 export const TYPE_HIGHLIGHT_BLUR = 22;
 export const FOCUS_VIEWPORT_FILL = 0.52;
 export const VIEW_ANIMATION_LERP = 0.12;
-export const VIEW_UNFOCUS_ANIMATION_LERP = 0.15;
+// Zooming back out to the map takes as long as zooming in to an item.
+export const VIEW_UNFOCUS_ANIMATION_LERP = VIEW_ANIMATION_LERP;
 export const VIEW_SNAP_THRESHOLD = 0.001;
 export const WHEEL_ZOOM_SENSITIVITY = 0.0025;
 // How quickly the camera eases toward the pan target each frame (drag or
@@ -261,3 +317,8 @@ export const COLLECT_HOLD_MS = 600;
 export const COLLECT_RETURN_FADE_MS = 1100;
 export const COLLECT_RETURN_ZOOM_LERP = 0.0825;
 export const COLLECT_RETURN_IMAGE_WAIT_MS = 600;
+
+// The drop shadow under a music item's play/pause glyph (screen px).
+export const PLAY_BUTTON_SHADOW_BLUR_PX = 14;
+export const PLAY_BUTTON_SHADOW_OFFSET_PX = 2;
+export const PLAY_BUTTON_SHADOW_ALPHA = 0.45;

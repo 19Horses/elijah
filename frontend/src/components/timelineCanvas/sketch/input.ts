@@ -215,6 +215,11 @@ export function createInputHandlers(
   };
 
   const mouseWheel = (event?: WheelEvent) => {
+    // Scrolling DOM layered over the canvas (e.g. a photo gallery's column)
+    // scrolls that, not the canvas.
+    if (!isCanvasEvent(event)) {
+      return true;
+    }
     if (view.isViewInteractionLocked()) {
       event?.preventDefault();
       return false;

@@ -24,7 +24,14 @@ export type EdgeSide = 'top' | 'right' | 'bottom' | 'left';
 
 // Where a branch node settles once its item is focused: a world position that
 // lands on the viewport edge matching the side of the item it sat on.
-export type EdgeNode = ConnectorPoint & { side: EdgeSide };
+// `hidden`: another node on the same edge leads to the same item, so this one
+// shares its spot and isn't drawn (or hoverable) itself. `others`: on the one
+// shown, how many other timelines share it.
+export type EdgeNode = ConnectorPoint & {
+  side: EdgeSide;
+  hidden?: boolean;
+  others?: number;
+};
 
 export type EdgeNodeLayout = {
   // Sprung 0-1: 0 leaves the nodes on the item's edges, 1 has them fully out at
@@ -119,20 +126,40 @@ export function buildEdgeNodeLayout(
     other.lane === target.lane &&
     other.index === target.index;
 
-  const sides: Record<EdgeSide, { key: string; along: number }[]> = {
+  type SideEntry = {
+    key: string;
+    along: number;
+    // The item at the line's far end, and which timeline's line it is (the
+    // main line first, then collectors by row), so several nodes on one edge
+    // leading to the same item can show as one — the earliest timeline's.
+    far: string;
+    rank: number;
+  };
+  const sides: Record<EdgeSide, SideEntry[]> = {
     top: [],
     right: [],
     bottom: [],
     left: [],
   };
-  const add = (key: string, pt: ConnectorPoint) => {
+  const add = (
+    key: string,
+    pt: ConnectorPoint,
+    far: FocusTarget | undefined,
+    rank: number
+  ) => {
     const side = nearestSide(pt, itemBounds);
     const along = side === 'top' || side === 'bottom' ? pt.x : pt.y;
-    sides[side].push({ key, along });
+    sides[side].push({
+      key,
+      along,
+      far: far ? `${far.lane}:${far.index}` : key,
+      rank,
+    });
   };
 
   deps.processedCollected.forEach((item, index) => {
-    item.sources.forEach((_source, sourceIndex) => {
+    item.sources.forEach((source, sourceIndex) => {
+      const rank = source.rowIndex + 1;
       boundsCtx
         .getSourceBranchSegments(
           index,
@@ -144,13 +171,17 @@ export function buildEdgeNodeLayout(
           if (isTarget(segment.fromItemTarget)) {
             add(
               edgeNodeKey(index, sourceIndex, segmentIndex, 'from'),
-              segment.from
+              segment.from,
+              segment.toItemTarget,
+              rank
             );
           }
           if (isTarget(segment.toItemTarget)) {
             add(
               edgeNodeKey(index, sourceIndex, segmentIndex, 'to'),
-              segment.to
+              segment.to,
+              segment.fromItemTarget,
+              rank
             );
           }
         });
@@ -160,16 +191,20 @@ export function buildEdgeNodeLayout(
   // item meets its left side, the line on to the next leaves its right.
   if (target.lane === 'main') {
     if (target.index > 0) {
-      add(mainEdgeNodeKey(target.index - 1, 'to'), {
-        x: itemBounds.left,
-        y: itemBounds.centerY,
-      });
+      add(
+        mainEdgeNodeKey(target.index - 1, 'to'),
+        { x: itemBounds.left, y: itemBounds.centerY },
+        { lane: 'main', index: target.index - 1 },
+        0
+      );
     }
     if (target.index < mainBounds.length - 1) {
-      add(mainEdgeNodeKey(target.index, 'from'), {
-        x: itemBounds.right,
-        y: itemBounds.centerY,
-      });
+      add(
+        mainEdgeNodeKey(target.index, 'from'),
+        { x: itemBounds.right, y: itemBounds.centerY },
+        { lane: 'main', index: target.index + 1 },
+        0
+      );
     }
   }
 
@@ -184,7 +219,16 @@ export function buildEdgeNodeLayout(
 
   const nodes = new Map<string, EdgeNode>();
   (Object.keys(sides) as EdgeSide[]).forEach((side) => {
-    const list = sides[side];
+    // One node per far item on this edge: the earliest timeline's. The rest
+    // share its spot, hidden.
+    const shown = new Map<string, SideEntry>();
+    sides[side].forEach((entry) => {
+      const current = shown.get(entry.far);
+      if (!current || entry.rank < current.rank) {
+        shown.set(entry.far, entry);
+      }
+    });
+    const list = [...shown.values()];
     list.sort((a, b) => a.along - b.along || a.key.localeCompare(b.key));
     const horizontal = side === 'top' || side === 'bottom';
     const slots = horizontal
@@ -224,7 +268,21 @@ export function buildEdgeNodeLayout(
           : side === 'left'
           ? toWorld(EDGE_NODE_INSET_PX, slots[k])
           : toWorld(p.width - EDGE_NODE_INSET_PX, slots[k]);
-      nodes.set(entry.key, { ...world, side });
+      const others = new Set(
+        sides[side]
+          .filter(
+            (other) => other.far === entry.far && other.rank !== entry.rank
+          )
+          .map((other) => other.rank)
+      ).size;
+      nodes.set(entry.key, { ...world, side, others });
+    });
+    sides[side].forEach((entry) => {
+      const primary = shown.get(entry.far);
+      const spot = primary && nodes.get(primary.key);
+      if (primary && spot && primary.key !== entry.key) {
+        nodes.set(entry.key, { ...spot, hidden: true, others: 0 });
+      }
     });
   });
 

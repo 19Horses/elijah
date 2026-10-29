@@ -637,9 +637,13 @@ export function drawDot(
   p.fill(colour);
   p.circle(x, y, radius * 2);
 
-  const prevBlur = ctx.shadowBlur;
+  // The centre is punched out of the canvas, so the page shows through it
+  // (and no line runs across it).
+  ctx.save();
   ctx.shadowBlur = 0;
-  p.fill(255);
-  p.circle(x, y, radius * 2 * holeRatio);
-  ctx.shadowBlur = prevBlur;
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.beginPath();
+  ctx.arc(x, y, radius * holeRatio, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }

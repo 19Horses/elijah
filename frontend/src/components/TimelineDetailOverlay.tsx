@@ -1,4 +1,11 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { createPortal } from 'react-dom';
 import type { DetailImageRect } from './timelineCanvas/types';
 
 // Height (px) of the fade applied to an overflowing text block's edge.
@@ -67,6 +74,49 @@ function ScrollFadeText({
   );
 }
 
+// A picture shown full screen over everything; a click anywhere or Escape
+// closes it.
+function FullScreenImage({
+  url,
+  alt,
+  onClose,
+}: {
+  url: string;
+  alt: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        // Only closes the picture, not the drawer or detail behind it.
+        event.stopImmediatePropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () =>
+      window.removeEventListener('keydown', onKeyDown, { capture: true });
+  }, [onClose]);
+
+  // The whole screen is the close button, focused so Enter/Space close too.
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    closeRef.current?.focus();
+  }, []);
+
+  return (
+    <button
+      ref={closeRef}
+      type="button"
+      className="full-screen-image"
+      aria-label={`Close ${alt}`}
+      onClick={onClose}
+    >
+      <img className="full-screen-image__picture" src={url} alt={alt} />
+    </button>
+  );
+}
+
 export type TimelineDetailView = {
   title: string;
   dateLabel: string;
@@ -79,6 +129,11 @@ export type TimelineDetailView = {
   // Music tracks show all their info (title, date, description) beside the
   // artwork.
   isAudio: boolean;
+  // A photo item's pictures, cover first (empty for anything else). Several
+  // make a gallery: a vertically scrolling column in the image's place, with
+  // all the info beside it like a music track's. Any can be clicked to view
+  // full screen.
+  imageUrls: string[];
 };
 
 type TimelineDetailOverlayProps = {
@@ -100,6 +155,13 @@ function TimelineDetailOverlay({
   imageRect = null,
   fading = false,
 }: TimelineDetailOverlayProps) {
+  const [fullScreenUrl, setFullScreenUrl] = useState<string | null>(null);
+  // A different item (or none) closes any picture left full screen.
+  const detailTitle = detail?.title;
+  useEffect(() => {
+    setFullScreenUrl(null);
+  }, [detailTitle]);
+
   if (!detail || !imageRect) {
     return null;
   }
@@ -133,6 +195,11 @@ function TimelineDetailOverlay({
       sideGap
   );
 
+  const isGallery = detail.imageUrls.length > 1;
+  // Galleries and music tracks put all their info in a column beside the
+  // picture.
+  const infoBeside = detail.isAudio || isGallery;
+
   const linkNode = detail.link ? (
     <a
       className="timeline-detail__link"
@@ -157,7 +224,53 @@ function TimelineDetailOverlay({
         height: `${imageRect.height}px`,
       }}
     >
-      {detail.isAudio ? (
+      {isGallery ? (
+        <div
+          className="timeline-detail__gallery"
+          // Spans the full window height (so the pictures scroll across it)
+          // while the first starts level with the image's top.
+          style={{
+            top: `${-imageRect.top}px`,
+            height: `${window.innerHeight}px`,
+            paddingTop: `${imageRect.top}px`,
+            paddingBottom: `${imageRect.top}px`,
+          }}
+        >
+          {detail.imageUrls.map((url, index) => (
+            <button
+              key={url}
+              type="button"
+              className="timeline-detail__gallery-button"
+              onClick={() => setFullScreenUrl(url)}
+            >
+              <img
+                className="timeline-detail__gallery-image"
+                src={url}
+                alt={index === 0 ? detail.title : ''}
+              />
+            </button>
+          ))}
+        </div>
+      ) : detail.imageUrls.length === 1 ? (
+        // A single picture is drawn on the canvas; this catches clicks on it.
+        <button
+          type="button"
+          className="timeline-detail__image-button"
+          aria-label={`View ${detail.title} full screen`}
+          onClick={() => setFullScreenUrl(detail.imageUrls[0])}
+        />
+      ) : null}
+      {fullScreenUrl
+        ? createPortal(
+            <FullScreenImage
+              url={fullScreenUrl}
+              alt={detail.title}
+              onClose={() => setFullScreenUrl(null)}
+            />,
+            document.body
+          )
+        : null}
+      {infoBeside ? (
         <div
           className="timeline-detail__side timeline-detail__side--audio"
           style={{
@@ -191,7 +304,7 @@ function TimelineDetailOverlay({
           ) : null}
         </div>
       )}
-      {detail.isAudio ? null : isNewsletter ? (
+      {infoBeside ? null : isNewsletter ? (
         <div
           className="timeline-detail__side"
           style={{

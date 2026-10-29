@@ -7,18 +7,26 @@ import {
   PRIVATE_OVERLAY_ALPHA,
   TYPE_DIM_ALPHA,
   TYPE_DIM_OVERLAY,
+  GREY_OUT_LIGHTEN,
+  SHEEN_ANGLE,
+  SHEEN_PERIOD_MS,
+  SHEEN_STRENGTH,
+  SHEEN_SWEEP_MS,
 } from './constants';
 import type { ContentType } from '../../types/content';
 
-// A soft white glow around an item, drawn with it, that fades out the lines
-// beneath where they meet the item.
+// A soft halo in the page background's colour around an item, drawn with it,
+// that fades out the lines beneath where they meet the item.
 export function applyItemHalo(
   p: p5,
   ctx: CanvasRenderingContext2D,
-  alpha: number
+  alpha: number,
+  // Where the item sits on screen (0 top, 1 bottom), so the halo takes the
+  // page background's colour there and reads as the page, not a glow.
+  screenY = 0
 ): void {
   ctx.shadowBlur = ITEM_HALO_BLUR_PX * p.pixelDensity();
-  ctx.shadowColor = `rgba(255, 255, 255, ${alpha})`;
+  ctx.shadowColor = hexToRgba(pageBackgroundAt(screenY), alpha);
 }
 
 export function hexToRgba(hex: string, alpha: number): string {
@@ -61,6 +69,71 @@ export function matchesHighlightedType(
   highlightedType: ContentType | null | undefined
 ): boolean {
   return Boolean(highlightedType && contentType === highlightedType);
+}
+
+// Greys out by `amount` (0-1) whatever's already drawn in the rect: blended
+// to greyscale and washed out lighter. Done with blend modes
+// rather than ctx.filter, which Safari ignores. `alpha` is the opacity the
+// item itself is drawn at, so a faded item isn't left a grey box.
+export function drawGreyOut(
+  ctx: CanvasRenderingContext2D,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  amount: number,
+  alpha = 1
+): void {
+  if (amount <= 0 || alpha <= 0) {
+    return;
+  }
+  ctx.save();
+  ctx.globalCompositeOperation = 'saturation';
+  ctx.globalAlpha = amount * alpha;
+  ctx.fillStyle = '#808080';
+  ctx.fillRect(left, top, width, height);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = amount * GREY_OUT_LIGHTEN * alpha;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(left, top, width, height);
+  ctx.restore();
+}
+
+// A soft diagonal band of light sweeping across the rect, clipped to it, at
+// `time` (ms; `offset` staggers one picture's sweep after another's).
+export function drawSheen(
+  ctx: CanvasRenderingContext2D,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  time: number,
+  offset: number,
+  alpha: number
+): void {
+  const phase =
+    (((time - offset) % SHEEN_PERIOD_MS) + SHEEN_PERIOD_MS) % SHEEN_PERIOD_MS;
+  if (alpha <= 0 || phase > SHEEN_SWEEP_MS) {
+    return;
+  }
+  const t = phase / SHEEN_SWEEP_MS;
+  const span = Math.hypot(width, height);
+  const band = span * 0.35;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, top, width, height);
+  ctx.clip();
+  ctx.translate(left + width / 2, top + height / 2);
+  ctx.rotate(SHEEN_ANGLE);
+  ctx.translate(-span / 2 - band + t * (span + band * 2), 0);
+  const light = ctx.createLinearGradient(-band / 2, 0, band / 2, 0);
+  light.addColorStop(0, 'rgba(255, 255, 255, 0)');
+  light.addColorStop(0.5, `rgba(255, 255, 255, ${SHEEN_STRENGTH * alpha})`);
+  light.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = light;
+  ctx.fillRect(-band / 2, -span, band, span * 2);
+  ctx.restore();
 }
 
 export function resetCanvasEffects(ctx: CanvasRenderingContext2D): void {
@@ -139,6 +212,16 @@ export function drawBackgroundFade(
   ctx.globalAlpha *= amount;
   p.rect(left, top, width, height);
   resetCanvasEffects(ctx);
+}
+
+// The page background's colour at a screen height (0 top, 1 bottom), for
+// masks that should read as the page showing through.
+export function pageBackgroundAt(screenY: number): string {
+  return mixHex(
+    PAGE_BACKGROUND_TOP,
+    PAGE_BACKGROUND_BOTTOM,
+    Math.min(1, Math.max(0, screenY))
+  );
 }
 
 export function drawPrivateOverlay(
