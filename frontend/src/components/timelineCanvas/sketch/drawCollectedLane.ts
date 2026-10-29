@@ -36,8 +36,11 @@ import {
   distanceToPolyline,
   drawBranchConnector,
   drawDot,
+  extractSubPath,
   getBranchRoute,
+  polylineLength,
 } from '../connectors';
+import { branchLineKey } from './layoutChange';
 import { connectorWeight, zoomOutGrowth } from '../geometry';
 import type {
   BranchNodeGroup,
@@ -269,13 +272,25 @@ export function drawCollectedLaneConnectors(
         };
         const start = moveEnd(segment.from, segment.fromNode, 'from');
         const end = moveEnd(segment.to, segment.toNode, 'to');
-        const route = getBranchRoute(
+        const fullRoute = getBranchRoute(
           start.pt,
           end.pt,
           { ...segment, fromNode: start.node, toNode: end.node },
           start.stubExtra,
           end.stubExtra
         );
+        // A line that's just appeared draws out towards its item.
+        const grow =
+          deps.runtime.layoutChange.grow.get(
+            branchLineKey(item.contentId, source.username)
+          ) ?? 1;
+        if (grow <= 0) {
+          return;
+        }
+        const route =
+          grow < 1
+            ? extractSubPath(fullRoute, 0, polylineLength(fullRoute) * grow)
+            : fullRoute;
         // Viewing an item fades the lines away; its edge nodes' stubs stay.
         const lineAlpha = collectedCtx.globalAlpha;
         collectedCtx.globalAlpha = lineAlpha * ctx.otherContentAlpha;

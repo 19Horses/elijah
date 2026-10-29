@@ -311,6 +311,15 @@ export const LOAD_CONNECTOR_DELAY_MS = 180;
 export const LOAD_CONNECTOR_STAGGER_MS = 45;
 export const LOAD_CONNECTOR_FADE_MS = 400;
 export const LOAD_ALPHA_SNAP = 0.01;
+// The collected timelines changing under a live map: items ease to their new
+// places over LAYOUT_SHIFT_MS; new branch lines then draw out (after
+// BRANCH_GROW_DELAY_MS, over BRANCH_GROW_MS) and new items fade in, growing
+// from this share of their size, as their line reaches them.
+export const LAYOUT_SHIFT_MS = 700;
+export const BRANCH_GROW_DELAY_MS = 250;
+export const BRANCH_GROW_MS = 800;
+export const ITEM_APPEAR_MS = 450;
+export const ITEM_APPEAR_FROM_SCALE = 0.7;
 export const PREVIEW_SWITCH_FADE_MS = 250;
 export const COLLECT_ANIM_MS = 1350;
 export const COLLECT_HOLD_MS = 600;

@@ -119,6 +119,7 @@ import {
   type MainLaneDrawContext,
 } from './drawMainLane';
 import type { ViewContext } from './view';
+import { itemAppearProgress, stepLayoutChange } from './layoutChange';
 import {
   createViewerDotAnimator,
   type TimelineSegment,
@@ -233,6 +234,7 @@ export function createDrawFrameHandler(
 
   return () => {
     syncCollectedCaches();
+    stepLayoutChange(deps, p.millis());
     view.animateView();
     view.animatePan();
     view.animateZoom();
@@ -288,13 +290,21 @@ export function createDrawFrameHandler(
       runtime.entranceComplete = true;
       deps.refs.onEntranceCompleteRef.current?.();
     }
+    // A collected item that's just appeared fades in as its line reaches it.
     const getImageLoadAlpha = (imageIndex: number) =>
       getStaggeredLoadAlpha(
         elapsed,
         imageIndex,
         LOAD_IMAGE_FADE_MS,
         LOAD_IMAGE_STAGGER_MS
-      );
+      ) *
+      (imageIndex >= deps.processed.length
+        ? itemAppearProgress(
+            deps,
+            deps.processedCollected[imageIndex - deps.processed.length]
+              ?.contentId ?? ''
+          )
+        : 1);
     const getMainConnectorLoadAlpha = (connectorIndex: number) =>
       getStaggeredLoadAlpha(
         elapsed,

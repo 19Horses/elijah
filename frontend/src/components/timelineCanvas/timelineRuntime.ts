@@ -1,4 +1,5 @@
 import { formatFullDate } from '../../utils/formatDate';
+import { createLayoutChangeState } from './sketch/layoutChange';
 import {
   DATE_FORMAT_FULL_ZOOM_FACTOR,
   DATE_FORMAT_NUMERIC_ZOOM_FACTOR,
@@ -68,6 +69,7 @@ export function createTimelineRuntime(): TimelineRuntime {
     collectContentId: null,
     collectFinalRect: null,
     collectedVersion: 0,
+    layoutChange: createLayoutChangeState(),
     collectReturnIndex: -1,
     collectReturnWaitStartMs: 0,
     collectReturnStartMs: null,

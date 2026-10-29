@@ -46,6 +46,7 @@ import {
   type MainTimelineItem,
 } from '../queries/mainTimeline';
 import { collectItem, hasCollectedFrom } from '../services/collectItem';
+import { subscribeToCollectionChanges } from '../services/collectedContent';
 import { DEBUG_TIMERS_EVENT } from '../services/debugTimers';
 import {
   setViewing,
@@ -180,6 +181,17 @@ function Home({
     () => new Map()
   );
   useEffect(() => subscribeToViewers(setViewersBySlug), []);
+  // Someone collecting something refreshes the timelines live, and the map
+  // eases into the new layout.
+  useEffect(
+    () =>
+      subscribeToCollectionChanges(() => {
+        void queryClient.invalidateQueries({
+          queryKey: ['collectedTimeline'],
+        });
+      }),
+    [queryClient]
+  );
 
   const handleDetailLayoutStart = useCallback(() => {
     setDetailReady(true);

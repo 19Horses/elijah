@@ -7,6 +7,7 @@ import type {
   TimelineSketchDeps,
 } from './types';
 import { createBoundsContext } from './sketch/bounds';
+import { beginLayoutChange, snapshotLayout } from './sketch/layoutChange';
 import { createDrawFrameHandler } from './sketch/drawFrame';
 import { createGalleryController } from './sketch/galleryController';
 import { createInputHandlers } from './sketch/input';
@@ -118,6 +119,10 @@ export function createTimelineSketch(
           reuse.set(item.imageUrl, img);
         }
       });
+      // Once the map has come in, ease it from where everything is now.
+      const before = runtime.entranceComplete
+        ? snapshotLayout(deps, boundsCtx)
+        : null;
       const focusedContentId =
         runtime.focusTarget?.lane === 'collected'
           ? deps.processedCollected[runtime.focusTarget.index]?.contentId
@@ -136,6 +141,9 @@ export function createTimelineSketch(
       loadCollectedImages(items, reuse);
       boundsCtx.invalidateCollected();
       runtime.collectedVersion += 1;
+      if (before) {
+        beginLayoutChange(deps, boundsCtx, before, p.millis());
+      }
 
       if (focusedContentId !== undefined) {
         const index = items.findIndex(

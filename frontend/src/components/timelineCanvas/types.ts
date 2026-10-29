@@ -5,6 +5,7 @@ import type { MainTimelineItem } from '../../queries/mainTimeline';
 import type { CollectionContent, ContentType } from '../../types/content';
 import type { CollectedUserRow } from '../../queries/collectedContent';
 import type { AudioController } from './sketch/audioController';
+import type { LayoutChangeState } from './sketch/layoutChange';
 
 export type TimelineCanvasProps = {
   items: MainTimelineItem[];
@@ -288,6 +289,8 @@ export type TimelineRuntime = {
   collectContentId: string | null;
   collectFinalRect: DetailImageRect | null;
   collectedVersion: number;
+  // Easing the map from one set of collected timelines to the next.
+  layoutChange: LayoutChangeState;
   collectReturnIndex: number;
   collectReturnWaitStartMs: number;
   collectReturnStartMs: number | null;

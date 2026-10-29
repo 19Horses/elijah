@@ -16,6 +16,7 @@ import {
   COLLECTION_ROW_GAP,
 } from '../constants';
 import { getBranchRoute } from '../connectors';
+import { itemAppearScale } from './layoutChange';
 import {
   connectorWeight,
   getContentBounds,
@@ -1176,7 +1177,8 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       const baseTop = rowTop + (IMAGE_HEIGHT - height) / 2;
       const offset = collectedOffsets[index];
       // Laid out at base size, then grown about its centre.
-      const grow = scale * collectionGrow(item);
+      const grow =
+        scale * collectionGrow(item) * itemAppearScale(deps, item.contentId);
       const scaledWidth = width * grow;
       const scaledHeight = height * grow;
       const left = baseLeft + offset.dx - (scaledWidth - width) / 2;
