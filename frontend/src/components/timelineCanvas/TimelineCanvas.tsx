@@ -64,8 +64,6 @@ function TimelineCanvas({
   onDetailImageRect,
   onEntranceComplete,
   onBranchIsolationExit,
-  activeVideoSlug = null,
-  onDismissVideo,
 }: TimelineCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const interactionLockedRef = useRef(false);
@@ -136,16 +134,6 @@ function TimelineCanvas({
     | ((items: ReturnType<typeof buildProcessedCollectionPreview>) => void)
     | undefined
   >(undefined);
-  const activeVideoSlugRef = useRef<string | null>(activeVideoSlug);
-  const onDismissVideoRef = useRef(onDismissVideo);
-
-  useEffect(() => {
-    activeVideoSlugRef.current = activeVideoSlug;
-  }, [activeVideoSlug]);
-
-  useEffect(() => {
-    onDismissVideoRef.current = onDismissVideo;
-  }, [onDismissVideo]);
   const beginPreviewFadeOutRef = useRef<(() => void) | undefined>(undefined);
   const prevPreviewItemsRef = useRef<CollectionContent[]>(EMPTY_PREVIEW_ITEMS);
 
@@ -372,8 +360,6 @@ function TimelineCanvas({
         collectorsRef,
         focusContentIdRef,
         setCollectionViewActiveRef,
-        activeVideoSlugRef,
-        onDismissVideoRef,
       },
     });
 
