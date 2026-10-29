@@ -132,7 +132,9 @@ function VideoOverlayPlayer({
     e.preventDefault();
     const el = containerRef.current;
     const currentRect = el?.getBoundingClientRect();
-    const initialX = currentRect ? currentRect.left : window.innerWidth - 240 - MARGIN_PX;
+    const initialX = currentRect
+      ? currentRect.left
+      : window.innerWidth - 240 - MARGIN_PX;
     const initialY = currentRect ? currentRect.top : MARGIN_PX;
 
     dragRef.current = {
@@ -198,7 +200,9 @@ function VideoOverlayPlayer({
         top: `${miniPos.y}px`,
         width: 'var(--top-right-card-width, 240px)',
         zIndex: 22,
-        transition: isDragging ? 'none' : 'left 0.25s cubic-bezier(0.2, 0.9, 0.3, 1), top 0.25s cubic-bezier(0.2, 0.9, 0.3, 1)',
+        transition: isDragging
+          ? 'none'
+          : 'left 0.25s cubic-bezier(0.2, 0.9, 0.3, 1), top 0.25s cubic-bezier(0.2, 0.9, 0.3, 1)',
       }
     : !isZoomedIn
     ? {

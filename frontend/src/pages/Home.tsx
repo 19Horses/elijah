@@ -242,8 +242,7 @@ function Home({
     if (!title) {
       return;
     }
-    const posterUrl =
-      detailIsVideo?.imageUrl ?? timelineItem?.imageUrl ?? null;
+    const posterUrl = detailIsVideo?.imageUrl ?? timelineItem?.imageUrl ?? null;
     const itemIndex = timeline?.items.findIndex(
       (item) => item.slug === focusSlug
     );
