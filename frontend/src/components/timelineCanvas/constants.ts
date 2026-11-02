@@ -113,6 +113,8 @@ export const KIND_TAG_FONT_PX = 9;
 export const KIND_TAG_BACKGROUND = '#606060';
 // Over a collection's items the viewer already has, while it's viewed.
 export const ALREADY_COLLECTED_TEXT = 'ALREADY\nCOLLECTED';
+// …this share of the picture's width, whatever its size.
+export const ALREADY_COLLECTED_WIDTH = 0.8;
 // …tilted by a random angle between these many degrees, either way (steady
 // for each item; see tiltFor).
 export const ALREADY_COLLECTED_MIN_TILT_DEG = 2;
@@ -250,8 +252,6 @@ export const TYPE_DIM_ALPHA = 0.4;
 export const TYPE_DIM_OVERLAY = 0.3;
 // Fade applied over private items the viewer hasn't collected.
 export const PRIVATE_OVERLAY_ALPHA = 0.55;
-export const PRIVATE_BADGE_TEXT = 'Private content';
-export const PRIVATE_BADGE_COLOUR = '#3f3f46';
 // Which distortion private images render with — swap to compare.
 export const PRIVATE_IMAGE_EFFECT: 'blur' | 'pixelate' = 'blur';
 export const PRIVATE_BLUR_PX = 10;
@@ -277,11 +277,18 @@ export const PAN_SETTLE_THRESHOLD_PX = 0.5;
 export const ZOOM_LERP = 0.18;
 // Below this zoom-unit distance a wheel-zoom is considered settled.
 export const ZOOM_SETTLE_THRESHOLD = 0.0005;
-export const MIN_ZOOM_FACTOR = 0.25;
+// The furthest out the user can zoom: this share of the zoom that fits the
+// whole map, so it stays readable with a little room around it.
+export const MIN_ZOOM_FACTOR = 0.75;
 // Absolute zoom level the user can zoom in to, independent of the fit-to-screen
 // zoom (which shrinks as the timeline grows) — so items reach the same max
-// on-screen size no matter how many items the timeline has.
-export const MAX_ZOOM_LEVEL = 1.5;
+// on-screen size no matter how many items the timeline has (about a third of
+// a laptop screen's width for a picture).
+export const MAX_ZOOM_LEVEL = 1.2;
+// Items' labels (title, date, who owns it) fade out as the camera zooms out
+// from the first of these zooms to the second.
+export const SUBLABEL_SHOW_ZOOM = 0.34;
+export const SUBLABEL_HIDE_ZOOM = 0.3;
 // How strongly nodes and connector lines grow as the camera zooms out below
 // the default fit level. 1 = they merely hold their on-screen size instead of
 // shrinking; >1 = they actively grow larger the further out you zoom.
@@ -296,8 +303,6 @@ export const LANE_GAP_GROWTH_POWER = 1.8;
 // ITEM_ZOOM_OUT_GROWTH_MAX so neighbours never grow into each other.
 export const ITEM_ZOOM_OUT_GROWTH_POWER = 0.5;
 export const ITEM_ZOOM_OUT_GROWTH_MAX = 1 + (ITEM_GAP * 0.6) / ITEM_WIDTH;
-export const MAX_VISIBLE_COLLECTOR_LABELS = 3;
-export const OTHERS_LABEL_BG = '#9ca3af';
 export const HIGHLIGHT_FADE_OUT_LERP = 0.08;
 export const HIGHLIGHT_FADE_SNAP = 0.01;
 export const DETAIL_LAYOUT_LERP = 0.08;
@@ -335,16 +340,22 @@ export const ITEM_APPEAR_FROM_SCALE = 0.7;
 // each in a cell this share of an item's width and height, with these gaps
 // between (the rows leaving room for the labels under the pictures), and
 // these screen margins (px) above and below it.
-export const SOLO_GRID_COLUMNS = 4;
+export const SOLO_GRID_COLUMNS = 3;
+// Each item's description sits to the right of its picture, in a column this
+// share of an item's width, this far from the picture, set at this size and
+// line height (world units, so it scales with the grid).
+export const SOLO_GRID_TEXT_WIDTH = 1.1;
+export const SOLO_GRID_TEXT_GAP = 0.1;
+export const SOLO_GRID_TEXT_SIZE = 28;
+export const SOLO_GRID_TEXT_LEADING = 36;
 export const SOLO_GRID_CELL_SCALE = 1;
-export const SOLO_GRID_GAP_X = 0.35;
-export const SOLO_GRID_GAP_Y = 0.85;
+export const SOLO_GRID_GAP_X = 0.25;
+export const SOLO_GRID_GAP_Y = 0.6;
 export const SOLO_GRID_TOP_PX = 130;
 export const SOLO_GRID_BOTTOM_PX = 90;
 export const PREVIEW_SWITCH_FADE_MS = 250;
 export const COLLECT_ANIM_MS = 700;
 export const COLLECT_HOLD_MS = 350;
-export const COLLECT_RETURN_FADE_MS = 1100;
 export const COLLECT_RETURN_ZOOM_LERP = 0.0825;
 export const COLLECT_RETURN_IMAGE_WAIT_MS = 600;
 

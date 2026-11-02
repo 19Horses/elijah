@@ -73,6 +73,7 @@ export function createTimelineRuntime(): TimelineRuntime {
     collectContentId: null,
     collectFinalRect: null,
     collectedVersion: 0,
+    mapZoom: 0,
     layoutChange: createLayoutChangeState(),
     collectReturnIndex: -1,
     collectReturnWaitStartMs: 0,

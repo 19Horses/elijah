@@ -1,4 +1,5 @@
 import type { ImageDimensions } from '../queries/products';
+import type { RichTextValue } from '../utils/richText';
 
 export type ContentType = 'imageAsset' | 'audioAsset' | 'newsletter' | 'event';
 
@@ -33,7 +34,7 @@ export type ImageAsset = ContentBase &
   WithOptionalDate &
   WithOptionalImage & {
     _type: 'imageAsset';
-    description: string | null;
+    description: RichTextValue;
     images?: GalleryImage[] | null;
   };
 
@@ -41,7 +42,7 @@ export type AudioAsset = ContentBase &
   WithOptionalDate &
   WithOptionalImage & {
     _type: 'audioAsset';
-    description: string | null;
+    description: RichTextValue;
     audioUrl: string | null;
   };
 
@@ -49,14 +50,14 @@ export type Newsletter = ContentBase &
   WithOptionalDate &
   WithOptionalImage & {
     _type: 'newsletter';
-    content: string;
+    content: RichTextValue;
   };
 
 export type Event = ContentBase &
   WithOptionalDate &
   WithOptionalImage & {
     _type: 'event';
-    description: string;
+    description: RichTextValue;
     link: string;
   };
 

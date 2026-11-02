@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getApiUrl } from '../sanityIntegration';
 import type { CollectionContent } from '../types/content';
+import type { RichTextValue } from '../utils/richText';
 
 type SanityResponse<T> = {
   result: T;
@@ -12,7 +13,7 @@ export type Collection = {
   _id: string;
   name: string;
   slug: string | null;
-  description: string | null;
+  description: RichTextValue;
   imageUrl: string | null;
   imageDimensions: {
     width: number;

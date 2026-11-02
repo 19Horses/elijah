@@ -11,6 +11,7 @@ import type {
   ProcessedCollectionPreview,
   ProcessedItem,
 } from './types';
+import { toPlainText } from '../../utils/richText';
 
 function getItemAspectRatio(item: MainTimelineItem): number {
   if ('imageDimensions' in item && item.imageDimensions?.aspectRatio) {
@@ -32,6 +33,15 @@ function getGalleryUrls(item: MainTimelineItem): string[] {
     .filter((url): url is string => url !== null);
 }
 
+// An item's description, or a newsletter's content, as plain text.
+function plainDescription(item: MainTimelineItem): string | null {
+  const text =
+    item._type === 'newsletter'
+      ? toPlainText(item.content)
+      : toPlainText(item.description);
+  return text.trim() || null;
+}
+
 export function buildProcessedItems(
   items: MainTimelineItem[]
 ): ProcessedItem[] {
@@ -40,7 +50,9 @@ export function buildProcessedItems(
     slug: item.slug ?? null,
     contentType: item._type,
     title: item.title ?? '',
-    bodyContent: item._type === 'newsletter' ? item.content ?? null : null,
+    bodyContent:
+      item._type === 'newsletter' ? toPlainText(item.content) || null : null,
+    description: plainDescription(item),
     aspectRatio: getItemAspectRatio(item),
     audioUrl: item._type === 'audioAsset' ? item.audioUrl ?? null : null,
     galleryUrls: getGalleryUrls(item),
@@ -129,8 +141,9 @@ export function buildProcessedCollected(
         title: item.content.title ?? '',
         bodyContent:
           item.content._type === 'newsletter'
-            ? item.content.content ?? null
+            ? toPlainText(item.content.content) || null
             : null,
+        description: plainDescription(item.content),
         aspectRatio: getItemAspectRatio(item.content),
         anchorTime: Number.isNaN(contentTime) ? Date.now() : contentTime,
         rowIndex,

@@ -5,6 +5,8 @@ import {
   getEffectiveExpiresAt,
 } from '../services/debugTimers';
 import { getDisplayColour } from '../services/userColor';
+import RichText from './RichText';
+import { hasRichText } from '../utils/richText';
 
 type CollectionCountdownProps = {
   collection: Collection;
@@ -142,9 +144,9 @@ function CollectionCountdown({
             }
           />
         )}
-        {collection.description && (
+        {hasRichText(collection.description) && (
           <span className="collection-countdown__description">
-            {collection.description}
+            <RichText value={collection.description} />
           </span>
         )}
         {contents && !open && (

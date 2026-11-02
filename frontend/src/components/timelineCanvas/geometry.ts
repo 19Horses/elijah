@@ -109,6 +109,26 @@ export function connectorWeight(zoom: number, fitZoomLevel: number): number {
   return zoomOutGrowth(zoom, fitZoomLevel, ZOOM_OUT_GROWTH_POWER) + extra;
 }
 
+// The timelines' line weight now. Viewing a collection (zoomed in close),
+// they keep the thickness on screen they have on the world map rather than
+// thickening with the zoom, easing to it with the view.
+export function timelineWeight(runtime: {
+  zoom: number;
+  fitZoomLevel: number;
+  mapZoom: number;
+  branchIsolate: number;
+  branchIsolateRow: number | null;
+}): number {
+  const live = connectorWeight(runtime.zoom, runtime.fitZoomLevel);
+  const t = runtime.branchIsolateRow !== null ? runtime.branchIsolate : 0;
+  if (t <= 0 || runtime.mapZoom <= 0 || runtime.zoom <= 0) {
+    return live;
+  }
+  const onScreen =
+    connectorWeight(runtime.mapZoom, runtime.fitZoomLevel) * runtime.mapZoom;
+  return live + (onScreen / runtime.zoom - live) * t;
+}
+
 // How far past a zoom-out threshold the camera is: 0 at/above `thresholdFactor`
 // (times fitZoomLevel), easing up to 1 a further `transitionFactor` below that
 // as the camera zooms out (e.g. the date labels shrinking slightly).

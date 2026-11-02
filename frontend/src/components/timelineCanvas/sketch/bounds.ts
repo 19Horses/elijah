@@ -16,13 +16,17 @@ import {
   COLLECTION_ROW_GAP,
   COLLECTION_ROW_GAP_EXTRA,
 } from '../constants';
-import { getBranchRoute, getMainConnectorPoints } from '../connectors';
+import {
+  getBranchRoute,
+  getMainConnectorPoints,
+  polylineLength,
+} from '../connectors';
 import { itemAppearScale } from './layoutChange';
 import {
-  connectorWeight,
   getContentBounds,
   getFittedSize,
   itemZoomScale,
+  timelineWeight,
   zoomOutGrowth,
 } from '../geometry';
 import type {
@@ -76,6 +80,13 @@ export type BranchSegment = {
   toNode?: BranchNodeGroup;
 };
 
+// A collector's timeline as its separate stretches, each with how far along
+// the timeline (from its earliest item) it starts, and the whole length.
+export type TimelineFlashPath = {
+  stretches: { points: ConnectorPoint[]; start: number }[];
+  length: number;
+};
+
 export type BoundsContext = {
   // `swap` pins how far the collection view's size swap has gone (see
   // collectionSwap), rather than tracking it live.
@@ -100,7 +111,7 @@ export type BoundsContext = {
     rowIndex: number,
     mainBounds: ContentBounds[],
     collectedBounds: ContentBounds[]
-  ) => ConnectorPoint[];
+  ) => TimelineFlashPath;
   // Main-connector indices a branch detours below (has collected items in that
   // gap). The rest of the main line — before, after, and gaps it skips over —
   // is left untouched.
@@ -194,7 +205,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       rowIndex === undefined
         ? 0
         : runtime.lineBlobs.get(`row:${rowIndex}`)?.scale ?? 0;
-    return connectorWeight(runtime.zoom, runtime.fitZoomLevel) * (1 + grow);
+    return timelineWeight(runtime) * (1 + grow);
   };
 
   // Centre offsets for parallel lines of the given widths laid side by side,
@@ -1009,12 +1020,10 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     rowIndex: number,
     mainBounds: ContentBounds[],
     collectedBounds: ContentBounds[]
-  ): ConnectorPoint[] => {
+  ): TimelineFlashPath => {
     // Every stretch of the timeline — its lines to and from collected items,
     // and the main line it runs along between them — each running from its
-    // earlier item to its later one, laid end to end from the earliest item.
-    // (Consecutive stretches meet at the same item, so the path only jumps
-    // across that item's picture.)
+    // earlier item to its later one.
     const timeOf = (target: FocusTarget | undefined): number => {
       if (!target) {
         return Number.NaN;
@@ -1025,8 +1034,15 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       const date = items[target.index]?.date;
       return date ? new Date(date).getTime() : Number.NaN;
     };
-    const stretches: { from: number; to: number; points: ConnectorPoint[] }[] =
-      [];
+    const keyOf = (target: FocusTarget | undefined) =>
+      target ? `${target.lane}:${target.index}` : '';
+    const stretches: {
+      from: number;
+      to: number;
+      fromKey: string;
+      toKey: string;
+      points: ConnectorPoint[];
+    }[] = [];
     processedCollected.forEach((item, index) => {
       item.sources.forEach((source, sourceIndex) => {
         if (source.rowIndex !== rowIndex) {
@@ -1041,10 +1057,18 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
           const fromTime = timeOf(segment.fromItemTarget);
           const toTime = timeOf(segment.toItemTarget);
           const points = getBranchRoute(segment.from, segment.to, segment);
+          const fromKey = keyOf(segment.fromItemTarget);
+          const toKey = keyOf(segment.toItemTarget);
           stretches.push(
             toTime < fromTime
-              ? { from: toTime, to: fromTime, points: [...points].reverse() }
-              : { from: fromTime, to: toTime, points }
+              ? {
+                  from: toTime,
+                  to: fromTime,
+                  fromKey: toKey,
+                  toKey: fromKey,
+                  points: [...points].reverse(),
+                }
+              : { from: fromTime, to: toTime, fromKey, toKey, points }
           );
         });
       });
@@ -1058,15 +1082,36 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       stretches.push({
         from: timeOf({ lane: 'main', index: connector }),
         to: timeOf({ lane: 'main', index: connector + 1 }),
+        fromKey: `main:${connector}`,
+        toKey: `main:${connector + 1}`,
         points: getMainConnectorPoints(
           { x: from.right, y: from.centerY },
           { x: to.left, y: to.centerY }
         ),
       });
     });
-    return stretches
-      .sort((a, b) => a.from - b.from || a.to - b.to)
-      .flatMap((stretch) => stretch.points);
+    // How far along the timeline (from its earliest item) the flash reaches
+    // each item, earliest first; each stretch starts where its earlier item
+    // is reached, so where the timeline branches the flash splits and runs
+    // down every branch at once.
+    stretches.sort((a, b) => a.from - b.from || a.to - b.to);
+    const reached = new Map<string, number>();
+    const laid = stretches.map((stretch) => {
+      const start = reached.get(stretch.fromKey) ?? 0;
+      const end = start + polylineLength(stretch.points);
+      reached.set(
+        stretch.toKey,
+        Math.min(reached.get(stretch.toKey) ?? end, end)
+      );
+      return { points: stretch.points, start };
+    });
+    return {
+      stretches: laid,
+      length: Math.max(
+        0,
+        ...laid.map((stretch) => stretch.start + polylineLength(stretch.points))
+      ),
+    };
   };
 
   // Gaps a branch detours below the main line for (has collected items in). The
@@ -1155,6 +1200,33 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     return travel;
   };
 
+  // Viewing a collection, everything in the viewer's row — their own items
+  // and the collection's still to collect — sits in equal-width slots in
+  // date order, so the gaps between them match. Each one's slot centre (world
+  // x), by content id, centred on where their dates fall.
+  const collectionSlotCentres = (rowIndex: number): Map<string, number> => {
+    const own = processedCollected.filter((item) =>
+      item.sources.some((s) => s.rowIndex === rowIndex)
+    );
+    const ownIds = new Set(own.map((item) => item.contentId));
+    const row = [
+      ...own,
+      ...deps.processedPreview.filter((item) => !ownIds.has(item.contentId)),
+    ].sort((a, b) => a.anchorTime - b.anchorTime);
+    const slots = new Map<string, number>();
+    if (row.length === 0) {
+      return slots;
+    }
+    const step = ITEM_WIDTH * MAIN_ITEM_SCALE + ITEM_GAP;
+    const centre =
+      row.reduce((sum, item) => sum + timeToWorldX(item.anchorTime), 0) /
+      row.length;
+    row.forEach((item, k) => {
+      slots.set(item.contentId, centre + (k - (row.length - 1) / 2) * step);
+    });
+    return slots;
+  };
+
   const getCollectedBounds = (
     rowGrowthOverride?: number,
     swap = collectionSwap()
@@ -1194,6 +1266,14 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     // How many items already attach to a given predecessor, so a fork (one
     // item feeding several) stacks its branches into separate rows.
     const successorCount = new Map<number, number>();
+    // Viewing a collection, the viewer's own items share one row of evenly
+    // spaced slots (see below).
+    const ownSlots =
+      swap > 0 &&
+      runtime.branchIsolateRow !== null &&
+      runtime.branchIsolateRow >= 0
+        ? collectionSlotCentres(runtime.branchIsolateRow)
+        : null;
 
     // Place in chronological order so a chain's predecessor is positioned
     // before the items that attach next to it.
@@ -1239,21 +1319,28 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       placedRow[index] = rowIndex;
 
       // Viewing a collection, the viewer's own items (the only ones showing)
-      // move in to the row nearest the main timeline on their side, easing
-      // with the view.
+      // move in to one row nearest the main timeline on their side — whatever
+      // rows they sat in, as an item several collected sits in the first
+      // collector's — each to its slot there, easing with the view.
       const homeTop = rowTopForRowIndex(rowIndex, rowGap, rowHeight);
-      const rowTop =
+      let rowTop = homeTop;
+      if (
         swap > 0 &&
+        runtime.branchIsolateRow !== null &&
+        runtime.branchIsolateRow >= 0 &&
         item.sources.some((s) => s.rowIndex === runtime.branchIsolateRow)
-          ? homeTop +
-            (rowTopForRowIndex(
-              rowIndex % 2,
-              rowGap + COLLECTION_ROW_GAP_EXTRA,
-              rowHeight
-            ) -
-              homeTop) *
-              swap
-          : homeTop;
+      ) {
+        const ownTop = rowTopForRowIndex(
+          runtime.branchIsolateRow % 2,
+          rowGap + COLLECTION_ROW_GAP_EXTRA,
+          rowHeight
+        );
+        rowTop = homeTop + (ownTop - homeTop) * swap;
+        const slot = ownSlots?.get(item.contentId);
+        if (slot !== undefined) {
+          baseLeft += (slot - width / 2 - baseLeft) * swap;
+        }
+      }
       const baseTop = rowTop + (IMAGE_HEIGHT - height) / 2;
       const offset = collectedOffsets[index];
       // Laid out at base size, then grown about its centre.
@@ -1466,6 +1553,51 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
           },
         });
       });
+    }
+    // Beside the viewer's own items, each to its slot in their row (see
+    // collectionSlotCentres), linked to the one before it in date order
+    // (or, the first, to the one after).
+    if (own.length > 0) {
+      const slots = collectionSlotCentres(rowIndex);
+      const centerY = own[0].rect.centerY;
+      const rowOrder = [
+        ...own.map((o) => ({ contentId: o.contentId, time: o.anchorTime })),
+        ...previews.map(({ item }) => ({
+          contentId: item.contentId,
+          time: item.anchorTime,
+        })),
+      ].sort((a, b) => a.time - b.time);
+      previews.forEach(({ item, index }) => {
+        const {
+          width: baseWidth,
+          height: baseHeight,
+          expand,
+        } = previewSize(item);
+        const centerX =
+          slots.get(item.contentId) ?? timeToWorldX(item.anchorTime);
+        const width = baseWidth * expand;
+        const height = baseHeight * expand;
+        const left = centerX - width / 2;
+        const top = centerY - height / 2;
+        const at = rowOrder.findIndex((o) => o.contentId === item.contentId);
+        const neighbour = rowOrder[at - 1] ?? rowOrder[at + 1];
+        placed.push({
+          kind: 'preview',
+          index,
+          contentId: item.contentId,
+          rect: {
+            left,
+            right: left + width,
+            top,
+            centerY,
+            width,
+            height,
+            dateBottom: top + height + DATE_OFFSET,
+          },
+          linkedTo: neighbour?.contentId,
+        });
+      });
+      groups.clear();
     }
     groups.forEach(({ anchor, after, items }) => {
       if (!anchor) {

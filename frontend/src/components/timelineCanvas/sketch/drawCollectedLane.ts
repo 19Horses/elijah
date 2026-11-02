@@ -35,6 +35,7 @@ import {
   TYPE_HIGHLIGHT_BLUR,
   ZOOM_OUT_GROWTH_POWER,
   ALREADY_COLLECTED_TEXT,
+  ALREADY_COLLECTED_WIDTH,
   ALREADY_COLLECTED_MAX_TILT_DEG,
   ALREADY_COLLECTED_MIN_TILT_DEG,
 } from '../constants';
@@ -47,7 +48,7 @@ import {
   polylineLength,
 } from '../connectors';
 import { branchLineKey } from './layoutChange';
-import { connectorWeight, zoomOutGrowth } from '../geometry';
+import { timelineWeight, zoomOutGrowth } from '../geometry';
 import type {
   BranchNodeGroup,
   CollectedSource,
@@ -183,10 +184,7 @@ export function drawCollectedLaneConnectors(
   hover: CollectedLaneDrawResult
 ): void {
   const collectedCtx = p.drawingContext as CanvasRenderingContext2D;
-  const lineWeight = connectorWeight(
-    deps.runtime.zoom,
-    deps.runtime.fitZoomLevel
-  );
+  const lineWeight = timelineWeight(deps.runtime);
 
   deps.processedCollected.forEach((item, index) => {
     // Branching lines stay visible during focus, so they ignore the focus fade.
@@ -565,7 +563,7 @@ export function drawCollectedLaneItems(
         ALREADY_COLLECTED_TEXT,
         imageLeft + width / 2,
         top + height / 2,
-        deps.runtime.zoom,
+        width * ALREADY_COLLECTED_WIDTH,
         (mapTagTilt(
           item.contentId,
           ALREADY_COLLECTED_MAX_TILT_DEG,

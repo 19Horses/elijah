@@ -38,8 +38,7 @@ export const event = defineType({
     defineField({
       name: 'description',
       title: 'Description',
-      type: 'text',
-      rows: 4,
+      type: 'richText',
       validation: (Rule) => Rule.required(),
     }),
     defineField({

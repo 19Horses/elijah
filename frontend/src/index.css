@@ -390,6 +390,33 @@ main.main--home {
   }
 }
 
+/* Above the picture, set like the title: back out to the whole map. */
+.timeline-detail__back {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  flex-basis: 100%;
+  font-family: inherit;
+  font-size: 1.2rem;
+  font-weight: 600;
+  line-height: 1.1;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  pointer-events: auto;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.15em;
+}
+
+.timeline-detail__back--alone {
+  bottom: calc(100% + 16px);
+  left: 0;
+  margin: 0;
+  position: absolute;
+}
+
 .timeline-detail__meta {
   /* Bottom-align rather than baseline, so a wrapping multi-line title doesn't
      leave the date sitting up at its first line instead of the block's foot. */
@@ -538,7 +565,14 @@ main.main--home {
    vertically centred on them. */
 .timeline-detail__side--audio {
   gap: 0.5rem;
-  justify-content: center;
+  /* Centred beside the picture when it fits, else from the top. */
+  justify-content: safe center;
+}
+
+/* The whole description, the column scrolling rather than it. */
+.timeline-detail__description.timeline-detail__description--full {
+  flex: 0 0 auto;
+  overflow: visible;
 }
 
 .timeline-detail__side--audio .timeline-detail__title,
@@ -937,6 +971,7 @@ main.main--home {
   color: #111827;
   cursor: pointer;
   display: flex;
+  flex-wrap: wrap;
   gap: 0.75rem;
   justify-content: space-between;
   width: 100%;
@@ -1070,12 +1105,10 @@ main.main--home {
 
 .collection-card-title__description {
   color: rgba(0, 0, 0, 0.45);
-  display: -webkit-box;
+  flex-basis: 100%;
+  margin-top: -0.25rem;
   font-size: 0.8rem;
   line-height: 1.25;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
 }
 
 .content-type-icon {
@@ -1695,9 +1728,6 @@ main.main--home {
    gap: 0), so the mini player sits directly underneath the card regardless of
    the card's actual height. */
 .top-right-stack {
-  /* Always the cards' width (even before any show), so the map can measure
-     the column it keeps clear of. */
-  min-width: var(--top-right-card-width);
   /* Single source of truth for the user card's width — the mini player and
      the collection card both bind to it too, so all three columns always
      match exactly instead of each guessing at the widest sibling. */
@@ -1727,6 +1757,8 @@ main.main--home {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* An opened box scrolled into view keeps the edges' spacing. */
+  scroll-padding: 1.5rem 0;
   scrollbar-width: none;
   transition: opacity 300ms ease;
   /* Out to the screen's right and bottom edges, padded back in, so the
@@ -2285,4 +2317,54 @@ main.main--home {
   .nav-drawer__panel {
     transition: none;
   }
+}
+
+/* Formatted text from Sanity (see RichText): paragraphs and list items as
+   blocks, so it sits inside any text element. */
+.rich-text__paragraph,
+.rich-text__list,
+.rich-text__item {
+  display: block;
+}
+
+.rich-text__paragraph + .rich-text__paragraph,
+.rich-text__paragraph + .rich-text__list,
+.rich-text__list + .rich-text__paragraph {
+  margin-top: 0.75em;
+}
+
+.rich-text__list {
+  counter-reset: rich-text-item;
+  padding-left: 1.25em;
+}
+
+.rich-text__item {
+  counter-increment: rich-text-item;
+  position: relative;
+}
+
+.rich-text__item::before {
+  left: -1.1em;
+  position: absolute;
+}
+
+.rich-text__list--bullet > .rich-text__item::before {
+  content: '•';
+}
+
+.rich-text__list--number > .rich-text__item::before {
+  content: counter(rich-text-item) '.';
+}
+
+/* Bold is bold whatever weight the text around it is set in (the
+   newsletter body is very light, where "bolder" would only reach regular). */
+.rich-text__paragraph strong,
+.rich-text__item strong {
+  font-weight: 700;
+}
+
+.rich-text__link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }

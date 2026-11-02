@@ -27,6 +27,8 @@ import {
   SOLO_GRID_COLUMNS,
   SOLO_GRID_GAP_X,
   SOLO_GRID_GAP_Y,
+  SOLO_GRID_TEXT_GAP,
+  SOLO_GRID_TEXT_WIDTH,
   SOLO_GRID_TOP_PX,
   VIEW_ANIMATION_LERP,
   COLLECT_RETURN_ZOOM_LERP,
@@ -237,6 +239,7 @@ export function createViewContext(
       runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
     }
     runtime.fitZoomLevel = wholeMapZoom;
+    runtime.mapZoom = runtime.targetZoom;
     home = {
       zoom: runtime.targetZoom,
       x: runtime.targetCameraX,
@@ -295,23 +298,6 @@ export function createViewContext(
   // Screen px along the canvas's right edge that the collection panel (the
   // top-right card stack) covers while it's showing, plus a gap, so framing
   // can keep the timeline clear of it.
-  // Screen px the right-hand column of cards takes up (whether or not any
-  // card is showing yet), plus the usual gap.
-  const rightColumnInset = (): number => {
-    const column = document.querySelector('.top-right-stack');
-    if (!column) {
-      return 0;
-    }
-    const canvasRect = (
-      p.drawingContext as CanvasRenderingContext2D
-    ).canvas.getBoundingClientRect();
-    return Math.max(
-      0,
-      canvasRect.right -
-        column.getBoundingClientRect().left +
-        COLLECTION_PANEL_GAP_PX
-    );
-  };
 
   const collectionPanelInset = (gap = COLLECTION_PANEL_GAP_PX): number => {
     const panel = document.querySelector(
@@ -373,17 +359,10 @@ export function createViewContext(
           (b) => !hasBranch || (b.right >= line.minX && b.left <= line.maxX)
         ),
       ];
-      // With the main timeline's items under them too (they stay showing),
-      // so the whole picture reads centred.
-      const minX = Math.min(...collectionRects.map((b) => b.left));
-      const maxX = Math.max(...collectionRects.map((b) => b.right));
-      const mainUnderCollection = mainBounds.filter(
-        (b) => b.right >= minX && b.left <= maxX
-      );
+      // (The pack's own items alone are centred; the main timeline under
+      // them may run off the screen's foot.)
       const framed = computeFitTargetsForBounds(
-        collectionRects.length > 0
-          ? [...collectionRects, ...mainUnderCollection]
-          : fallback,
+        collectionRects.length > 0 ? collectionRects : fallback,
         // Centred in the space the header, panel and labels leave.
         collectionFrameMargins()
       );
@@ -396,6 +375,10 @@ export function createViewContext(
     // measure the layout at the zoom it lands on: frame, lay out again at
     // that zoom, and re-frame, until the zoom settles.
     const liveZoom = runtime.zoom;
+    // (Laid out as the map, not as "your items" grid, should that still be
+    // fading away from just before.)
+    const liveSolo = runtime.branchSolo;
+    runtime.branchSolo = 0;
     let framed = frameAtCurrentZoom();
     for (
       let pass = 0;
@@ -408,6 +391,7 @@ export function createViewContext(
       framed = frameAtCurrentZoom();
     }
     runtime.zoom = liveZoom;
+    runtime.branchSolo = liveSolo;
     if (!framed) {
       return null;
     }
@@ -571,6 +555,42 @@ export function createViewContext(
     return Math.max(contentMin, Math.min(camera, contentMax - viewSize));
   };
 
+  // Whether every item (and its label room) is on screen at the current
+  // zoom, beside the collection panel — on the map, not a grid or an item.
+  const wholeMapOnScreen = (): boolean => {
+    if (
+      runtime.branchSoloActive ||
+      runtime.focusTarget !== null ||
+      runtime.branchIsolateActive
+    ) {
+      return false;
+    }
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const b of [
+      ...bounds.getAllBounds(),
+      ...bounds.getCollectedBounds(),
+    ]) {
+      minX = Math.min(minX, b.left);
+      maxX = Math.max(maxX, b.right);
+      minY = Math.min(minY, b.top);
+      maxY = Math.max(maxY, b.dateBottom);
+    }
+    if (!Number.isFinite(minX)) {
+      return false;
+    }
+    const toScreenX = (x: number) => (x - runtime.cameraX) * runtime.zoom;
+    const toScreenY = (y: number) => (y - runtime.cameraY) * runtime.zoom;
+    return (
+      toScreenX(minX) >= 0 &&
+      toScreenX(maxX) <= p.width - collectionPanelInset(0) &&
+      toScreenY(minY) >= 0 &&
+      toScreenY(maxY) <= p.height
+    );
+  };
+
   // Keep the camera inside the timeline's content so panning/zooming can't
   // stray into empty space.
   const clampCameraToContent = () => {
@@ -601,6 +621,11 @@ export function createViewContext(
   // previous pan has settled, or the camera moved via zoom/focus/fit since —
   // so a fresh gesture never resumes from a stale, abandoned target.
   const nudgePanTarget = (deltaX: number, deltaY: number) => {
+    // With the whole map already on screen (clear of the collection panel),
+    // there's nowhere to drag it to.
+    if (wholeMapOnScreen()) {
+      return;
+    }
     if (!runtime.panning) {
       runtime.panTargetCameraX = runtime.cameraX;
       runtime.panTargetCameraY = runtime.cameraY;
@@ -1104,14 +1129,12 @@ export function createViewContext(
     runtime.viewUnfocusing = false;
     syncInteractionLock(deps);
 
-    // Framed in the space beside the right-hand column (the box naming the
-    // timeline is about to join it), with room for the header and labels.
-    const center = computeFitTargetsForBounds(branchBounds, {
-      ...collectionFrameMargins(),
-      right:
-        COLLECTION_FRAME_SIDE_PX +
-        Math.max(collectionPanelInset(), rightColumnInset()),
-    });
+    // Framed beside the collection boxes when they're showing (else across
+    // the screen), with room for the header and labels.
+    const center = computeFitTargetsForBounds(
+      branchBounds,
+      collectionFrameMargins()
+    );
     if (!center) {
       return;
     }
@@ -1183,6 +1206,12 @@ export function createViewContext(
       showFullMap();
       return;
     }
+    // Leaving a collection that's open for it: the collection closes (its
+    // box too), easing out as the grid comes in.
+    if (runtime.branchIsolateActive) {
+      runtime.branchIsolateActive = false;
+      deps.refs.onBranchIsolationExitRef.current?.();
+    }
     // Their items: everything on their branch, and the main timeline items
     // they've collected, in the order they sit on the map.
     const mainBounds = bounds.getAllBounds(0);
@@ -1213,11 +1242,15 @@ export function createViewContext(
     // far; each picture fits its cell at its own shape.
     const cellWidth = ITEM_WIDTH * SOLO_GRID_CELL_SCALE;
     const cellHeight = IMAGE_HEIGHT * SOLO_GRID_CELL_SCALE;
-    const stepX = cellWidth * (1 + SOLO_GRID_GAP_X);
+    // Each cell: the picture, then its description in a column beside it.
+    const textGap = ITEM_WIDTH * SOLO_GRID_TEXT_GAP;
+    const textWidth = ITEM_WIDTH * SOLO_GRID_TEXT_WIDTH;
+    const cellSpan = cellWidth + textGap + textWidth;
+    const stepX = cellSpan + cellWidth * SOLO_GRID_GAP_X;
     const stepY = cellHeight * (1 + SOLO_GRID_GAP_Y);
     const columns = SOLO_GRID_COLUMNS;
     const rows = Math.ceil(entries.length / columns);
-    const gridWidth = (columns - 1) * stepX + cellWidth;
+    const gridWidth = (columns - 1) * stepX + cellSpan;
     const left =
       entries.reduce((sum, { at }) => sum + at.left + at.width / 2, 0) /
         Math.max(1, entries.length) -
@@ -1226,18 +1259,24 @@ export function createViewContext(
       entries.reduce((sum, { at }) => sum + at.centerY, 0) /
         Math.max(1, entries.length) -
       cellHeight / 2;
-    const grid = new Map<
-      string,
-      { left: number; top: number; width: number; height: number }
-    >();
+    const grid: NonNullable<typeof runtime.soloGrid> = new Map();
     entries.forEach(({ key, aspect }, k) => {
       const width = Math.min(cellWidth, cellHeight * (aspect || 1));
       const height = width / (aspect || 1);
+      const cellLeft = left + (k % columns) * stepX;
+      const cellTop = top + Math.floor(k / columns) * stepY;
       grid.set(key, {
-        left: left + (k % columns) * stepX + (cellWidth - width) / 2,
-        top: top + Math.floor(k / columns) * stepY + (cellHeight - height),
+        left: cellLeft + (cellWidth - width) / 2,
+        top: cellTop + (cellHeight - height),
         width,
         height,
+        text: {
+          left: cellLeft + cellWidth + textGap,
+          top: cellTop + (cellHeight - height),
+          width: textWidth,
+          // Down to the foot of the row's labels.
+          height: height + cellHeight * SOLO_GRID_GAP_Y * 0.8,
+        },
       });
     });
 

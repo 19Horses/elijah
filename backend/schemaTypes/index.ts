@@ -6,6 +6,7 @@ import {mainTimeline} from './mainTimeline'
 import {mainTimelineItem} from './mainTimelineItem'
 import {newsletter} from './newsletter'
 import {product} from './product'
+import {richText} from './richText'
 
 export const schemaTypes = [
   audioAsset,
@@ -16,4 +17,5 @@ export const schemaTypes = [
   mainTimelineItem,
   newsletter,
   product,
+  richText,
 ]

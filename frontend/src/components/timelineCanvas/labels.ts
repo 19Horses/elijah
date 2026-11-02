@@ -4,8 +4,6 @@ import {
   OTHERS_LABEL_ALPHA,
   LINE_TAG_DETAIL_ALPHA,
   LINE_TAG_RADIUS_PX,
-  MAX_VISIBLE_COLLECTOR_LABELS,
-  OTHERS_LABEL_BG,
   KIND_TAG_BACKGROUND,
   KIND_TAG_FONT_PX,
   KIND_TAG_INSET_PX,
@@ -13,55 +11,10 @@ import {
   KIND_TAG_PAD_Y_PX,
   CANVAS_TITLE_FONT,
 } from './constants';
-import { getContrastText } from './canvasEffects';
-import type { CollectedSource, ConnectorPoint, NodeHoverRegion } from './types';
+import type { ConnectorPoint, NodeHoverRegion } from './types';
 
 // Gap kept between a label and the edge of the canvas.
 const LABEL_EDGE_MARGIN = 6;
-
-type LabelChip = {
-  text: string;
-  bg: string;
-};
-
-function drawUserLabelText(
-  p: p5,
-  username: string,
-  colour: string,
-  x: number,
-  y: number,
-  title?: string
-): void {
-  p.textSize(12);
-  const lineHeight = 16;
-  const padX = 8;
-  const padY = 4;
-  const lines = title ? [title, username] : [username];
-  const maxWidth = Math.max(...lines.map((line) => p.textWidth(line)));
-
-  const width = maxWidth + padX * 2;
-  const labelHeight = lines.length * lineHeight + padY * 2;
-  // Sits above the point, centred — but stays on screen, so a node out at the
-  // viewport edge still gets a readable label (below it, at the top edge).
-  const left = Math.max(
-    LABEL_EDGE_MARGIN,
-    Math.min(x - width / 2, p.width - width - LABEL_EDGE_MARGIN)
-  );
-  const above = y - 14 - labelHeight;
-  const top = above < LABEL_EDGE_MARGIN ? y + 14 : above;
-  const centreX = left + width / 2;
-
-  p.noStroke();
-  p.fill(colour);
-  p.rect(left, top, width, labelHeight);
-
-  p.fill(getContrastText(colour));
-  p.textAlign(p.CENTER, p.CENTER);
-  lines.forEach((line, index) => {
-    p.text(line, centreX, top + padY + lineHeight * index + lineHeight / 2);
-  });
-  p.textStyle(p.NORMAL);
-}
 
 export type LabelRect = {
   left: number;
@@ -303,85 +256,6 @@ function drawNodeCardText(
   return { width, height };
 }
 
-function drawCollectedSourcesLabelText(
-  p: p5,
-  sources: CollectedSource[],
-  x: number,
-  y: number,
-  title?: string
-): void {
-  if (sources.length === 1) {
-    drawUserLabel(p, sources[0].username, sources[0].colour, x, y, title);
-    return;
-  }
-
-  p.textSize(12);
-  const padX = 8;
-  const padY = 4;
-  const lineHeight = 16;
-  const chipGap = 4;
-  const titleGap = title ? 4 : 0;
-
-  const visibleSources = sources.slice(0, MAX_VISIBLE_COLLECTOR_LABELS);
-  const overflow = sources.length - MAX_VISIBLE_COLLECTOR_LABELS;
-  const chips: LabelChip[] = visibleSources.map((source) => ({
-    text: source.username,
-    bg: source.colour,
-  }));
-
-  if (overflow > 0) {
-    chips.push({
-      text: `+ ${overflow} other${overflow === 1 ? '' : 's'}`,
-      bg: OTHERS_LABEL_BG,
-    });
-  }
-
-  p.textStyle(p.NORMAL);
-  const chipWidths = chips.map((chip) => p.textWidth(chip.text) + padX * 2);
-  const chipsWidth =
-    chipWidths.reduce((sum, width) => sum + width, 0) +
-    chipGap * Math.max(chips.length - 1, 0);
-
-  let titleWidth = 0;
-  let titleHeight = 0;
-  if (title) {
-    titleWidth = p.textWidth(title) + padX * 2;
-    titleHeight = lineHeight + padY * 2;
-  }
-
-  const totalWidth = Math.max(chipsWidth, titleWidth);
-  const chipsRowHeight = lineHeight + padY * 2;
-  const totalHeight = titleHeight + titleGap + chipsRowHeight;
-  const left = x - totalWidth / 2;
-  const top = y - 14 - totalHeight;
-
-  if (title) {
-    p.noStroke();
-    p.fill(17);
-    p.rect(left, top, totalWidth, titleHeight);
-    p.fill(255);
-    p.textAlign(p.CENTER, p.CENTER);
-    p.text(title, x, top + titleHeight / 2);
-  }
-
-  const chipsTop = top + titleHeight + titleGap;
-  let chipLeft = x - chipsWidth / 2;
-
-  chips.forEach((chip, index) => {
-    const width = chipWidths[index];
-    p.noStroke();
-    p.fill(chip.bg);
-    p.rect(chipLeft, chipsTop, width, chipsRowHeight);
-    p.fill(getContrastText(chip.bg));
-    p.textAlign(p.CENTER, p.CENTER);
-    p.textStyle(p.NORMAL);
-    p.text(chip.text, chipLeft + width / 2, chipsTop + chipsRowHeight / 2);
-    chipLeft += width + chipGap;
-  });
-
-  p.textStyle(p.NORMAL);
-}
-
 // A line tag's full-size width and height: the name over a smaller detail
 // line.
 function measureLineTagText(
@@ -392,8 +266,12 @@ function measureLineTagText(
   p.textSize(12);
   const nameWidth = p.textWidth(name);
   p.textSize(10);
-  const detailWidth = p.textWidth(detail);
-  return { width: Math.max(nameWidth, detailWidth) + 16, height: 36 };
+  const detailWidth = detail ? p.textWidth(detail) : 0;
+  // Just the name (no detail line) makes a shorter tag.
+  return {
+    width: Math.max(nameWidth, detailWidth) + 16,
+    height: detail ? 36 : 24,
+  };
 }
 
 // The name tag riding a hovered timeline: centred on its point on the line,
@@ -423,10 +301,12 @@ function drawLineTagText(
   const ink = colour.toLowerCase() === '#ffffff' ? 17 : 255;
   p.fill(ink);
   p.textSize(12 * scale);
-  p.text(name, x, top + 13 * scale);
-  p.fill(ink, 255 * LINE_TAG_DETAIL_ALPHA);
-  p.textSize(10 * scale);
-  p.text(detail, x, top + 25 * scale);
+  p.text(name, x, detail ? top + 13 * scale : y);
+  if (detail) {
+    p.fill(ink, 255 * LINE_TAG_DETAIL_ALPHA);
+    p.textSize(10 * scale);
+    p.text(detail, x, top + 25 * scale);
+  }
 }
 
 // A small tag naming an item's kind (e.g. "MUSIC"), tucked inside its image's
@@ -455,26 +335,27 @@ function drawKindTagText(
   p.text(text, right - padX, top + height / 2);
 }
 
-// A tag like the kind tag, centred on an item's picture and turned by
-// `angle` (radians) about its centre.
+// A sticker centred on an item's picture, `width` (world units) wide — its
+// text sized to fill it — and turned by `angle` (radians) about its centre.
 function drawCentredTagText(
   p: p5,
   text: string,
   centreX: number,
   centreY: number,
-  zoom: number,
+  width: number,
   angle = 0
 ): void {
-  // In the site's serif, a touch larger than the kind tag; one line per
-  // line of `text`, centred.
-  const fontSize = (KIND_TAG_FONT_PX * 1.3) / zoom;
-  const padX = (KIND_TAG_PAD_X_PX * 1.5) / zoom;
-  const padY = KIND_TAG_PAD_Y_PX / zoom;
+  // In the site's serif, one line per line of `text`, centred; the padding
+  // in step with the text, so the sticker looks the same at any size.
   const lines = text.split('\n');
-  const leading = fontSize * 1.05;
   p.textFont(CANVAS_TITLE_FONT);
+  p.textSize(100);
+  const widestAt100 = Math.max(...lines.map((line) => p.textWidth(line)));
+  const padShare = 0.3;
+  const fontSize = (width / (widestAt100 + 100 * padShare * 2)) * 100;
+  const padY = fontSize * 0.2;
+  const leading = fontSize * 1.05;
   p.textSize(fontSize);
-  const width = Math.max(...lines.map((line) => p.textWidth(line))) + padX * 2;
   const height = lines.length * leading + padY * 2;
   p.push();
   p.translate(centreX, centreY);
@@ -513,22 +394,10 @@ function withLabelFont<T>(p: p5, draw: () => T): T {
   }
 }
 
-export function drawUserLabel(
-  ...args: Parameters<typeof drawUserLabelText>
-): void {
-  withLabelFont(args[0], () => drawUserLabelText(...args));
-}
-
 export function drawNodeCard(
   ...args: Parameters<typeof drawNodeCardText>
 ): ReturnType<typeof drawNodeCardText> {
   return withLabelFont(args[0], () => drawNodeCardText(...args));
-}
-
-export function drawCollectedSourcesLabel(
-  ...args: Parameters<typeof drawCollectedSourcesLabelText>
-): void {
-  withLabelFont(args[0], () => drawCollectedSourcesLabelText(...args));
 }
 
 export function drawKindTag(...args: Parameters<typeof drawKindTagText>): void {

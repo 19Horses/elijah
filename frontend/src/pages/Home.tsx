@@ -65,6 +65,8 @@ import { getDisplayColour } from '../services/userColor';
 import { getStoredUser, USER_CHANGED_EVENT } from '../services/userStorage';
 import type { CollectionContent, ContentType } from '../types/content';
 import { prefersReducedMotion } from '../utils/motionPreference';
+import RichText from '../components/RichText';
+import { hasRichText } from '../utils/richText';
 
 // How long the timeline fades out before the collection view appears, and
 // how long the collection view fades out before the timeline reappears.
@@ -80,6 +82,10 @@ type HomeProps = {
   soloTimelineControlRef?: MutableRefObject<(() => void) | undefined>;
   onSoloTimelineChange?: (active: boolean) => void;
 };
+
+// How long a collection box's list takes to slide open or shut (matches
+// .collection-card-panel's transition).
+const COLLECTION_PANEL_SLIDE_MS = 300;
 
 function Home({
   onEntranceComplete,
@@ -355,6 +361,70 @@ function Home({
     setExpandedCollectionId(null);
   };
 
+  // Which collection's box is visibly open (its list slid out). It follows
+  // expandedCollectionId, but switching from one to another first closes the
+  // open one, then opens the next; and as a box slides open the column
+  // scrolls along with it, so the whole box ends up on screen.
+  const [openPanelId, setOpenPanelId] = useState<string | null>(null);
+  const openPanelRef = useRef<string | null>(null);
+  useEffect(() => {
+    const target = expandedCollectionId;
+    if (openPanelRef.current === target) {
+      return undefined;
+    }
+    let frame = 0;
+    const open = (id: string) => {
+      openPanelRef.current = id;
+      setOpenPanelId(id);
+      const start = performance.now();
+      const follow = (now: number) => {
+        const list = document.querySelector('.collection-card-list');
+        const box = document.querySelector(
+          `.collection-card-stack[data-collection-id="${id}"]`
+        );
+        if (!list || !box) {
+          return;
+        }
+        const pad = 24;
+        const listRect = list.getBoundingClientRect();
+        const boxRect = box.getBoundingClientRect();
+        // Far enough to bring its foot into view, but never its head out of
+        // it (a box taller than the screen shows from its top).
+        let delta = Math.max(0, boxRect.bottom - (listRect.bottom - pad));
+        delta = Math.min(delta, boxRect.top - (listRect.top + pad));
+        if (boxRect.top < listRect.top + pad) {
+          delta = boxRect.top - (listRect.top + pad);
+        }
+        list.scrollTop += delta * 0.35;
+        if (
+          now - start < 1000 &&
+          (now - start < 350 || Math.abs(delta) > 0.5)
+        ) {
+          frame = requestAnimationFrame(follow);
+        }
+      };
+      frame = requestAnimationFrame(follow);
+    };
+    let timer = 0;
+    if (openPanelRef.current !== null) {
+      openPanelRef.current = null;
+      setOpenPanelId(null);
+      if (target !== null) {
+        // Once the open one has slid shut.
+        timer = window.setTimeout(
+          () => open(target),
+          COLLECTION_PANEL_SLIDE_MS
+        );
+      }
+    } else if (target !== null) {
+      open(target);
+    }
+    return () => {
+      window.clearTimeout(timer);
+      cancelAnimationFrame(frame);
+    };
+  }, [expandedCollectionId]);
+
   const handleCollectionBadgeClick = (collectionId: string) => {
     const wasIsolating = expandedCollectionId !== null;
     const next = expandedCollectionId === collectionId ? null : collectionId;
@@ -511,6 +581,7 @@ function Home({
           detail={timelineDetail}
           imageRect={detailImageRect}
           fading={collectingItemId !== null}
+          onBack={() => resetViewControlRef?.current?.()}
         />
         <div
           className={`top-right-stack${
@@ -566,6 +637,7 @@ function Home({
                 )
                 .map((collection) => (
                   <div
+                    data-collection-id={collection._id}
                     className={`collection-card-stack${
                       collectingItemId !== null
                         ? ' collection-card-stack--hidden collection-card-stack--collecting'
@@ -575,12 +647,12 @@ function Home({
                   >
                     <CollectionCountdown
                       collection={collection}
-                      open={expandedCollectionId === collection._id}
+                      open={openPanelId === collection._id}
                       onClick={() => handleCollectionBadgeClick(collection._id)}
                     >
                       <div
                         className={`collection-card-panel${
-                          expandedCollectionId === collection._id
+                          openPanelId === collection._id
                             ? ' collection-card-panel--visible'
                             : ''
                         }`}
@@ -690,12 +762,22 @@ function Home({
                                       {kind}
                                     </span>
                                   )}
-                                  {description && (
-                                    <span className="collection-card-title__description">
-                                      {description}
+                                  {/* What a click does, on one still to
+                                      collect; one already collected doesn't
+                                      repeat its description. */}
+                                  {!isCollected && (
+                                    <span className="collection-card-title__kind">
+                                      + ADD TO YOUR TIMELINE
                                     </span>
                                   )}
                                 </span>
+                                {/* Under the picture and those lines, the
+                                    row's full width. */}
+                                {hasRichText(description) && !isCollected && (
+                                  <span className="collection-card-title__description">
+                                    <RichText value={description} />
+                                  </span>
+                                )}
                               </button>
                             );
                           })}

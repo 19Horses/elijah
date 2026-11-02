@@ -5,6 +5,7 @@ import { BANDSINTOWN_SLUG_PREFIX } from './bandsintownEvents';
 import type { ContentType } from '../types/content';
 import { formatFullDate } from '../utils/formatDate';
 import type { MainTimelineEvent, MainTimelineItem } from './mainTimeline';
+import type { RichTextValue } from '../utils/richText';
 
 type SanityResponse<T> = {
   result: T;
@@ -16,8 +17,8 @@ export type ContentDetail = {
   title: string;
   slug: string;
   date: string | null;
-  description: string | null;
-  content: string | null;
+  description: RichTextValue;
+  content: RichTextValue;
   link: string | null;
   // Number of images on an imageAsset (null for other types). A count of 1 (or a
   // legacy single `image` field, which yields null) means a solitary image.
@@ -114,7 +115,9 @@ export function useContentDetail(
   });
 }
 
-export function getContentDetailDescription(detail: ContentDetail): string {
+export function getContentDetailDescription(
+  detail: ContentDetail
+): RichTextValue {
   if (detail._type === 'newsletter') {
     return '';
   }
@@ -130,7 +133,7 @@ export function getContentDetailLink(detail: ContentDetail): string | null {
 
 export function getContentDetailNewsletterContent(
   detail: ContentDetail
-): string | null {
+): RichTextValue {
   if (detail._type === 'newsletter') {
     return detail.content;
   }

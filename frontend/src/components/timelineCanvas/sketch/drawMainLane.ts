@@ -53,6 +53,7 @@ import {
   VIEWER_DOT_RING_PX,
   SHEEN_STAGGER_MS,
   ALREADY_COLLECTED_TEXT,
+  ALREADY_COLLECTED_WIDTH,
   ALREADY_COLLECTED_MAX_TILT_DEG,
   ALREADY_COLLECTED_MIN_TILT_DEG,
   VIEWER_FLASH_GLOW_PX,
@@ -69,7 +70,7 @@ import {
   getMainConnectorPoints,
   polylineLength,
 } from '../connectors';
-import { connectorWeight } from '../geometry';
+import { timelineWeight } from '../geometry';
 import { drawContainedImage, drawGalleryStrip } from './drawGalleryControls';
 import type { GalleryController } from './galleryController';
 import { drawPlayPauseButton } from './drawPlayPauseButton';
@@ -343,42 +344,31 @@ export function drawMainTimelineGlow(
 ): void {
   const { runtime } = deps;
 
-  let path: ConnectorPoint[] | null = null;
-
   // Only trace the branch the view is clicked/zoomed into. The strip no longer
   // follows a hovered branch or the logged-in viewer's own branch by default,
   // nor runs while a timeline is shown alone (its lines are hidden).
   const rowIndex =
     runtime.branchSoloRow === null ? runtime.focusedBranchRow ?? -1 : -1;
-
-  if (rowIndex >= 0) {
-    const rowPath = boundsCtx.getUserTimelinePath(
-      rowIndex,
-      mainBounds,
-      collectedBounds
-    );
-    if (rowPath.length >= 2) {
-      path = rowPath;
-    }
+  if (rowIndex < 0) {
+    return;
   }
-
-  // No branch to trace (no clicked branch and the viewer has none): draw no
-  // strip. The main timeline itself never gets a travelling pulse.
-  if (!path) {
+  const timeline = boundsCtx.getUserTimelinePath(
+    rowIndex,
+    mainBounds,
+    collectedBounds
+  );
+  if (timeline.length <= 0) {
     return;
   }
 
-  const total = polylineLength(path);
-  if (total <= 0) {
-    return;
-  }
   const t = (p.millis() % MAIN_GLOW_TRAVEL_MS) / MAIN_GLOW_TRAVEL_MS;
-  // A white flash runs along the path, like a viewer's flash between items:
-  // brightest in its middle, fading to nothing at either end. It runs from
-  // before the start to past the end, so it slides in and out.
+  // A white flash runs along the timeline from its earliest item, like a
+  // viewer's flash between items: brightest in its middle, fading to nothing
+  // at either end, splitting to run down each branch where it forks. It runs
+  // from before the start to past the end, so it slides in and out.
   const { zoom } = runtime;
   const flashLength = VIEWER_FLASH_LENGTH_PX / zoom;
-  const middle = t * (total + flashLength) - flashLength / 2;
+  const middle = t * (timeline.length + flashLength) - flashLength / 2;
 
   const ctx = p.drawingContext as CanvasRenderingContext2D;
   ctx.save();
@@ -399,23 +389,33 @@ export function drawMainTimelineGlow(
   ctx.shadowColor = '#ffffff';
   ctx.shadowBlur = VIEWER_FLASH_GLOW_PX * p.pixelDensity();
   ctx.globalAlpha = VIEWER_FLASH_LAYER_ALPHA;
-  // Stacked strokes, each shorter than the last, build up to brightest in the
-  // middle.
-  for (let k = 0; k < VIEWER_FLASH_LAYERS; k++) {
-    const half = (flashLength / 2) * (1 - k / VIEWER_FLASH_LAYERS);
-    const strip = extractSubPath(
-      path,
-      Math.max(0, middle - half),
-      Math.min(total, middle + half)
-    );
-    if (strip.length < 2) {
-      continue;
+  timeline.stretches.forEach(({ points, start }) => {
+    const length = polylineLength(points);
+    const localMiddle = middle - start;
+    if (
+      localMiddle + flashLength / 2 <= 0 ||
+      localMiddle - flashLength / 2 >= length
+    ) {
+      return;
     }
-    ctx.beginPath();
-    ctx.moveTo(strip[0].x, strip[0].y);
-    strip.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
-    ctx.stroke();
-  }
+    // Stacked strokes, each shorter than the last, build up to brightest in
+    // the middle.
+    for (let k = 0; k < VIEWER_FLASH_LAYERS; k++) {
+      const half = (flashLength / 2) * (1 - k / VIEWER_FLASH_LAYERS);
+      const strip = extractSubPath(
+        points,
+        Math.max(0, localMiddle - half),
+        Math.min(length, localMiddle + half)
+      );
+      if (strip.length < 2) {
+        continue;
+      }
+      ctx.beginPath();
+      ctx.moveTo(strip[0].x, strip[0].y);
+      strip.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+      ctx.stroke();
+    }
+  });
   ctx.restore();
 }
 
@@ -427,10 +427,7 @@ export function drawMainLaneConnectors(
 ): void {
   const mainCtx = p.drawingContext as CanvasRenderingContext2D;
   const { bounds } = ctx;
-  const lineWeight = connectorWeight(
-    deps.runtime.zoom,
-    deps.runtime.fitZoomLevel
-  );
+  const lineWeight = timelineWeight(deps.runtime);
 
   for (let index = 0; index < deps.processed.length - 1; index++) {
     // Timeline lines stay visible during focus, so they ignore the focus fade.
@@ -734,7 +731,7 @@ export function drawMainLaneItems(
         ALREADY_COLLECTED_TEXT,
         imageLeft + width / 2,
         top + height / 2,
-        deps.runtime.zoom,
+        width * ALREADY_COLLECTED_WIDTH,
         (mapTagTilt(
           deps.items[index]._id,
           ALREADY_COLLECTED_MAX_TILT_DEG,

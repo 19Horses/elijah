@@ -124,6 +124,9 @@ export type ProcessedCollected = {
   contentType: ContentType;
   title: string;
   bodyContent: string | null;
+  // Its description (or a newsletter's content) as plain text, for showing
+  // beside it in "your items" grid.
+  description: string | null;
   aspectRatio: number;
   anchorTime: number;
   rowIndex: number;
@@ -151,6 +154,9 @@ export type ProcessedItem = {
   contentType: ContentType;
   title: string;
   bodyContent: string | null;
+  // Its description (or a newsletter's content) as plain text, for showing
+  // beside it in "your items" grid.
+  description: string | null;
   aspectRatio: number;
   audioUrl: string | null;
   galleryUrls: string[];
@@ -298,9 +304,16 @@ export type TimelineRuntime = {
   branchSolo: number;
   // Where each of their items sits in the grid (world), by `${lane}:${index}`;
   // the items ease there from the map with branchSolo.
+  // (Each also with the column beside it its description fills.)
   soloGrid: Map<
     string,
-    { left: number; top: number; width: number; height: number }
+    {
+      left: number;
+      top: number;
+      width: number;
+      height: number;
+      text: { left: number; top: number; width: number; height: number };
+    }
   > | null;
   // The grid's whole area (world), labels included, for framing and
   // scrolling it.
@@ -324,6 +337,9 @@ export type TimelineRuntime = {
   collectContentId: string | null;
   collectFinalRect: DetailImageRect | null;
   collectedVersion: number;
+  // The zoom the world map is framed at, for keeping the timelines' thickness
+  // there while a collection is viewed.
+  mapZoom: number;
   // Easing the map from one set of collected timelines to the next.
   layoutChange: LayoutChangeState;
   collectReturnIndex: number;

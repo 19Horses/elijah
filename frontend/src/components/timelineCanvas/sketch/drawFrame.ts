@@ -41,8 +41,6 @@ import {
   NODE_HOVER_GROW,
   PAGE_BACKGROUND_BOTTOM,
   PAGE_BACKGROUND_TOP,
-  PRIVATE_BADGE_COLOUR,
-  PRIVATE_BADGE_TEXT,
   DATE_FONT_SIZE,
   PREVIEW_EXPAND_MS,
   PREVIEW_EXPAND_SCALE,
@@ -51,7 +49,6 @@ import {
   PREVIEW_SWITCH_FADE_MS,
   COLLECT_ANIM_MS,
   COLLECT_HOLD_MS,
-  COLLECT_RETURN_FADE_MS,
   COLLECT_RETURN_IMAGE_WAIT_MS,
   SECONDARY_LABEL_ALPHA,
   SECONDARY_LABEL_GAP,
@@ -60,21 +57,25 @@ import {
   DATE_SHRINK_TRANSITION_FACTOR,
   DATE_SHRINK_ZOOM_FACTOR,
   COLLECTION_OTHER_ITEM_ALPHA,
+  SOLO_GRID_TEXT_LEADING,
+  SOLO_GRID_TEXT_SIZE,
+  SUBLABEL_HIDE_ZOOM,
+  SUBLABEL_SHOW_ZOOM,
 } from '../constants';
 import {
   getBranchRoute,
   getMainConnectorPoints,
   nearestArcLength,
   pointAtArcLength,
+  polylineLength,
 } from '../connectors';
 import {
-  connectorWeight,
   screenToWorld,
+  timelineWeight,
   zoomMergeProgress,
   zoomOutGrowth,
 } from '../geometry';
 import {
-  drawCollectedSourcesLabel,
   drawKindTag,
   drawNodeCard,
   collectedByParts,
@@ -82,7 +83,6 @@ import {
   drawLineTag,
   type LabelRect,
   measureLineTag,
-  drawUserLabel,
   wrapText,
 } from '../labels';
 import {
@@ -128,6 +128,54 @@ import {
   type TimelineSegment,
   type ViewerDotTarget,
 } from './viewerDots';
+
+// `text` broken into lines no wider than `maxWidth` (paragraph breaks kept),
+// at most `maxLines` of them, the last ending in "…" when it runs on.
+function wrapToLines(
+  measure: (line: string) => number,
+  text: string,
+  maxWidth: number,
+  maxLines: number
+): string[] {
+  const lines: string[] = [];
+  let clipped = false;
+  for (const paragraph of text.split(/\n+/)) {
+    let line = '';
+    for (const word of paragraph.split(/\s+/).filter(Boolean)) {
+      const candidate = line ? `${line} ${word}` : word;
+      if (line && measure(candidate) > maxWidth) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = candidate;
+      }
+      if (lines.length >= maxLines) {
+        clipped = true;
+        break;
+      }
+    }
+    if (clipped) {
+      break;
+    }
+    if (line) {
+      lines.push(line);
+    }
+    if (lines.length >= maxLines) {
+      clipped =
+        lines.length > maxLines || paragraph !== text.split(/\n+/).pop();
+      break;
+    }
+  }
+  const kept = lines.slice(0, maxLines);
+  if (clipped && kept.length > 0) {
+    let last = kept[kept.length - 1];
+    while (last && measure(`${last}…`) > maxWidth) {
+      last = last.slice(0, -1);
+    }
+    kept[kept.length - 1] = `${last.trimEnd()}…`;
+  }
+  return kept;
+}
 
 export function createDrawFrameHandler(
   p: p5,
@@ -461,25 +509,26 @@ export function createDrawFrameHandler(
             COLLECT_RETURN_IMAGE_WAIT_MS
         ) {
           runtime.collectReturnStartMs = p.millis();
-        }
-      }
-      if (runtime.collectReturnStartMs === null) {
-        returnFade = 0;
-      } else {
-        const t = Math.min(
-          1,
-          (p.millis() - runtime.collectReturnStartMs) / COLLECT_RETURN_FADE_MS
-        );
-        returnFade = t * t * (3 - 2 * t);
-        if (t >= 1) {
-          runtime.collectReturnIndex = -1;
-          runtime.collectReturnStartMs = null;
-          runtime.collectContentId = null;
-          runtime.collectFinalRect = null;
-          // Now on the viewer's timeline, the item opens as though they'd
-          // clicked it to view it.
+          // Now on the viewer's timeline, the item opens straight away, as
+          // though they'd clicked it, zooming in from where it landed.
           view.focusItem({ lane: 'collected', index: returnIndex });
         }
+      }
+      // The rest of the map stays hidden meanwhile; once the item is open
+      // (which hides it anyway), the collect is done.
+      returnFade = 0;
+      const opened =
+        runtime.focusTarget?.lane === 'collected' &&
+        runtime.focusTarget.index === returnIndex;
+      if (
+        runtime.collectReturnStartMs !== null &&
+        (!opened || runtime.focusContentFade >= 1 - LOAD_ALPHA_SNAP)
+      ) {
+        runtime.collectReturnIndex = -1;
+        runtime.collectReturnStartMs = null;
+        runtime.collectContentId = null;
+        runtime.collectFinalRect = null;
+        returnFade = opened ? 0 : 1;
       }
     }
     const isReturnTarget = (index: number) =>
@@ -1025,9 +1074,50 @@ export function createDrawFrameHandler(
             .map((segment) => getBranchRoute(segment.from, segment.to, segment))
         );
     };
-    // The whole timeline as one path (its lines joined end to end), for a tag
-    // to travel along.
-    const timelinePath = (key: string) => timelineLines(key).flat();
+    // The whole timeline as one track for a tag to travel along: its lines
+    // laid end to end by length, with no distance between one and the next,
+    // so the tag only ever sits on a line (skipping across where two meet
+    // rather than cutting through the space between them).
+    const timelineTrack = (key: string) => {
+      const parts: {
+        points: ConnectorPoint[];
+        start: number;
+        length: number;
+      }[] = [];
+      let total = 0;
+      timelineLines(key).forEach((points) => {
+        const length = points.length >= 2 ? polylineLength(points) : 0;
+        if (length > 0) {
+          parts.push({ points, start: total, length });
+          total += length;
+        }
+      });
+      // The point `distance` along the track.
+      const at = (distance: number): ConnectorPoint => {
+        const clamped = Math.max(0, Math.min(total, distance));
+        const part =
+          parts.find(
+            (candidate) => clamped <= candidate.start + candidate.length
+          ) ?? parts[parts.length - 1];
+        return pointAtArcLength(part.points, clamped - part.start);
+      };
+      // How far along the track its nearest point to `point` is.
+      const nearest = (point: ConnectorPoint): number => {
+        let best = 0;
+        let bestDist = Infinity;
+        parts.forEach((part) => {
+          const local = nearestArcLength(part.points, point);
+          const on = pointAtArcLength(part.points, local);
+          const dist = Math.hypot(on.x - point.x, on.y - point.y);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = part.start + local;
+          }
+        });
+        return best;
+      };
+      return { empty: parts.length === 0, at, nearest };
+    };
     const updateLineTags = () => {
       let hoveredKey: string | null = null;
       // The main timeline's tag is white, like its line.
@@ -1047,9 +1137,9 @@ export function createDrawFrameHandler(
         }
       }
       if (hoveredKey) {
-        const path = timelinePath(hoveredKey);
-        if (path.length >= 2) {
-          const target = nearestArcLength(path, mouseWorld);
+        const track = timelineTrack(hoveredKey);
+        if (!track.empty) {
+          const target = track.nearest(mouseWorld);
           const blob = runtime.lineBlobs.get(hoveredKey);
           if (!blob || blob.scale <= LOAD_ALPHA_SNAP) {
             // Appearing: start right where the cursor meets the line.
@@ -1076,9 +1166,9 @@ export function createDrawFrameHandler(
           runtime.lineBlobs.delete(key);
           return;
         }
-        const path = timelinePath(key);
-        if (path.length >= 2) {
-          const at = pointAtArcLength(path, blob.distance);
+        const track = timelineTrack(key);
+        if (!track.empty) {
+          const at = track.at(blob.distance);
           blob.x = at.x;
           blob.y = at.y;
         }
@@ -1104,6 +1194,49 @@ export function createDrawFrameHandler(
       gallery
     );
 
+    // "Your items" grid: each item's description beside its picture, fading
+    // in as the items settle into the grid.
+    const soloGrid = runtime.soloGrid;
+    if (soloGrid && runtime.branchSolo > LOAD_ALPHA_SNAP) {
+      const textAlpha = runtime.branchSolo ** 2 * otherContentAlpha;
+      const descCtx = p.drawingContext as CanvasRenderingContext2D;
+      const font = p.textFont();
+      p.push();
+      p.noStroke();
+      p.fill(ITEM_LABEL_COLOUR);
+      p.textFont(CANVAS_TITLE_FONT);
+      p.textSize(SOLO_GRID_TEXT_SIZE);
+      p.textAlign(p.LEFT, p.TOP);
+      descCtx.globalAlpha = textAlpha;
+      soloGrid.forEach((cell, key) => {
+        const [lane, indexText] = key.split(':');
+        const index = Number(indexText);
+        const text =
+          lane === 'main'
+            ? deps.processed[index]?.description
+            : deps.processedCollected[index]?.description;
+        if (!text) {
+          return;
+        }
+        const lines = wrapToLines(
+          (line) => p.textWidth(line),
+          text,
+          cell.text.width,
+          Math.max(1, Math.floor(cell.text.height / SOLO_GRID_TEXT_LEADING))
+        );
+        lines.forEach((line, k) =>
+          p.text(
+            line,
+            cell.text.left,
+            cell.text.top + k * SOLO_GRID_TEXT_LEADING
+          )
+        );
+      });
+      p.pop();
+      descCtx.globalAlpha = 1;
+      p.textFont(font);
+    }
+
     drawMainLaneConnectorDots(p, deps, drawCtx);
     drawCollectedLaneConnectorDots(
       p,
@@ -1123,7 +1256,7 @@ export function createDrawFrameHandler(
       p,
       viewerDots,
       hoveredViewer?.userId ?? null,
-      otherContentAlpha * isolateOtherAlpha,
+      otherContentAlpha * isolateOtherAlpha * (1 - runtime.branchSolo),
       timelineSegments,
       runtime.zoom
     );
@@ -1333,7 +1466,7 @@ export function createDrawFrameHandler(
       }
 
       const ctx2 = p.drawingContext as CanvasRenderingContext2D;
-      const isolateWeight = connectorWeight(runtime.zoom, runtime.fitZoomLevel);
+      const isolateWeight = timelineWeight(runtime);
       // The viewer's own items keep their usual branch lines; each of the
       // collection's items is linked to the item it sits beside with a
       // dotted line.
@@ -1410,7 +1543,23 @@ export function createDrawFrameHandler(
       ];
       const canvasFont = p.textFont();
       p.noStroke();
-      for (const label of dateLabels) {
+      // Zoomed far out, items' labels (title, date, who owns it) fade out
+      // between these zooms.
+      const subLabelAlpha = Math.max(
+        0,
+        Math.min(
+          1,
+          (runtime.zoom - SUBLABEL_HIDE_ZOOM) /
+            (SUBLABEL_SHOW_ZOOM - SUBLABEL_HIDE_ZOOM)
+        )
+      );
+      for (const rawLabel of dateLabels) {
+        if (rawLabel.anchor && subLabelAlpha <= 0) {
+          continue;
+        }
+        const label = rawLabel.anchor
+          ? { ...rawLabel, alpha: rawLabel.alpha * subLabelAlpha }
+          : rawLabel;
         dateCtx.globalAlpha = label.alpha * collectFade;
         if (label.icon) {
           const iconSize = PREVIEW_ICON_SIZE / runtime.zoom;
@@ -1697,6 +1846,7 @@ export function createDrawFrameHandler(
           p.strokeJoin(p.ROUND);
           lines.forEach((line, k) => {
             styleLine(k < firstExtra);
+
             p.text(line, x, lineY(k));
           });
           p.noStroke();
@@ -1750,53 +1900,6 @@ export function createDrawFrameHandler(
 
     p.pop();
 
-    if (
-      runtime.focusContentFade <= LOAD_ALPHA_SNAP &&
-      collectedHover.hoveredCollected !== -1
-    ) {
-      const hovered = deps.processedCollected[collectedHover.hoveredCollected];
-      const hoveredUserSource =
-        collectedHover.hoveredUserRow !== null
-          ? hovered.sources.find(
-              (source) => source.rowIndex === collectedHover.hoveredUserRow
-            )
-          : undefined;
-
-      if (collectedHover.hoveredCollectedIsImage && hovered.isPrivate) {
-        drawUserLabel(
-          p,
-          PRIVATE_BADGE_TEXT,
-          PRIVATE_BADGE_COLOUR,
-          p.mouseX,
-          p.mouseY
-        );
-      } else if (
-        !collectedHover.hoveredCollectedIsImage &&
-        !hoveredUserSource
-      ) {
-        // A single user's line is named by its tag riding the line, and the
-        // item itself by the label under it.
-        drawCollectedSourcesLabel(p, hovered.sources, p.mouseX, p.mouseY);
-      }
-    } else if (
-      runtime.focusContentFade <= LOAD_ALPHA_SNAP &&
-      mainHover.mainHighlighted
-    ) {
-      const hoveredMainItem =
-        mainHover.hoveredMain !== -1
-          ? deps.processed[mainHover.hoveredMain]
-          : undefined;
-      if (hoveredMainItem?.isPrivate) {
-        drawUserLabel(
-          p,
-          PRIVATE_BADGE_TEXT,
-          PRIVATE_BADGE_COLOUR,
-          p.mouseX,
-          p.mouseY
-        );
-      }
-    }
-
     // The name tags riding hovered timelines (eased along them in
     // updateLineTags), drawn on screen above the map.
     const toScreen = (point: ConnectorPoint) => ({
@@ -1840,30 +1943,25 @@ export function createDrawFrameHandler(
       // whichever side takes it higher up the screen. If that spot would cover
       // an item or its label it tries the other side, then further out along
       // the line; with nowhere clear, it sits over the cursor.
-      const path = timelinePath(key);
-      if (path.length < 2) {
+      const track = timelineTrack(key);
+      if (track.empty) {
         return;
       }
       const name = blob.name;
-      const itemCount =
-        key === 'main'
-          ? deps.items.length
-          : [...(deps.refs.collectorsRef.current?.values() ?? [])].filter(
-              (collectors) => collectors.some((c) => c.username === name)
-            ).length;
-      const detail = `${itemCount} item${itemCount === 1 ? '' : 's'}`;
+      // (The main timeline can't be clicked into, so its tag just names it.)
+      const detail = key === 'main' ? '' : 'View timeline';
       const size = measureLineTag(p, name, detail);
       const nudge = 1 / runtime.zoom;
-      const before = pointAtArcLength(path, blob.distance - nudge);
-      const after = pointAtArcLength(path, blob.distance + nudge);
+      const before = track.at(blob.distance - nudge);
+      const after = track.at(blob.distance + nudge);
       const span = Math.hypot(after.x - before.x, after.y - before.y) || 1;
       const clearance =
         (LINE_TAG_LIFT_PX +
           (Math.abs(after.y - before.y) / span) * (size.height / 2) +
           (Math.abs(after.x - before.x) / span) * (size.width / 2)) /
         runtime.zoom;
-      const ahead = pointAtArcLength(path, blob.distance + clearance);
-      const behind = pointAtArcLength(path, blob.distance - clearance);
+      const ahead = track.at(blob.distance + clearance);
+      const behind = track.at(blob.distance - clearance);
       // Only switch the preferred side once the other is clearly higher, so it
       // doesn't flicker between them.
       const switchMargin = 2 / runtime.zoom;
@@ -1886,7 +1984,7 @@ export function createDrawFrameHandler(
         blob.distance - blob.side * clearance * step,
       ]);
       const clear = candidates
-        .map((distance) => pointAtArcLength(path, distance))
+        .map((distance) => track.at(distance))
         .find((point) => !overlapsObstacle(tagRectAt(point)));
       const { x, y } = toScreen(clear ?? blob);
       drawLineTag(p, name, detail, blob.colour, x, y, blob.scale);
