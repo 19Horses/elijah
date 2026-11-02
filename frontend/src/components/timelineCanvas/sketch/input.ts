@@ -207,6 +207,12 @@ export function createInputHandlers(
           view.focusBranch(branchRow);
         } else if (runtime.focusTarget) {
           view.unfocusItem();
+        } else if (
+          runtime.focusedBranchRow !== null &&
+          !runtime.branchSoloActive
+        ) {
+          // Clicking off a timeline that's been clicked into lets it go.
+          view.showFullMap();
         }
       }
     }
@@ -232,7 +238,8 @@ export function createInputHandlers(
       // Browsers report both Ctrl+wheel and trackpad pinch-zoom gestures as a
       // wheel event with ctrlKey set, regardless of whether Ctrl is actually
       // held — the standard way to distinguish a zoom gesture from a pan.
-      if (event.ctrlKey) {
+      // (A timeline shown alone only scrolls.)
+      if (event.ctrlKey && !runtime.branchSoloActive) {
         view.zoomViewAt(p.mouseX, p.mouseY, deltaY);
       } else {
         view.scrollView(deltaX, deltaY);

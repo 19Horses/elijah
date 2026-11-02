@@ -1,8 +1,8 @@
 export const ITEM_WIDTH = 270;
 export const ITEM_GAP = 140;
-export const PREVIEW_EXPAND_SCALE = 1.5;
-export const PREVIEW_EXPAND_LERP = 0.16;
-export const PREVIEW_ISOLATE_HOVER_MAX_ZOOM = 1.6;
+export const PREVIEW_EXPAND_SCALE = 1.3;
+// A collection item grows (and shrinks back) over this long when hovered.
+export const PREVIEW_EXPAND_MS = 280;
 export const IMAGE_HEIGHT = 216;
 // How much bigger main timeline items are drawn than branch (collected)
 // items.
@@ -30,7 +30,11 @@ export const DATE_LABEL_COLOUR = '#969696';
 // (Family names unquoted: p5 quotes any with spaces itself.)
 export const CANVAS_LABEL_FONT =
   'Akzidenz Grotesk Pro, Helvetica, Arial, sans-serif';
-// Its medium weight, for item titles.
+// The site's serif, for item titles on the map.
+export const CANVAS_TITLE_FONT = 'EB Garamond, Times New Roman, serif';
+// Item titles a touch larger than the date under them (the serif runs small).
+export const ITEM_TITLE_SCALE = 1.35;
+// Akzidenz's medium weight.
 export const CANVAS_LABEL_FONT_MEDIUM =
   'Akzidenz Grotesk Pro Medium, Akzidenz Grotesk Pro, Helvetica, Arial, sans-serif';
 // Size (relative to DATE_FONT_SIZE) of the title-and-date label under items.
@@ -41,7 +45,7 @@ export const ITEM_LABEL_LINE_HEIGHT = 1.1;
 // Text colour of the label under items, and the screen-pixel width of the outline
 // round outlined labels, drawn in the page background's colour so the text
 // masks the lines behind it.
-export const ITEM_LABEL_COLOUR = '#606060';
+export const ITEM_LABEL_COLOUR = '#ffffff';
 // Opacity of the "owned by" lines under an item's title and date.
 export const SECONDARY_LABEL_ALPHA = 0.6;
 // Opacity of the "and N others" part of the line under that.
@@ -51,16 +55,19 @@ export const SECONDARY_LABEL_GAP = 0.15;
 export const LABEL_OUTLINE_PX = 4;
 // The page background's gradient (top to bottom), mirroring `body` in
 // index.css, for colouring label outlines to match it.
-export const PAGE_BACKGROUND_TOP = '#f0f0f0';
-export const PAGE_BACKGROUND_BOTTOM = '#d2d2d2';
+export const PAGE_BACKGROUND_TOP = '#b8b8b8';
+export const PAGE_BACKGROUND_BOTTOM = '#989898';
 // Screen-pixel blur of the white drop shadow behind the date labels.
 export const DATE_LABEL_SHADOW_BLUR_PX = 6;
 export const DOT_RADIUS = 3;
 // Stroke colour of the main timeline line (and its flares into the nodes).
-export const MAIN_LINE_COLOUR = '#969696';
+export const MAIN_LINE_COLOUR = '#ffffff';
+// The main timeline's tag and node cards, which carry white text so can't
+// take the line's own white.
+export const MAIN_TAG_COLOUR = '#969696';
 // Screen-pixel blur of the soft background-coloured halo around each item,
 // which fades out the connector lines beneath it where they meet the item.
-export const ITEM_HALO_BLUR_PX = 24;
+export const ITEM_HALO_BLUR_PX = 40;
 // Screen-pixel radius each connector line's bends are rounded to.
 export const LINE_CORNER_RADIUS_PX = 6;
 // Screen pixels added to every connector line's thickness, whatever the zoom.
@@ -104,6 +111,12 @@ export const KIND_TAG_PAD_X_PX = 4;
 export const KIND_TAG_PAD_Y_PX = 3;
 export const KIND_TAG_FONT_PX = 9;
 export const KIND_TAG_BACKGROUND = '#606060';
+// Over a collection's items the viewer already has, while it's viewed.
+export const ALREADY_COLLECTED_TEXT = 'ALREADY\nCOLLECTED';
+// …tilted by a random angle between these many degrees, either way (steady
+// for each item; see tiltFor).
+export const ALREADY_COLLECTED_MIN_TILT_DEG = 2;
+export const ALREADY_COLLECTED_MAX_TILT_DEG = 8;
 // A viewer moving on to another item: their dot fades out there and back in
 // at the new item over this long.
 export const VIEWER_DOT_FADE_MS = 220;
@@ -165,12 +178,9 @@ export const SHEEN_STAGGER_MS = 160;
 // (room for labels hung beside its items, the right one before the panel's
 // gap), at the top (the header, plus a label hung above an item) and at the
 // bottom (a label hung below one), so it reads centred labels and all.
-export const COLLECTION_FRAME_SIDE_PX = 120;
-export const COLLECTION_FRAME_TOP_PX = 240;
+export const COLLECTION_FRAME_SIDE_PX = 64;
+export const COLLECTION_FRAME_TOP_PX = 190;
 export const COLLECTION_FRAME_BOTTOM_PX = 130;
-// Hovering a collection item in its panel zooms in this many times closer
-// than the collection view's framing — the same for every item.
-export const COLLECTION_HOVER_ZOOM = 7;
 // World units between the main timeline's pictures and the row of a
 // collection's items shown above it when the viewer has no branch yet.
 export const COLLECTION_ROW_GAP = 150;
@@ -215,21 +225,21 @@ export const EDGE_GRADIENT_PX = 140;
 // adjacent branch rows beyond that. Both grow with ZOOM_OUT_GROWTH_POWER at
 // draw time (see bounds.ts) to keep pace with the enlarged nodes/lines.
 export const LANE_GAP = 25;
+// Extra space (world units) between the viewer's row and the main timeline
+// while a collection is viewed, for the labels in between.
+export const COLLECTION_ROW_GAP_EXTRA = 200;
+// How strongly the items not in a collection show while it's viewed.
+export const COLLECTION_OTHER_ITEM_ALPHA = 0.6;
 export const COLLECTED_ROW_EXTRA_GAP = 30;
 export const MAIN_LINE_Y = PADDING_Y + IMAGE_HEIGHT / 2;
 // How far (screen px) either side of a timeline line still counts as hovering
 // it. When several lines are in reach, the nearest one wins.
 export const CONNECTOR_HOVER_THRESHOLD_PX = 14;
 export const MAIN_USERNAME = 'dialE';
-export const MAIN_GLOW_COLOUR = '#ff0000';
-// A colour pulse that travels along the timeline like data through a wire.
-export const MAIN_GLOW_TRAVEL_MS = 5000;
-export const MAIN_GLOW_TRAVEL_BLUR = 12;
-// Matches the timeline line thickness.
-export const MAIN_GLOW_STRIP_WIDTH = 1;
-export const MAIN_GLOW_STRIP_LENGTH = 140;
-// How far the strip's centre lightens toward white (0 = none, 1 = white).
-export const MAIN_GLOW_CENTER_LIGHTEN = 0.65;
+export const MAIN_GLOW_COLOUR = '#ffffff';
+// A white flash (drawn like a viewer's) that runs along a timeline clicked
+// into, end to end, this often.
+export const MAIN_GLOW_TRAVEL_MS = 3500;
 // Colour the other collectors' branches fade to while one is hovered: the
 // same grey as the item labels.
 export const BRANCH_DIM_COLOUR = DATE_LABEL_COLOUR;
@@ -320,9 +330,20 @@ export const BRANCH_GROW_DELAY_MS = 250;
 export const BRANCH_GROW_MS = 800;
 export const ITEM_APPEAR_MS = 450;
 export const ITEM_APPEAR_FROM_SCALE = 0.7;
+// A collector's timeline shown alone lays their items out in a grid this many
+// to a row, spanning the screen's width and scrolling down its full height:
+// each in a cell this share of an item's width and height, with these gaps
+// between (the rows leaving room for the labels under the pictures), and
+// these screen margins (px) above and below it.
+export const SOLO_GRID_COLUMNS = 4;
+export const SOLO_GRID_CELL_SCALE = 1;
+export const SOLO_GRID_GAP_X = 0.35;
+export const SOLO_GRID_GAP_Y = 0.85;
+export const SOLO_GRID_TOP_PX = 130;
+export const SOLO_GRID_BOTTOM_PX = 90;
 export const PREVIEW_SWITCH_FADE_MS = 250;
-export const COLLECT_ANIM_MS = 1350;
-export const COLLECT_HOLD_MS = 600;
+export const COLLECT_ANIM_MS = 700;
+export const COLLECT_HOLD_MS = 350;
 export const COLLECT_RETURN_FADE_MS = 1100;
 export const COLLECT_RETURN_ZOOM_LERP = 0.0825;
 export const COLLECT_RETURN_IMAGE_WAIT_MS = 600;

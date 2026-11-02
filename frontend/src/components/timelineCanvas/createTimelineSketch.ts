@@ -1,5 +1,9 @@
 import type p5 from 'p5';
-import { CANVAS_LABEL_FONT, CANVAS_LABEL_FONT_MEDIUM } from './constants';
+import {
+  CANVAS_LABEL_FONT,
+  CANVAS_LABEL_FONT_MEDIUM,
+  CANVAS_TITLE_FONT,
+} from './constants';
 import garamondUrl from '../../EBGaramond-Regular.ttf';
 import type {
   ProcessedCollected,
@@ -21,6 +25,7 @@ export function createTimelineSketch(
     // Cancel button (top bar), the e, or opening the drawer → animate back out
     // to the full map.
     deps.refs.resetViewRef.current = () => view.showFullMap();
+    deps.refs.soloTimelineRef.current = () => view.soloOwnBranch();
     // User-card click → isolate the viewer's own branch into a straight line.
     deps.refs.isolateOwnBranchRef.current = () =>
       view.toggleOwnBranchIsolation();
@@ -177,12 +182,28 @@ export function createTimelineSketch(
         } else {
           runtime.collectReturnIndex = collectedIndex;
         }
-      } else if (
-        runtime.collectReported &&
-        runtime.collectFinalRect &&
-        collectedIndex !== -1
-      ) {
-        view.startCollectReturn(collectedIndex, runtime.collectFinalRect);
+      } else if (runtime.collectReported && runtime.collectFinalRect) {
+        if (
+          collectedIndex !== -1 &&
+          view.startCollectReturn(collectedIndex, runtime.collectFinalRect)
+        ) {
+          return;
+        }
+        // It hasn't landed as a tile on the viewer's timeline (something on
+        // the main timeline never gets one): rather than hold the item
+        // mid-air, back out to the map and open it where it does sit.
+        runtime.collectStartMs = null;
+        runtime.collectIndex = -1;
+        runtime.collectReported = false;
+        runtime.collectContentId = null;
+        runtime.collectFinalRect = null;
+        view.showFullMap();
+        const mainIndex = deps.items.findIndex(
+          (item) => item._id === collectContentId
+        );
+        if (mainIndex !== -1) {
+          view.focusItem({ lane: 'main', index: mainIndex });
+        }
       }
     };
     const gallery = createGalleryController(p);
@@ -214,11 +235,14 @@ export function createTimelineSketch(
         }
       );
       p.textSize(12);
-      // Canvas labels use Akzidenz (see CANVAS_LABEL_FONT); canvas text alone
-      // doesn't make the browser fetch a web font, so ask for it up front.
-      [CANVAS_LABEL_FONT, CANVAS_LABEL_FONT_MEDIUM].forEach((font) => {
-        void document.fonts.load(`16px ${font}`).catch(() => undefined);
-      });
+      // Canvas labels use Akzidenz (see CANVAS_LABEL_FONT), and item titles EB
+      // Garamond; canvas text alone doesn't make the browser fetch a web font,
+      // so ask for them up front.
+      [CANVAS_LABEL_FONT, CANVAS_LABEL_FONT_MEDIUM, CANVAS_TITLE_FONT].forEach(
+        (font) => {
+          void document.fonts.load(`16px ${font}`).catch(() => undefined);
+        }
+      );
       view.playEntranceAnimation();
       deps.runtime.loadStartMs = p.millis();
 

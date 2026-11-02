@@ -7,21 +7,28 @@ import {
   useState,
   type MutableRefObject,
 } from 'react';
-import { createPortal } from 'react-dom';
+
 import { useLocation } from 'react-router-dom';
 import CollectedBranchStrip, {
   type BranchStripPreviewItem,
 } from '../components/CollectedBranchStrip';
 import CollectionCountdown from '../components/CollectionCountdown';
+import { getContentTypeKicker } from '../constants/contentTypes';
+import {
+  ALREADY_COLLECTED_MAX_TILT_DEG,
+  ALREADY_COLLECTED_MIN_TILT_DEG,
+} from '../components/timelineCanvas/constants';
+import { panelTagTilt } from '../utils/tilt';
 import CollectionViewer from '../components/CollectionViewer';
 import ContentTypeIcon from '../components/ContentTypeIcon';
 import MediaPlayer from '../components/MediaPlayer';
 import TimelineCanvas from '../components/timelineCanvas';
-import { getContrastText } from '../components/timelineCanvas/canvasEffects';
+
 import type {
   AudioPlayerState,
   DetailImageRect,
   FocusTarget,
+  BranchFocusInfo,
 } from '../components/timelineCanvas/types';
 import TimelineDetailOverlay, {
   type TimelineDetailView,
@@ -55,7 +62,7 @@ import {
   type ItemViewer,
 } from '../services/presence';
 import { getDisplayColour } from '../services/userColor';
-import { getStoredUser } from '../services/userStorage';
+import { getStoredUser, USER_CHANGED_EVENT } from '../services/userStorage';
 import type { CollectionContent, ContentType } from '../types/content';
 import { prefersReducedMotion } from '../utils/motionPreference';
 
@@ -70,6 +77,8 @@ type HomeProps = {
     ((contentId: string) => void) | undefined
   >;
   resetViewControlRef?: MutableRefObject<(() => void) | undefined>;
+  soloTimelineControlRef?: MutableRefObject<(() => void) | undefined>;
+  onSoloTimelineChange?: (active: boolean) => void;
 };
 
 function Home({
@@ -77,6 +86,8 @@ function Home({
   highlightedContentId,
   focusContentIdControlRef,
   resetViewControlRef,
+  soloTimelineControlRef,
+  onSoloTimelineChange,
 }: HomeProps) {
   const { pathname } = useLocation();
   const isCollectionOpen = pathname === '/collection';
@@ -201,18 +212,20 @@ function Home({
     setDetailImageRect(rect);
   }, []);
 
-  const currentUsername = useMemo(() => getStoredUser()?.username ?? null, []);
+  // Kept in step with signing in and out (and resetting), so the map always
+  // knows whose timeline is whose — a collected item lands on the right one.
+  // The collector's timeline the map is zoomed into, if any.
+  const [branchFocus, setBranchFocus] = useState<BranchFocusInfo | null>(null);
+  const [currentUsername, setCurrentUsername] = useState(
+    () => getStoredUser()?.username ?? null
+  );
+  useEffect(() => {
+    const sync = () => setCurrentUsername(getStoredUser()?.username ?? null);
+    window.addEventListener(USER_CHANGED_EVENT, sync);
+    return () => window.removeEventListener(USER_CHANGED_EVENT, sync);
+  }, []);
   const branchColour = getDisplayColour();
-  const [titleTooltip, setTitleTooltip] = useState<{
-    slug: string | null;
-    x: number;
-    y: number;
-  } | null>(null);
-  const showTitleTooltip =
-    titleTooltip !== null &&
-    focusSlug !== null &&
-    titleTooltip.slug === focusSlug &&
-    collectingItemId === null;
+
   const collectedRow =
     collectedRows?.find((row) => row.username === currentUsername) ?? null;
   const collectedContentIds = useMemo(
@@ -421,7 +434,8 @@ function Home({
     return () => {
       cancelled = true;
     };
-  }, [collections]);
+    // (Rechecked when someone signs in or out, as well.)
+  }, [collections, currentUsername]);
 
   // Resetting a collection timer via the debug panel should bring every
   // countdown back even if it was already collected/dismissed.
@@ -473,6 +487,9 @@ function Home({
           highlightedMainContentId={highlightedContentId}
           focusContentIdControlRef={focusContentIdControlRef}
           resetViewControlRef={resetViewControlRef}
+          soloTimelineControlRef={soloTimelineControlRef}
+          onSoloTimelineChange={onSoloTimelineChange}
+          onBranchFocusChange={setBranchFocus}
           isCollectionView={isCollectionOpen}
           colour={timeline.colour}
           currentUsername={currentUsername}
@@ -500,6 +517,32 @@ function Home({
             drawerOpen ? ' top-right-stack--drawer-open' : ''
           }`}
         >
+          {/* The timeline clicked into on the map, with a way back out. */}
+          {branchFocus && (
+            <div className="branch-focus-card">
+              <span className="branch-focus-card__label">
+                You are viewing{' '}
+                <span
+                  className="branch-focus-card__name"
+                  style={
+                    {
+                      '--branch-colour': branchFocus.colour,
+                    } as React.CSSProperties
+                  }
+                >
+                  {branchFocus.username}
+                </span>
+                &rsquo;s timeline&hellip;
+              </span>
+              <button
+                type="button"
+                className="branch-focus-card__cancel"
+                onClick={() => resetViewControlRef?.current?.()}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
           {audioState && (
             <MediaPlayer
               state={audioState}
@@ -509,129 +552,159 @@ function Home({
               }
             />
           )}
-          {!canvasHidden &&
-            (collections ?? [])
-              .filter((collection) => collectedStatus[collection._id] === false)
-              .map((collection) => (
-                <div
-                  className={`collection-card-stack${
-                    collectingItemId !== null
-                      ? ' collection-card-stack--hidden collection-card-stack--collecting'
-                      : ''
-                  }`}
-                  key={collection._id}
-                >
-                  <CollectionCountdown
-                    collection={collection}
-                    onClick={() => handleCollectionBadgeClick(collection._id)}
-                  />
+          {/* The collections, scrolling once they run past the screen;
+              hidden while an item is being viewed. */}
+          <div
+            className={`collection-card-list${
+              focusSlug !== null ? ' collection-card-list--hidden' : ''
+            }`}
+          >
+            {!canvasHidden &&
+              (collections ?? [])
+                .filter(
+                  (collection) => collectedStatus[collection._id] === false
+                )
+                .map((collection) => (
                   <div
-                    className={`collection-card-panel${
-                      expandedCollectionId === collection._id
-                        ? ' collection-card-panel--visible'
+                    className={`collection-card-stack${
+                      collectingItemId !== null
+                        ? ' collection-card-stack--hidden collection-card-stack--collecting'
                         : ''
                     }`}
+                    key={collection._id}
                   >
-                    {collection.imageUrl && (
-                      <img
-                        src={collection.imageUrl}
-                        alt={collection.name}
-                        className="collection-card-image"
-                        style={
-                          collection.imageDimensions
-                            ? ({
-                                '--card-image-aspect-ratio':
-                                  collection.imageDimensions.aspectRatio,
-                              } as React.CSSProperties)
-                            : undefined
-                        }
-                      />
-                    )}
-                    {collection.description && (
-                      <div className="collection-card-description">
-                        {collection.description}
-                      </div>
-                    )}
-                    <div
-                      className="collection-card-titles"
-                      style={
-                        {
-                          '--collection-title-colour': branchColour,
-                        } as React.CSSProperties
-                      }
+                    <CollectionCountdown
+                      collection={collection}
+                      open={expandedCollectionId === collection._id}
+                      onClick={() => handleCollectionBadgeClick(collection._id)}
                     >
-                      {(collection.content ?? []).map((item, index) => {
-                        const isFocused =
-                          focusSlug !== null && item.slug === focusSlug;
-                        return (
-                          <button
-                            key={item._id}
-                            type="button"
-                            className={`collection-card-title${
-                              isFocused ? ' collection-card-title--active' : ''
-                            }${
-                              collectedContentIds.has(item._id)
-                                ? ' collection-card-title--collected'
-                                : ''
-                            }`}
-                            style={
-                              { '--title-index': index } as React.CSSProperties
-                            }
-                            // Adds the item to the viewer's timeline and takes
-                            // them back out to the full map (or, for one
-                            // they've already collected, just takes them back).
-                            onClick={() => {
-                              setSelectedItemIndexByCollection((prev) => ({
-                                ...prev,
-                                [collection._id]: index,
-                              }));
-                              collectFocusedPreviewRef.current?.(item._id);
-                            }}
-                            onMouseEnter={() => {
-                              setHoveredCollectionItemId(item._id);
-                              setCenterOnCollectionItemId(item._id);
-                            }}
-                            onMouseMove={(event) => {
-                              setTitleTooltip({
-                                slug: item.slug,
-                                x: event.clientX,
-                                y: event.clientY,
-                              });
-                            }}
-                            onMouseLeave={() => {
-                              setTitleTooltip((current) =>
-                                current?.slug === item.slug ? null : current
-                              );
-                              setHoveredCollectionItemId((current) =>
-                                current === item._id ? null : current
-                              );
-                              setCenterOnCollectionItemId((current) =>
-                                current === item._id ? null : current
-                              );
-                            }}
-                          >
-                            <ContentTypeIcon
-                              type={item._type}
-                              className="collection-card-title__icon"
-                            />
-                            <span className="collection-card-title__text">
-                              {item.title}
-                            </span>
-                            {isFocused && (
-                              <span
-                                className="collection-card-title__plus"
-                                aria-hidden="true"
+                      <div
+                        className={`collection-card-panel${
+                          expandedCollectionId === collection._id
+                            ? ' collection-card-panel--visible'
+                            : ''
+                        }`}
+                      >
+                        <div
+                          className="collection-card-titles"
+                          style={
+                            {
+                              '--collection-title-colour': branchColour,
+                            } as React.CSSProperties
+                          }
+                        >
+                          {(collection.content ?? []).map((item, index) => {
+                            const isFocused =
+                              focusSlug !== null && item.slug === focusSlug;
+                            const isCollected = collectedContentIds.has(
+                              item._id
+                            );
+                            const kind = getContentTypeKicker(item._type);
+                            const description =
+                              item._type === 'newsletter'
+                                ? null
+                                : item.description;
+                            return (
+                              <button
+                                key={item._id}
+                                type="button"
+                                className={`collection-card-title${
+                                  isFocused
+                                    ? ' collection-card-title--active'
+                                    : ''
+                                }${
+                                  isCollected
+                                    ? ' collection-card-title--collected'
+                                    : ''
+                                }`}
+                                style={
+                                  {
+                                    '--title-index': index,
+                                  } as React.CSSProperties
+                                }
+                                // One already collected can't be hovered or
+                                // clicked; the rest are collected on a click.
+                                disabled={isCollected}
+                                onClick={() => {
+                                  setSelectedItemIndexByCollection((prev) => ({
+                                    ...prev,
+                                    [collection._id]: index,
+                                  }));
+                                  collectFocusedPreviewRef.current?.(item._id);
+                                }}
+                                onMouseEnter={() => {
+                                  setHoveredCollectionItemId(item._id);
+                                  setCenterOnCollectionItemId(item._id);
+                                }}
+                                onMouseLeave={() => {
+                                  setHoveredCollectionItemId((current) =>
+                                    current === item._id ? null : current
+                                  );
+                                  setCenterOnCollectionItemId((current) =>
+                                    current === item._id ? null : current
+                                  );
+                                }}
                               >
-                                +
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
+                                <span className="collection-card-title__thumb">
+                                  {item.imageUrl ? (
+                                    <img src={item.imageUrl} alt="" />
+                                  ) : (
+                                    <ContentTypeIcon
+                                      type={item._type}
+                                      className="collection-card-title__icon"
+                                    />
+                                  )}
+                                  {!isCollected && (
+                                    <span
+                                      className="collection-card-title__plus"
+                                      aria-hidden="true"
+                                    >
+                                      +
+                                    </span>
+                                  )}
+                                </span>
+                                {isCollected && (
+                                  <span
+                                    className="collection-card-title__collected"
+                                    style={
+                                      {
+                                        '--collected-tilt': `${panelTagTilt(
+                                          item._id,
+                                          ALREADY_COLLECTED_MAX_TILT_DEG,
+                                          ALREADY_COLLECTED_MIN_TILT_DEG
+                                        )}deg`,
+                                      } as React.CSSProperties
+                                    }
+                                  >
+                                    Already
+                                    <br />
+                                    collected
+                                  </span>
+                                )}
+                                <span className="collection-card-title__body">
+                                  <span className="collection-card-title__text">
+                                    {item.title}
+                                  </span>
+                                  {kind && (
+                                    <span className="collection-card-title__kind">
+                                      {kind}
+                                    </span>
+                                  )}
+                                  {description && (
+                                    <span className="collection-card-title__description">
+                                      {description}
+                                    </span>
+                                  )}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </CollectionCountdown>
                   </div>
-                </div>
-              ))}
+                ))}
+          </div>
         </div>
       </div>
       {viewerOpen && collections?.[0] && (
@@ -655,24 +728,6 @@ function Home({
           />
         </div>
       )}
-      {showTitleTooltip &&
-        titleTooltip &&
-        createPortal(
-          <div
-            className="collect-tooltip"
-            style={
-              {
-                left: titleTooltip.x,
-                top: titleTooltip.y,
-                background: branchColour,
-                color: getContrastText(branchColour),
-              } as React.CSSProperties
-            }
-          >
-            + collect item
-          </div>,
-          document.body
-        )}
     </section>
   );
 }

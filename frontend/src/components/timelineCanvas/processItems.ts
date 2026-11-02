@@ -39,7 +39,7 @@ export function buildProcessedItems(
     imageUrl: getMainTimelineImageUrl(item),
     slug: item.slug ?? null,
     contentType: item._type,
-    title: item.title,
+    title: item.title ?? '',
     bodyContent: item._type === 'newsletter' ? item.content ?? null : null,
     aspectRatio: getItemAspectRatio(item),
     audioUrl: item._type === 'audioAsset' ? item.audioUrl ?? null : null,
@@ -126,7 +126,7 @@ export function buildProcessedCollected(
         slug: item.content.slug ?? null,
         imageUrl: getMainTimelineImageUrl(item.content),
         contentType: item.content._type,
-        title: item.content.title,
+        title: item.content.title ?? '',
         bodyContent:
           item.content._type === 'newsletter'
             ? item.content.content ?? null
@@ -186,7 +186,7 @@ export function buildProcessedCollectionPreview(
         contentType: item._type,
         slug: item.slug ?? null,
         imageUrl: item.imageUrl,
-        title: item.title,
+        title: item.title ?? '',
         aspectRatio:
           item.imageDimensions?.aspectRatio || ITEM_WIDTH / IMAGE_HEIGHT,
         anchorTime,

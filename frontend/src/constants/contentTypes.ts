@@ -22,3 +22,20 @@ export function getContentTypeColour(type: ContentType): string {
 export function getContentTypeLabel(type: ContentType): string {
   return CONTENT_TYPES.find((entry) => entry.type === type)?.label ?? '';
 }
+
+// The kind of an item, in caps: the tag in its picture's corner on the map,
+// and its kind in a collection's item list.
+export function getContentTypeKicker(type: ContentType): string | undefined {
+  switch (type) {
+    case 'imageAsset':
+      return 'PHOTOS';
+    case 'audioAsset':
+      return 'MUSIC';
+    case 'newsletter':
+      return 'LETTER';
+    case 'event':
+      return 'EVENT';
+    default:
+      return undefined;
+  }
+}

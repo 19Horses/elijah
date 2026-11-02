@@ -1,3 +1,4 @@
+import { getContentTypeKicker } from '../../../constants/contentTypes';
 import type p5 from 'p5';
 import { formatFullDate } from '../../../utils/formatDate';
 import {
@@ -10,7 +11,8 @@ import {
 } from '../canvasEffects';
 import {
   CANVAS_LABEL_FONT,
-  CANVAS_LABEL_FONT_MEDIUM,
+  CANVAS_TITLE_FONT,
+  ITEM_TITLE_SCALE,
   ITEM_LABEL_COLOUR,
   ITEM_LABEL_LETTER_SPACING,
   ITEM_LABEL_LINE_HEIGHT,
@@ -42,7 +44,8 @@ import {
   PRIVATE_BADGE_COLOUR,
   PRIVATE_BADGE_TEXT,
   DATE_FONT_SIZE,
-  PREVIEW_EXPAND_LERP,
+  PREVIEW_EXPAND_MS,
+  PREVIEW_EXPAND_SCALE,
   PREVIEW_ICON_LIFT,
   PREVIEW_ICON_SIZE,
   PREVIEW_SWITCH_FADE_MS,
@@ -56,6 +59,7 @@ import {
   ZOOM_OUT_GROWTH_POWER,
   DATE_SHRINK_TRANSITION_FACTOR,
   DATE_SHRINK_ZOOM_FACTOR,
+  COLLECTION_OTHER_ITEM_ALPHA,
 } from '../constants';
 import {
   getBranchRoute,
@@ -113,7 +117,6 @@ import {
   drawMainLaneConnectors,
   drawMainLaneItems,
   collectedByFor,
-  contentKicker,
   drawMainTimelineGlow,
   type DateLabel,
   type MainLaneDrawContext,
@@ -155,6 +158,23 @@ export function createDrawFrameHandler(
   // Viewers' dots carry over between frames so they can travel item to item.
   const viewerDotAnimator = createViewerDotAnimator();
   let syncedCollectedVersion = -1;
+  // Node cards go on a layer of their own just above the page's text for
+  // the item being viewed (which sits over the canvas), so a card opening
+  // across that text isn't hidden behind it. Cleared and sized each frame.
+  let cardLayer: p5.Graphics | null = null;
+  const prepareCardLayer = (): p5.Graphics => {
+    if (!cardLayer) {
+      cardLayer = p.createGraphics(p.width, p.height);
+      const layer = cardLayer.elt as HTMLCanvasElement;
+      layer.classList.add('timeline-canvas__cards');
+      layer.style.display = 'block';
+      (p.drawingContext as CanvasRenderingContext2D).canvas.after(layer);
+    } else if (cardLayer.width !== p.width || cardLayer.height !== p.height) {
+      cardLayer.resizeCanvas(p.width, p.height);
+    }
+    cardLayer.clear();
+    return cardLayer;
+  };
   const syncCollectedCaches = () => {
     if (syncedCollectedVersion === runtime.collectedVersion) {
       return;
@@ -203,6 +223,8 @@ export function createDrawFrameHandler(
   // id), so growing into/out of the selected/hovered look eases rather than
   // snapping straight to size.
   const previewHighlightProgress = new Map<string, number>();
+  // How far each hovered (or lately hovered) collection item has grown, 0-1
+  // linearly over PREVIEW_EXPAND_MS; it's eased in and out when applied.
   const previewExpandProgress = new Map<string, number>();
 
   const reportAudioState = (isFocusActive: boolean) => {
@@ -233,8 +255,10 @@ export function createDrawFrameHandler(
   };
 
   return () => {
+    const cards = prepareCardLayer();
     syncCollectedCaches();
     stepLayoutChange(deps, p.millis());
+    view.refitHomeForPanel();
     view.animateView();
     view.animatePan();
     view.animateZoom();
@@ -256,18 +280,7 @@ export function createDrawFrameHandler(
         view.clearPreviewFocus();
       }
     }
-    const centerOnPreviewId = deps.refs.centerOnPreviewIdRef.current;
-    if (
-      runtime.focusTarget === null &&
-      centerOnPreviewId !== runtime.lastCenterOnPreviewContentId
-    ) {
-      runtime.lastCenterOnPreviewContentId = centerOnPreviewId;
-      if (centerOnPreviewId) {
-        view.previewIsolatedContentId(centerOnPreviewId);
-      } else {
-        view.refreshIsolatedFraming();
-      }
-    }
+
     const dimAlpha = getTypeDimAlpha(typeHighlightStrength);
     const elapsed = p.millis() - runtime.loadStartMs;
     const totalImages = deps.processed.length + deps.processedCollected.length;
@@ -368,37 +381,44 @@ export function createDrawFrameHandler(
     // boundsCtx.getIsolatedMergedLine — the same layout view.ts uses to frame
     // and focus these items, so the two can never drift apart. Lazily
     // computed on first use, once per frame.
+    // The collection item hovered in the panel's list (or on the map) grows
+    // in place, its label with it; the view stays where it is.
     const centerOnPreviewContentId =
       runtime.focusTarget === null
-        ? deps.refs.centerOnPreviewIdRef.current
+        ? deps.refs.centerOnPreviewIdRef.current ?? lastHoveredPreviewId
         : null;
-    for (const key of [...previewExpandProgress.keys()]) {
-      if (key === centerOnPreviewContentId) {
-        continue;
-      }
-      const prev = previewExpandProgress.get(key) ?? 0;
-      const next = prev + (0 - prev) * PREVIEW_EXPAND_LERP;
-      if (next < HIGHLIGHT_FADE_SNAP) {
+    // A hidden tab hands back one huge frame; don't let it skip the ease.
+    const expandStep = Math.min(p.deltaTime, 100) / PREVIEW_EXPAND_MS;
+    if (
+      centerOnPreviewContentId &&
+      !previewExpandProgress.has(centerOnPreviewContentId)
+    ) {
+      previewExpandProgress.set(centerOnPreviewContentId, 0);
+    }
+    // Each one's eased size: the hovered one growing, any left shrinking back.
+    const previewExpand = new Map<string, number>();
+    previewExpandProgress.forEach((progress, key) => {
+      const next =
+        key === centerOnPreviewContentId
+          ? Math.min(1, progress + expandStep)
+          : progress - expandStep;
+      if (next <= 0) {
         previewExpandProgress.delete(key);
-      } else {
-        previewExpandProgress.set(key, next);
+        return;
       }
-    }
-    let previewExpandAmount = 0;
-    if (centerOnPreviewContentId) {
-      const prev = previewExpandProgress.get(centerOnPreviewContentId) ?? 0;
-      const next = prev + (1 - prev) * PREVIEW_EXPAND_LERP;
-      previewExpandAmount = next > 1 - HIGHLIGHT_FADE_SNAP ? 1 : next;
-      previewExpandProgress.set(centerOnPreviewContentId, previewExpandAmount);
-    }
+      previewExpandProgress.set(key, next);
+      previewExpand.set(
+        key,
+        next < 0.5 ? 4 * next ** 3 : 1 - (-2 * next + 2) ** 3 / 2
+      );
+    });
 
     let isolatedLine: ReturnType<BoundsContext['getIsolatedMergedLine']> = null;
     const getIsolatedLine = () => {
       if (isolatedLine === null && isolateRow !== null) {
         isolatedLine = boundsCtx.getIsolatedMergedLine(
           isolateRow,
-          centerOnPreviewContentId,
-          previewExpandAmount
+          previewExpand
         );
       }
       return isolatedLine;
@@ -508,12 +528,34 @@ export function createDrawFrameHandler(
       }
     }
 
+    // Showing one collector's timeline alone: their items gather into a grid
+    // and everything else — every line, and every other item — fades away.
+    const soloRow = runtime.branchSolo > 0 ? runtime.branchSoloRow : null;
+    const soloFade = 1 - runtime.branchSolo;
+    const inSoloGrid = (lane: 'main' | 'collected', index: number) =>
+      runtime.soloGrid?.has(`${lane}:${index}`) ?? false;
+    const viewedCollectionIds = new Set(
+      deps.processedPreview.map((preview) => preview.contentId)
+    );
     const contentAlphaFor = (
       lane: 'main' | 'collected',
       index: number,
       base = 1
     ) => {
       let alpha = base;
+      if (soloRow !== null && !inSoloGrid(lane, index)) {
+        alpha *= soloFade;
+      }
+      // Viewing a collection, the items that aren't in it fade back a touch.
+      if (isolateActive) {
+        const contentId =
+          lane === 'main'
+            ? deps.items[index]?._id
+            : deps.processedCollected[index]?.contentId;
+        if (!viewedCollectionIds.has(contentId ?? '')) {
+          alpha *= 1 - isolate * (1 - COLLECTION_OTHER_ITEM_ALPHA);
+        }
+      }
       // Viewing an item fades every other item away, leaving it alone on
       // screen. Isolating the viewer's own branch fades every other
       // collector's items away, leaving the main timeline in place and the
@@ -550,6 +592,7 @@ export function createDrawFrameHandler(
 
     const bounds = boundsCtx.getAllBounds();
     const collectedBounds = boundsCtx.getCollectedBounds();
+
     const lineWorldX = boundsCtx.getNowWorldX();
     const mouseWorld = screenToWorld(
       p.mouseX,
@@ -585,8 +628,12 @@ export function createDrawFrameHandler(
     // Slide the focused item's branch nodes out to the viewport edges, and
     // back onto the item once it's unfocused, easing in and out over
     // EDGE_NODE_ANIM_MS (or, zooming back out, along with the camera).
+    // (None for an item opened from a timeline shown alone: its lines are
+    // hidden.)
     const edgeTarget =
-      isFocusActive && runtime.focusTarget?.lane !== 'preview'
+      isFocusActive &&
+      runtime.focusTarget?.lane !== 'preview' &&
+      !runtime.branchSoloActive
         ? runtime.focusTarget
         : null;
     if (edgeTarget) {
@@ -642,6 +689,7 @@ export function createDrawFrameHandler(
       getDetailDrawBounds: getDetailDrawBoundsIso,
       contentAlphaFor,
       isolateOtherAlpha: isolateOtherAlpha * collectFade,
+      collectFade,
       // Viewing a collection greys out the viewer's own item pictures (ones
       // they've collected, whether or not they're in the collection) and
       // hides their labels, easing in with the isolation.
@@ -657,27 +705,39 @@ export function createDrawFrameHandler(
       viewerDots,
       // Grey only the main connectors the active branch detours below; the rest
       // of the main line (before, after, and skipped gaps) stays lit.
+      // A timeline shown alone has no lines, and collecting an item fades
+      // them all away while it flies in.
       mainConnectorTravelAlpha: (connectorIndex: number) => {
+        const solo = (soloRow !== null ? soloFade : 1) * collectFade;
         const row = runtime.branchDimRow;
         if (row === null || runtime.branchDimStrength <= 0) {
-          return 1;
+          return solo;
         }
         if (
           !boundsCtx.getBranchDetouredGaps(row).has(connectorIndex) ||
           boundsCtx.getBranchMainTravel(row).has(connectorIndex)
         ) {
-          return 1;
+          return solo;
         }
-        return 1 - runtime.branchDimStrength * (1 - MAIN_CONNECTOR_DIM_ALPHA);
+        return (
+          solo *
+          (1 - runtime.branchDimStrength * (1 - MAIN_CONNECTOR_DIM_ALPHA))
+        );
       },
+      soloRow,
+      soloOtherAlpha: soloFade,
       // A hovered main line thickens to double width, easing with its tag, and
       // so does any stretch a hovered branch's timeline runs along.
       mainConnectorGrow: (connectorIndex: number) => {
         const mainGrow = runtime.lineBlobs.get('main')?.scale ?? 0;
         const row = runtime.branchDimRow;
+        // (A timeline clicked into stays thick while it's viewed.)
         const branchGrow =
           row !== null && boundsCtx.getBranchMainTravel(row).has(connectorIndex)
-            ? runtime.lineBlobs.get(`row:${row}`)?.scale ?? 0
+            ? Math.max(
+                runtime.lineBlobs.get(`row:${row}`)?.scale ?? 0,
+                runtime.branchDimStrength
+              )
             : 0;
         return Math.max(mainGrow, branchGrow);
       },
@@ -753,14 +813,28 @@ export function createDrawFrameHandler(
         top: (laneBounds.top - runtime.cameraY) * runtime.zoom,
         width: laneBounds.width * runtime.zoom,
         height: laneBounds.height * runtime.zoom,
+        ...(runtime.viewUnfocusing
+          ? {}
+          : {
+              finalLeft:
+                (laneBounds.left - runtime.targetCameraX) * runtime.targetZoom,
+              finalWidth: laneBounds.width * runtime.targetZoom,
+            }),
       });
     }
 
     // While isolating, only the isolated branch's own items stay at full
     // brightness — every other collector's items are faded, so they're
     // excluded from hover here too.
+    // A collection's items the viewer already has (tagged "already
+    // collected") don't answer to the pointer while it's viewed.
+    const collectionIds = isolateActive
+      ? new Set(deps.processedPreview.map((preview) => preview.contentId))
+      : null;
     const isCollectedItemHoverable = (index: number) =>
-      !isolateActive || isIsolatedItem(index);
+      (!isolateActive || isIsolatedItem(index)) &&
+      !collectionIds?.has(deps.processedCollected[index]?.contentId ?? '') &&
+      (soloRow === null || inSoloGrid('collected', index));
     const collectedHover = computeCollectedLaneHover(
       deps,
       boundsCtx,
@@ -770,6 +844,31 @@ export function createDrawFrameHandler(
       hoverSuppressed,
       isCollectedItemHoverable
     );
+    if (
+      collectionIds &&
+      mainHover.hoveredMain !== -1 &&
+      collectionIds.has(deps.items[mainHover.hoveredMain]?._id ?? '') &&
+      deps.refs.collectorsRef.current
+        ?.get(deps.items[mainHover.hoveredMain]._id)
+        ?.some((collector) => collector.username === deps.currentUsername)
+    ) {
+      mainHover.hoveredMain = -1;
+      mainHover.mainHighlighted = mainHover.mainConnectorHover;
+    }
+    // A timeline shown alone answers to the pointer only on its own items.
+    if (soloRow !== null) {
+      if (!collectedHover.hoveredCollectedIsImage) {
+        collectedHover.hoveredUserRow = null;
+      }
+      if (
+        mainHover.hoveredMain !== -1 &&
+        !inSoloGrid('main', mainHover.hoveredMain)
+      ) {
+        mainHover.hoveredMain = -1;
+      }
+      mainHover.mainConnectorHover = false;
+      mainHover.mainHighlighted = mainHover.hoveredMain !== -1;
+    }
 
     // A main line and a branch line both in reach: the nearer one takes it.
     if (
@@ -866,6 +965,19 @@ export function createDrawFrameHandler(
     } else if (runtime.branchIsolate > 1 - HIGHLIGHT_FADE_SNAP) {
       runtime.branchIsolate = 1;
     }
+    runtime.branchSolo +=
+      ((runtime.branchSoloActive ? 1 : 0) - runtime.branchSolo) *
+      BRANCH_DIM_LERP;
+    if (runtime.branchSolo < HIGHLIGHT_FADE_SNAP) {
+      runtime.branchSolo = 0;
+      if (!runtime.branchSoloActive) {
+        runtime.branchSoloRow = null;
+        runtime.soloGrid = null;
+        runtime.soloGridArea = null;
+      }
+    } else if (runtime.branchSolo > 1 - HIGHLIGHT_FADE_SNAP) {
+      runtime.branchSolo = 1;
+    }
 
     // Connectors render beneath the images, whose soft white halo fades each
     // line out where it meets an item.
@@ -918,6 +1030,7 @@ export function createDrawFrameHandler(
     const timelinePath = (key: string) => timelineLines(key).flat();
     const updateLineTags = () => {
       let hoveredKey: string | null = null;
+      // The main timeline's tag is white, like its line.
       let colour = MAIN_LINE_COLOUR;
       let name = MAIN_USERNAME;
       if (!isFocusActive) {
@@ -973,8 +1086,11 @@ export function createDrawFrameHandler(
     };
     updateLineTags();
 
-    // Viewers' flashes along the timelines, passing behind the items.
-    viewerDotAnimator.drawFlashes(p, runtime.zoom);
+    // Viewers' flashes along the timelines, passing behind the items — only
+    // on the map, not while an item is being zoomed into or viewed.
+    if (runtime.focusTarget === null) {
+      viewerDotAnimator.drawFlashes(p, runtime.zoom);
+    }
 
     drawMainLaneItems(p, deps, loadedImages, drawCtx, mainHover, gallery);
 
@@ -1112,6 +1228,9 @@ export function createDrawFrameHandler(
           isolate *
           previewSwitchAlpha *
           (isCollectTarget(entry.index) ? 1 : collectFade);
+        // Its own canvas state for the glow and picture (see the lanes' item
+        // drawing): Safari otherwise ignores the fade on pictures after it.
+        p.push();
         previewCtx.globalAlpha = previewAlpha;
         if (progress > 0) {
           previewCtx.shadowColor = hexToRgba(
@@ -1134,7 +1253,8 @@ export function createDrawFrameHandler(
             rect.top + rect.height / 2
           );
         }
-        previewCtx.shadowBlur = 0;
+        p.pop();
+        previewCtx.globalAlpha = previewAlpha;
         drawSheen(
           previewCtx,
           rect.left,
@@ -1161,9 +1281,9 @@ export function createDrawFrameHandler(
         // The same kind tag and label as every other item: title, full date
         // and who owns it, under the picture (deferred so it renders above the
         // lines).
-        const kind = contentKicker(item.contentType);
+        const kind = getContentTypeKicker(item.contentType);
         if (kind && !hideLabel) {
-          previewCtx.globalAlpha = isolate * previewSwitchAlpha;
+          previewCtx.globalAlpha = previewAlpha;
           drawKindTag(
             p,
             kind,
@@ -1179,9 +1299,14 @@ export function createDrawFrameHandler(
             y: rect.top + rect.height + 12,
             below: true,
             font: CANVAS_LABEL_FONT,
-            scale: ITEM_LABEL_SCALE,
+            scale:
+              ITEM_LABEL_SCALE *
+              (1 +
+                (PREVIEW_EXPAND_SCALE - 1) *
+                  (previewExpand.get(item.contentId) ?? 0)),
             letterSpacing: ITEM_LABEL_LETTER_SPACING,
-            textFont: CANVAS_LABEL_FONT_MEDIUM,
+            textFont: CANVAS_TITLE_FONT,
+            textScale: ITEM_TITLE_SCALE,
             collectedBy: collectedByFor(
               deps.refs.collectorsRef.current?.get(item.contentId)
             ),
@@ -1338,8 +1463,10 @@ export function createDrawFrameHandler(
         // medium weight for item titles); the lines after it never do. Set
         // before measuring any line, so widths allow for it.
         const bodyFont = label.font ?? canvasFont;
+        const bodySize = p.textSize();
         const styleLine = (isText: boolean) => {
           p.textFont(isText && label.textFont ? label.textFont : bodyFont);
+          p.textSize(isText ? bodySize * (label.textScale ?? 1) : bodySize);
         };
         const widthOf = (line: string, isText: boolean) => {
           styleLine(isText);
@@ -1383,12 +1510,18 @@ export function createDrawFrameHandler(
             : wrapText(p, label.text, label.maxWidth)
         );
         const isTextLine = (k: number) => k < lines.length - extras.length;
-        const leading = p.textSize() * (label.lineHeight ?? 1.2);
+        // (From the body size: measuring may have left the title's size set.)
+        const leading = bodySize * (label.lineHeight ?? 1.2);
+        // The text's own lines step by their own, larger size.
+        const textLeading = leading * (label.textScale ?? 1);
         // Extra space above the first of those lines, setting them apart from
         // the text.
         const secondaryGap =
-          extras.length === 0 ? 0 : p.textSize() * SECONDARY_LABEL_GAP;
-        const blockHeight = (count: number) => count * leading + secondaryGap;
+          extras.length === 0 ? 0 : bodySize * SECONDARY_LABEL_GAP;
+        const blockHeight = (count: number) =>
+          (count - extras.length) * textLeading +
+          extras.length * leading +
+          secondaryGap;
         let { x, y } = label;
         let below = label.below ?? false;
         let hAlign = horizontalAlign;
@@ -1482,7 +1615,12 @@ export function createDrawFrameHandler(
             ).length *
               1000 +
             countLabelClashes(rect, drawnLines, itemRects);
-          const best = spots.reduce(
+          // In a timeline's grid, labels always hang under their pictures.
+          const candidates =
+            runtime.soloGrid && runtime.branchSolo > 0
+              ? spots.slice(0, 1)
+              : spots;
+          const best = candidates.reduce(
             (chosen, spot) => {
               const spotScore = score(spot.rect);
               return chosen.score === 0 || spotScore >= chosen.score
@@ -1500,10 +1638,22 @@ export function createDrawFrameHandler(
         p.textAlign(hAlign, below ? p.TOP : p.BOTTOM);
         const last = lines.length - 1;
         const firstExtra = lines.length - extras.length;
-        const lineY = (k: number) =>
-          below
-            ? y + k * leading + (k >= firstExtra ? secondaryGap : 0)
-            : y - (last - k) * leading - (k < firstExtra ? secondaryGap : 0);
+        // Each line's step is its own height: a hung-below label steps down by
+        // the lines above, a raised one up by the lines below.
+        const step = (k: number) => (k < firstExtra ? textLeading : leading);
+        const lineY = (k: number) => {
+          let offset = 0;
+          if (below) {
+            for (let i = 0; i < k; i++) {
+              offset += step(i);
+            }
+            return y + offset + (k >= firstExtra ? secondaryGap : 0);
+          }
+          for (let i = k + 1; i <= last; i++) {
+            offset += step(i);
+          }
+          return y - offset - (k < firstExtra ? secondaryGap : 0);
+        };
         const baseAlpha = dateCtx.globalAlpha;
         // The date (the first line after the text) is as strong as the text;
         // the "owned by" lines after it are fainter.
@@ -1545,7 +1695,10 @@ export function createDrawFrameHandler(
           );
           p.strokeWeight((LABEL_OUTLINE_PX * 2) / runtime.zoom);
           p.strokeJoin(p.ROUND);
-          lines.forEach((line, k) => p.text(line, x, lineY(k)));
+          lines.forEach((line, k) => {
+            styleLine(k < firstExtra);
+            p.text(line, x, lineY(k));
+          });
           p.noStroke();
           p.fill(label.colour);
         }
@@ -1638,26 +1791,6 @@ export function createDrawFrameHandler(
           p,
           PRIVATE_BADGE_TEXT,
           PRIVATE_BADGE_COLOUR,
-          p.mouseX,
-          p.mouseY
-        );
-      }
-    } else if (lastHoveredPreviewId !== null) {
-      const hoveredPreviewIndex = deps.processedPreview.findIndex(
-        (item) => item.contentId === lastHoveredPreviewId
-      );
-      const isHoveredPreviewFocused =
-        isFocusActive && isFocusedTarget('preview', hoveredPreviewIndex);
-      if (
-        hoveredPreviewIndex !== -1 &&
-        (isHoveredPreviewFocused || runtime.focusContentFade <= LOAD_ALPHA_SNAP)
-      ) {
-        drawUserLabel(
-          p,
-          isHoveredPreviewFocused
-            ? '+ collect item'
-            : deps.processedPreview[hoveredPreviewIndex].title,
-          deps.previewColour,
           p.mouseX,
           p.mouseY
         );
@@ -1855,7 +1988,7 @@ export function createDrawFrameHandler(
         }
         const { region } = card;
         const size = drawNodeCard(
-          p,
+          cards,
           region,
           (region.x - runtime.cameraX) * runtime.zoom,
           (region.y - runtime.cameraY) * runtime.zoom,

@@ -48,6 +48,7 @@ function TimelineCanvas({
   viewersBySlug = EMPTY_VIEWERS,
   focusContentIdControlRef,
   resetViewControlRef,
+  soloTimelineControlRef,
   isCollectionView = false,
   colour,
   currentUsername = null,
@@ -63,6 +64,8 @@ function TimelineCanvas({
   onDetailLayoutStart,
   onDetailImageRect,
   onEntranceComplete,
+  onSoloTimelineChange,
+  onBranchFocusChange,
   onBranchIsolationExit,
 }: TimelineCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -77,12 +80,23 @@ function TimelineCanvas({
   const onDetailImageRectRef = useRef(onDetailImageRect);
   const onEntranceCompleteRef = useRef(onEntranceComplete);
   const [branchFocus, setBranchFocus] = useState<BranchFocusInfo | null>(null);
+  const soloTimelineActive = branchFocus?.alone ?? false;
+  useEffect(() => {
+    onSoloTimelineChange?.(soloTimelineActive);
+  }, [onSoloTimelineChange, soloTimelineActive]);
+  // (A timeline shown alone has its own way back, in the menu.)
+  const clickedBranch = branchFocus && !branchFocus.alone ? branchFocus : null;
+  useEffect(() => {
+    onBranchFocusChange?.(clickedBranch);
+  }, [onBranchFocusChange, clickedBranch]);
   const onBranchFocusRef = useRef<
     ((info: BranchFocusInfo | null) => void) | undefined
   >(setBranchFocus);
   const onBranchIsolationExitRef = useRef(onBranchIsolationExit);
   const localResetViewRef = useRef<(() => void) | undefined>(undefined);
   const resetViewRef = resetViewControlRef ?? localResetViewRef;
+  const localSoloTimelineRef = useRef<(() => void) | undefined>(undefined);
+  const soloTimelineRef = soloTimelineControlRef ?? localSoloTimelineRef;
   const localIsolateRef = useRef<(() => void) | undefined>(undefined);
   const isolateOwnBranchRef = isolateControlRef ?? localIsolateRef;
   const localFocusItemRef = useRef<((target: FocusTarget) => void) | undefined>(
@@ -243,9 +257,10 @@ function TimelineCanvas({
 
   useEffect(() => {
     const preventScrollWhileFocused = (event: WheelEvent) => {
+      // Over the collection panel, the wheel scrolls it rather than the map.
       if (
-        event.target instanceof HTMLElement &&
-        event.target.closest('.collection-card-description')
+        event.target instanceof Element &&
+        event.target.closest('.collection-card-list')
       ) {
         event.stopImmediatePropagation();
         return;
@@ -364,6 +379,7 @@ function TimelineCanvas({
         onBranchIsolationExitRef,
         onAudioStateChangeRef,
         resetViewRef,
+        soloTimelineRef,
         isolateOwnBranchRef,
         focusItemRef,
         highlightedPreviewIdRef,
@@ -426,24 +442,6 @@ function TimelineCanvas({
 
   return (
     <div className="timeline-canvas-wrap">
-      {branchFocus && (
-        <div className="timeline-branch-bar">
-          <span className="timeline-branch-bar__label">
-            <span
-              className="timeline-branch-bar__dot"
-              style={{ backgroundColor: branchFocus.colour }}
-            />
-            {branchFocus.username}
-          </span>
-          <button
-            type="button"
-            className="timeline-branch-bar__cancel"
-            onClick={() => resetViewRef.current?.()}
-          >
-            Cancel
-          </button>
-        </div>
-      )}
       <P5CanvasHost containerRef={containerRef} />
     </div>
   );

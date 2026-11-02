@@ -50,6 +50,10 @@ export type TimelineCanvasProps = {
   // Populated by the canvas with a zoom-out/unfocus trigger, so an outside
   // control (e.g. the nav drawer opening) can back out of a focused item.
   resetViewControlRef?: MutableRefObject<(() => void) | undefined>;
+  // Populated by the canvas with a trigger that shows the viewer's own
+  // timeline alone, so an outside control (their name in the menu) can
+  // invoke it.
+  soloTimelineControlRef?: MutableRefObject<(() => void) | undefined>;
   // Populated by the canvas with a jump-to-item focuser, so an outside control
   // (the mini player, rendered by the caller) can invoke it.
   focusItemControlRef?: MutableRefObject<
@@ -67,6 +71,11 @@ export type TimelineCanvasProps = {
   onDetailLayoutStart?: () => void;
   onDetailImageRect?: (rect: DetailImageRect) => void;
   onEntranceComplete?: () => void;
+  // Called with whether the viewer's own timeline is being shown alone.
+  onSoloTimelineChange?: (active: boolean) => void;
+  // Called with the timeline clicked into on the map (null when none), for
+  // the box naming it with a way back out.
+  onBranchFocusChange?: (info: BranchFocusInfo | null) => void;
   onBranchIsolationExit?: () => void;
 };
 
@@ -75,12 +84,20 @@ export type DetailImageRect = {
   top: number;
   width: number;
   height: number;
+  // Where the image's left edge and width will settle once the zoom in has
+  // finished, so text laid out beside it can take its final width from the
+  // start rather than growing with the zoom.
+  finalLeft?: number;
+  finalWidth?: number;
 };
 // Which collector's timeline the view is currently zoomed into, for the
 // top-bar label. Null when not zoomed into any branch.
 export type BranchFocusInfo = {
   username: string;
   colour: string;
+  // Their timeline shown alone (from their name in the menu), rather than
+  // zoomed into from the map.
+  alone: boolean;
 };
 
 // The persistent mini-player state: the loaded audio track's metadata, shown
@@ -256,7 +273,6 @@ export type TimelineRuntime = {
   // Collector row the view is zoomed into via a branch click, or null.
   focusedBranchRow: number | null;
   lastHighlightedMainContentId: string | null;
-  lastCenterOnPreviewContentId: string | null;
   isCollectionViewActive: boolean;
   viewAnimating: boolean;
   viewUnfocusing: boolean;
@@ -275,6 +291,25 @@ export type TimelineRuntime = {
   // at full colour while it fades.
   branchDimStrength: number;
   branchDimRow: number | null;
+  // Showing one collector's timeline alone (from their name in the menu):
+  // whether it's on, the row, and how far everything else has faded (0-1).
+  branchSoloActive: boolean;
+  branchSoloRow: number | null;
+  branchSolo: number;
+  // Where each of their items sits in the grid (world), by `${lane}:${index}`;
+  // the items ease there from the map with branchSolo.
+  soloGrid: Map<
+    string,
+    { left: number; top: number; width: number; height: number }
+  > | null;
+  // The grid's whole area (world), labels included, for framing and
+  // scrolling it.
+  soloGridArea: {
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+  } | null;
   // The collector row isolated into a straight, centred timeline (or null; kept
   // set until the fade-out finishes), whether isolation is currently engaged
   // (the ease target), and the eased 0-1 progress for the transition.
@@ -384,6 +419,7 @@ export type TimelineSketchRefs = {
   >;
   // React → sketch: cancel button calls this to animate back to default fit.
   resetViewRef: MutableRefObject<(() => void) | undefined>;
+  soloTimelineRef: MutableRefObject<(() => void) | undefined>;
   // React → sketch: user-card click toggles isolating the viewer's own branch
   // into a straight, centred timeline.
   isolateOwnBranchRef: MutableRefObject<(() => void) | undefined>;

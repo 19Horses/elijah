@@ -190,8 +190,11 @@ function TimelineDetailOverlay({
   const sideWidth = Math.max(
     0,
     window.innerWidth -
-      imageRect.left -
-      (imageRect.left + imageRect.width) -
+      // At the image's settled place, so the column doesn't widen as the
+      // view zooms in.
+      (imageRect.finalLeft ?? imageRect.left) -
+      ((imageRect.finalLeft ?? imageRect.left) +
+        (imageRect.finalWidth ?? imageRect.width)) -
       sideGap
   );
 

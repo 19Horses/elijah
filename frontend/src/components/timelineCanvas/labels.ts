@@ -11,6 +11,7 @@ import {
   KIND_TAG_INSET_PX,
   KIND_TAG_PAD_X_PX,
   KIND_TAG_PAD_Y_PX,
+  CANVAS_TITLE_FONT,
 } from './constants';
 import { getContrastText } from './canvasEffects';
 import type { CollectedSource, ConnectorPoint, NodeHoverRegion } from './types';
@@ -418,10 +419,12 @@ function drawLineTagText(
   p.fill(colour);
   p.rect(x - width / 2, top, width, height, LINE_TAG_RADIUS_PX * scale);
   p.textAlign(p.CENTER, p.CENTER);
-  p.fill(255);
+  // White text, or dark on a white tag (the main timeline's).
+  const ink = colour.toLowerCase() === '#ffffff' ? 17 : 255;
+  p.fill(ink);
   p.textSize(12 * scale);
   p.text(name, x, top + 13 * scale);
-  p.fill(255, 255 * LINE_TAG_DETAIL_ALPHA);
+  p.fill(ink, 255 * LINE_TAG_DETAIL_ALPHA);
   p.textSize(10 * scale);
   p.text(detail, x, top + 25 * scale);
 }
@@ -450,6 +453,50 @@ function drawKindTagText(
   p.fill(255);
   p.textAlign(p.RIGHT, p.CENTER);
   p.text(text, right - padX, top + height / 2);
+}
+
+// A tag like the kind tag, centred on an item's picture and turned by
+// `angle` (radians) about its centre.
+function drawCentredTagText(
+  p: p5,
+  text: string,
+  centreX: number,
+  centreY: number,
+  zoom: number,
+  angle = 0
+): void {
+  // In the site's serif, a touch larger than the kind tag; one line per
+  // line of `text`, centred.
+  const fontSize = (KIND_TAG_FONT_PX * 1.3) / zoom;
+  const padX = (KIND_TAG_PAD_X_PX * 1.5) / zoom;
+  const padY = KIND_TAG_PAD_Y_PX / zoom;
+  const lines = text.split('\n');
+  const leading = fontSize * 1.05;
+  p.textFont(CANVAS_TITLE_FONT);
+  p.textSize(fontSize);
+  const width = Math.max(...lines.map((line) => p.textWidth(line))) + padX * 2;
+  const height = lines.length * leading + padY * 2;
+  p.push();
+  p.translate(centreX, centreY);
+  p.rotate(angle);
+  // Inverted from the kind tag: white, with its grey for the text, lifted
+  // off the picture by a slight shadow (as the panel's sticker is).
+  const ctx = p.drawingContext as CanvasRenderingContext2D;
+  p.noStroke();
+  p.fill(255);
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.12)';
+  ctx.shadowBlur = 3 * p.pixelDensity();
+  ctx.shadowOffsetY = 1 * p.pixelDensity();
+  p.rect(-width / 2, -height / 2, width, height);
+  ctx.shadowColor = 'rgba(0, 0, 0, 0)';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+  p.fill(KIND_TAG_BACKGROUND);
+  p.textAlign(p.CENTER, p.CENTER);
+  lines.forEach((line, k) =>
+    p.text(line, 0, (k - (lines.length - 1) / 2) * leading)
+  );
+  p.pop();
 }
 
 // Runs `draw` with the canvas label font, then puts the canvas's own font back.
@@ -486,6 +533,12 @@ export function drawCollectedSourcesLabel(
 
 export function drawKindTag(...args: Parameters<typeof drawKindTagText>): void {
   withLabelFont(args[0], () => drawKindTagText(...args));
+}
+
+export function drawCentredTag(
+  ...args: Parameters<typeof drawCentredTagText>
+): void {
+  withLabelFont(args[0], () => drawCentredTagText(...args));
 }
 
 export function drawLineTag(...args: Parameters<typeof drawLineTagText>): void {

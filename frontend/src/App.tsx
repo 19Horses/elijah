@@ -33,6 +33,9 @@ const AppRoutes = () => {
     ((contentId: string) => void) | undefined
   >(undefined);
   const resetViewControlRef = useRef<(() => void) | undefined>(undefined);
+  const soloTimelineControlRef = useRef<(() => void) | undefined>(undefined);
+  // Whether the viewer's own timeline is being shown alone on the map.
+  const [soloTimelineActive, setSoloTimelineActive] = useState(false);
 
   return (
     <>
@@ -48,9 +51,11 @@ const AppRoutes = () => {
         {isTimelineRoute && (
           <Home
             onEntranceComplete={handleEntranceComplete}
+            onSoloTimelineChange={setSoloTimelineActive}
             highlightedContentId={hoveredCollectedContentId}
             focusContentIdControlRef={focusContentIdControlRef}
             resetViewControlRef={resetViewControlRef}
+            soloTimelineControlRef={soloTimelineControlRef}
           />
         )}
       </main>
@@ -59,6 +64,8 @@ const AppRoutes = () => {
           onCollectedItemHover={setHoveredCollectedContentId}
           focusContentIdControlRef={focusContentIdControlRef}
           resetViewControlRef={resetViewControlRef}
+          soloTimelineControlRef={soloTimelineControlRef}
+          soloTimelineActive={soloTimelineActive}
         />
       )}
       <DebugPanel />

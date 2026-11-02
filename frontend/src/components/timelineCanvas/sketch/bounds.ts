@@ -14,8 +14,9 @@ import {
   PADDING_Y,
   PREVIEW_EXPAND_SCALE,
   COLLECTION_ROW_GAP,
+  COLLECTION_ROW_GAP_EXTRA,
 } from '../constants';
-import { getBranchRoute } from '../connectors';
+import { getBranchRoute, getMainConnectorPoints } from '../connectors';
 import { itemAppearScale } from './layoutChange';
 import {
   connectorWeight,
@@ -134,10 +135,11 @@ export type BoundsContext = {
   // collection's not-yet-collected items, evenly spaced and straightened onto
   // the main line — the single source of truth for both where those items are
   // drawn and where the camera frames/focuses them.
+  // `expanded` grows collection items (by content id) about their centres,
+  // each by its own eased 0-1 amount.
   getIsolatedMergedLine: (
     rowIndex: number,
-    expandedContentId?: string | null,
-    expandProgress?: number,
+    expanded?: Map<string, number> | null,
     swap?: number
   ) => IsolatedLine | null;
   invalidateCollected: () => void;
@@ -222,6 +224,32 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
   const collectionSwap = () =>
     runtime.branchIsolateRow !== null ? runtime.branchIsolate : 0;
 
+  // An item of a timeline shown alone eases from its place on the map to its
+  // cell in that timeline's grid, with the solo fade.
+  const inSoloGrid = (key: string, natural: ContentBounds): ContentBounds => {
+    const cell =
+      runtime.branchSolo > 0 ? runtime.soloGrid?.get(key) : undefined;
+    if (!cell) {
+      return natural;
+    }
+    const t = runtime.branchSolo;
+    const eased = t * t * (3 - 2 * t);
+    const lerp = (from: number, to: number) => from + (to - from) * eased;
+    const left = lerp(natural.left, cell.left);
+    const top = lerp(natural.top, cell.top);
+    const width = lerp(natural.width, cell.width);
+    const height = lerp(natural.height, cell.height);
+    return {
+      left,
+      right: left + width,
+      top,
+      width,
+      height,
+      centerY: top + height / 2,
+      dateBottom: top + height + DATE_OFFSET,
+    };
+  };
+
   // Main timeline items are drawn a size up from branch items, still capped
   // (as zooming out grows them) so neighbours never grow into each other.
   const getAllBounds = (swap = collectionSwap()) => {
@@ -231,7 +259,16 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       Math.max(MAIN_ITEM_SCALE, ITEM_ZOOM_OUT_GROWTH_MAX)
     );
     return processed.map((item, index) =>
-      getContentBounds(index, item, itemOffsets[index], slotLeft(index), scale)
+      inSoloGrid(
+        `main:${index}`,
+        getContentBounds(
+          index,
+          item,
+          itemOffsets[index],
+          slotLeft(index),
+          scale
+        )
+      )
     );
   };
 
@@ -973,35 +1010,63 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     mainBounds: ContentBounds[],
     collectedBounds: ContentBounds[]
   ): ConnectorPoint[] => {
-    const ordered = processedCollected
-      .map((item, index) => ({ item, index }))
-      .filter(({ item }) => item.sources.some((s) => s.rowIndex === rowIndex))
-      .sort((a, b) => a.item.anchorTime - b.item.anchorTime);
-
-    const path: ConnectorPoint[] = [];
-    for (const { item, index } of ordered) {
-      const sourceIndex = item.sources.findIndex(
-        (s) => s.rowIndex === rowIndex
-      );
-      if (sourceIndex < 0) {
-        continue;
+    // Every stretch of the timeline — its lines to and from collected items,
+    // and the main line it runs along between them — each running from its
+    // earlier item to its later one, laid end to end from the earliest item.
+    // (Consecutive stretches meet at the same item, so the path only jumps
+    // across that item's picture.)
+    const timeOf = (target: FocusTarget | undefined): number => {
+      if (!target) {
+        return Number.NaN;
       }
-      const segments = getSourceBranchSegments(
-        index,
-        sourceIndex,
-        mainBounds,
-        collectedBounds
-      );
-      // The backward segment (to the predecessor or main line) carries the
-      // forward flow; appending them in order traces the whole branch.
-      const backward = segments[0];
-      if (!backward) {
-        continue;
+      if (target.lane === 'collected') {
+        return processedCollected[target.index]?.anchorTime ?? Number.NaN;
       }
-      const poly = getBranchRoute(backward.from, backward.to, backward);
-      path.push(...poly);
-    }
-    return path;
+      const date = items[target.index]?.date;
+      return date ? new Date(date).getTime() : Number.NaN;
+    };
+    const stretches: { from: number; to: number; points: ConnectorPoint[] }[] =
+      [];
+    processedCollected.forEach((item, index) => {
+      item.sources.forEach((source, sourceIndex) => {
+        if (source.rowIndex !== rowIndex) {
+          return;
+        }
+        getSourceBranchSegments(
+          index,
+          sourceIndex,
+          mainBounds,
+          collectedBounds
+        ).forEach((segment) => {
+          const fromTime = timeOf(segment.fromItemTarget);
+          const toTime = timeOf(segment.toItemTarget);
+          const points = getBranchRoute(segment.from, segment.to, segment);
+          stretches.push(
+            toTime < fromTime
+              ? { from: toTime, to: fromTime, points: [...points].reverse() }
+              : { from: fromTime, to: toTime, points }
+          );
+        });
+      });
+    });
+    getBranchMainTravel(rowIndex).forEach((connector) => {
+      const from = mainBounds[connector];
+      const to = mainBounds[connector + 1];
+      if (!from || !to) {
+        return;
+      }
+      stretches.push({
+        from: timeOf({ lane: 'main', index: connector }),
+        to: timeOf({ lane: 'main', index: connector + 1 }),
+        points: getMainConnectorPoints(
+          { x: from.right, y: from.centerY },
+          { x: to.left, y: to.centerY }
+        ),
+      });
+    });
+    return stretches
+      .sort((a, b) => a.from - b.from || a.to - b.to)
+      .flatMap((stretch) => stretch.points);
   };
 
   // Gaps a branch detours below the main line for (has collected items in). The
@@ -1173,7 +1238,22 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       rowPrevRight.set(rowIndex, baseLeft + width);
       placedRow[index] = rowIndex;
 
-      const rowTop = rowTopForRowIndex(rowIndex, rowGap, rowHeight);
+      // Viewing a collection, the viewer's own items (the only ones showing)
+      // move in to the row nearest the main timeline on their side, easing
+      // with the view.
+      const homeTop = rowTopForRowIndex(rowIndex, rowGap, rowHeight);
+      const rowTop =
+        swap > 0 &&
+        item.sources.some((s) => s.rowIndex === runtime.branchIsolateRow)
+          ? homeTop +
+            (rowTopForRowIndex(
+              rowIndex % 2,
+              rowGap + COLLECTION_ROW_GAP_EXTRA,
+              rowHeight
+            ) -
+              homeTop) *
+              swap
+          : homeTop;
       const baseTop = rowTop + (IMAGE_HEIGHT - height) / 2;
       const offset = collectedOffsets[index];
       // Laid out at base size, then grown about its centre.
@@ -1183,7 +1263,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       const scaledHeight = height * grow;
       const left = baseLeft + offset.dx - (scaledWidth - width) / 2;
       const top = baseTop + offset.dy - (scaledHeight - height) / 2;
-      bounds[index] = {
+      bounds[index] = inSoloGrid(`collected:${index}`, {
         left,
         right: left + scaledWidth,
         centerY: top + scaledHeight / 2,
@@ -1191,7 +1271,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
         width: scaledWidth,
         height: scaledHeight,
         dateBottom: top + scaledHeight + DATE_OFFSET,
-      };
+      });
     }
 
     return bounds;
@@ -1276,8 +1356,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
   // them (view.ts) — kept in bounds.ts so the two can never drift apart.
   const getIsolatedMergedLine = (
     rowIndex: number,
-    expandedContentId: string | null = null,
-    expandProgress = 0,
+    expanded: Map<string, number> | null = null,
     swap = collectionSwap()
   ): IsolatedLine | null => {
     const cb = getCollectedBounds(undefined, swap);
@@ -1325,9 +1404,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
         width: fitted.width * sizeScale,
         height: fitted.height * sizeScale,
         expand:
-          item.contentId === expandedContentId
-            ? 1 + (PREVIEW_EXPAND_SCALE - 1) * expandProgress
-            : 1,
+          1 + (PREVIEW_EXPAND_SCALE - 1) * (expanded?.get(item.contentId) ?? 0),
       };
     };
     // Which of the viewer's items each collection item hangs off, and on which

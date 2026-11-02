@@ -1,7 +1,5 @@
 import type p5 from 'p5';
-import { resetCanvasEffects } from '../canvasEffects';
 import { PRIVATE_BLUR_PX, PRIVATE_PIXEL_CELL_PX } from '../constants';
-import type { GalleryNavRegion } from './galleryController';
 
 type Rect = { left: number; top: number; width: number; height: number };
 
@@ -130,51 +128,4 @@ export function drawGalleryStrip(
   }
 
   ctx.globalAlpha = baseAlpha;
-}
-
-/**
- * Draws prev/next arrows for the gallery, and returns the world-space hit
- * regions for them.
- */
-export function drawGalleryControls(
-  p: p5,
-  ctx: CanvasRenderingContext2D,
-  box: Rect,
-  count: number,
-  alpha: number
-): GalleryNavRegion[] {
-  if (alpha <= 0 || count <= 1) {
-    return [];
-  }
-
-  ctx.globalAlpha = alpha;
-
-  const r = Math.min(box.width, box.height) * 0.07;
-  const inset = r + Math.min(box.width, box.height) * 0.04;
-  const cy = box.top + box.height / 2;
-  const prevCx = box.left + inset;
-  const nextCx = box.left + box.width - inset;
-
-  const drawArrow = (cx: number, pointsLeft: boolean) => {
-    p.noStroke();
-    p.fill(0, 0, 0, 115);
-    p.circle(cx, cy, r * 2);
-    p.fill(255);
-    const s = r * 0.5;
-    if (pointsLeft) {
-      p.triangle(cx + s * 0.5, cy - s, cx + s * 0.5, cy + s, cx - s * 0.7, cy);
-    } else {
-      p.triangle(cx - s * 0.5, cy - s, cx - s * 0.5, cy + s, cx + s * 0.7, cy);
-    }
-  };
-
-  drawArrow(prevCx, true);
-  drawArrow(nextCx, false);
-
-  resetCanvasEffects(ctx);
-
-  return [
-    { cx: prevCx, cy, r, delta: -1 },
-    { cx: nextCx, cy, r, delta: 1 },
-  ];
 }

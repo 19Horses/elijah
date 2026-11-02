@@ -1,14 +1,19 @@
+import { mapTagTilt } from '../../../utils/tilt';
 import type { ItemViewer } from '../../../services/presence';
 import type { ItemCollector } from '../processItems';
 import type p5 from 'p5';
 import {
   countLabelClashes,
+  drawCentredTag,
   drawKindTag,
   type CollectedBy,
   type LabelRect,
 } from '../labels';
 import { formatFullDate } from '../../../utils/formatDate';
-import { getContentTypeColour } from '../../../constants/contentTypes';
+import {
+  getContentTypeColour,
+  getContentTypeKicker,
+} from '../../../constants/contentTypes';
 import {
   applyItemHalo,
   drawBackgroundFade,
@@ -17,7 +22,6 @@ import {
   getCombinedAlpha,
   hexToRgba,
   matchesHighlightedType,
-  mixHex,
   resetCanvasEffects,
   drawGreyOut,
   drawSheen,
@@ -25,20 +29,18 @@ import {
 import {
   BRANCH_DIM_ITEM_ALPHA,
   CANVAS_LABEL_FONT,
-  CANVAS_LABEL_FONT_MEDIUM,
+  CANVAS_TITLE_FONT,
+  ITEM_TITLE_SCALE,
   CONNECTOR_HOVER_THRESHOLD_PX,
   DOT_RADIUS,
   ITEM_LABEL_LETTER_SPACING,
   ITEM_LABEL_LINE_HEIGHT,
   ITEM_WIDTH,
   LOAD_ALPHA_SNAP,
-  MAIN_GLOW_CENTER_LIGHTEN,
   MAIN_GLOW_COLOUR,
-  MAIN_GLOW_STRIP_LENGTH,
-  MAIN_GLOW_STRIP_WIDTH,
-  MAIN_GLOW_TRAVEL_BLUR,
   MAIN_GLOW_TRAVEL_MS,
   MAIN_LINE_COLOUR,
+  MAIN_TAG_COLOUR,
   MAIN_USERNAME,
   ITEM_LABEL_COLOUR,
   ITEM_LABEL_SCALE,
@@ -50,6 +52,14 @@ import {
   VIEWER_DOT_RADIUS_PX,
   VIEWER_DOT_RING_PX,
   SHEEN_STAGGER_MS,
+  ALREADY_COLLECTED_TEXT,
+  ALREADY_COLLECTED_MAX_TILT_DEG,
+  ALREADY_COLLECTED_MIN_TILT_DEG,
+  VIEWER_FLASH_GLOW_PX,
+  VIEWER_FLASH_LAYER_ALPHA,
+  VIEWER_FLASH_LAYERS,
+  VIEWER_FLASH_LENGTH_PX,
+  VIEWER_FLASH_WEIGHT_PX,
 } from '../constants';
 import {
   distanceToPolyline,
@@ -60,11 +70,7 @@ import {
   polylineLength,
 } from '../connectors';
 import { connectorWeight } from '../geometry';
-import {
-  drawContainedImage,
-  drawGalleryControls,
-  drawGalleryStrip,
-} from './drawGalleryControls';
+import { drawContainedImage, drawGalleryStrip } from './drawGalleryControls';
 import type { GalleryController } from './galleryController';
 import { drawPlayPauseButton } from './drawPlayPauseButton';
 import { isFutureDatedItem } from '../timelineRuntime';
@@ -132,14 +138,22 @@ export type MainLaneDrawContext = {
   nodeRegions: NodeHoverRegion[];
   // Multiplier that fades connectors out while a branch is isolated (1 = none).
   isolateOtherAlpha: number;
+  // Everything but an item being collected fades away while it flies in (and
+  // back as it lands).
+  collectFade: number;
   // How far (0-1) item pictures are greyed out and their labels hidden, while
   // a collection is being viewed.
   isolateGrey: number;
   // The viewer's own branch row while a collection is being viewed (its lines
   // stay as the other collectors' fade out), else null.
   isolatedRow: number | null;
+  // The collector whose timeline is shown alone (null otherwise), and the
+  // alpha every line fades to meanwhile.
+  soloRow: number | null;
+  soloOtherAlpha: number;
   // Content ids of the collection being viewed (empty otherwise), whose items
-  // keep their labels while the others' are hidden.
+  // the viewer has still to collect keep their labels while the others' are
+  // hidden.
   collectionContentIds: Set<string>;
   // The focused item's branch nodes on their way out to the viewport edges, or
   // null when every node sits on its item.
@@ -169,8 +183,9 @@ export type DateLabel = {
   // A second line under the text (as strong as it).
   secondary?: string;
   // Font family for the text's own lines (not the lines after it), when
-  // different from `font`.
+  // different from `font`, and their size relative to those lines.
   textFont?: string;
+  textScale?: number;
   // Who collected the item, on a fainter line after that.
   collectedBy?: CollectedBy;
   // Widest (world units) the text may run before wrapping onto more lines.
@@ -259,22 +274,6 @@ export function placeViewerDots(
   });
 }
 
-// The kind of an item, in caps, for the tag in its image's bottom-right corner.
-export function contentKicker(type: ContentType): string | undefined {
-  switch (type) {
-    case 'imageAsset':
-      return 'PHOTOS';
-    case 'audioAsset':
-      return 'MUSIC';
-    case 'newsletter':
-      return 'LETTER';
-    case 'event':
-      return 'EVENT';
-    default:
-      return undefined;
-  }
-}
-
 export type MainLaneDrawResult = {
   hoveredMain: number;
   mainConnectorHover: boolean;
@@ -342,23 +341,17 @@ export function drawMainTimelineGlow(
   mainBounds: ContentBounds[],
   collectedBounds: ContentBounds[]
 ): void {
-  const { processedCollected, runtime } = deps;
+  const { runtime } = deps;
 
   let path: ConnectorPoint[] | null = null;
-  let glowColour = MAIN_GLOW_COLOUR;
 
   // Only trace the branch the view is clicked/zoomed into. The strip no longer
-  // follows a hovered branch or the logged-in viewer's own branch by default.
-  const rowIndex = runtime.focusedBranchRow ?? -1;
+  // follows a hovered branch or the logged-in viewer's own branch by default,
+  // nor runs while a timeline is shown alone (its lines are hidden).
+  const rowIndex =
+    runtime.branchSoloRow === null ? runtime.focusedBranchRow ?? -1 : -1;
 
   if (rowIndex >= 0) {
-    for (const item of processedCollected) {
-      const source = item.sources.find((s) => s.rowIndex === rowIndex);
-      if (source) {
-        glowColour = source.colour;
-        break;
-      }
-    }
     const rowPath = boundsCtx.getUserTimelinePath(
       rowIndex,
       mainBounds,
@@ -380,18 +373,12 @@ export function drawMainTimelineGlow(
     return;
   }
   const t = (p.millis() % MAIN_GLOW_TRAVEL_MS) / MAIN_GLOW_TRAVEL_MS;
-  // A bright strip of the line travels along the path, like a pulse in a wire.
-  // The head runs from before the start to past the end so it eases in and out.
-  const headDist =
-    t * (total + 2 * MAIN_GLOW_STRIP_LENGTH) - MAIN_GLOW_STRIP_LENGTH;
-  const strip = extractSubPath(
-    path,
-    Math.max(0, headDist - MAIN_GLOW_STRIP_LENGTH),
-    Math.min(total, headDist)
-  );
-  if (strip.length < 2) {
-    return;
-  }
+  // A white flash runs along the path, like a viewer's flash between items:
+  // brightest in its middle, fading to nothing at either end. It runs from
+  // before the start to past the end, so it slides in and out.
+  const { zoom } = runtime;
+  const flashLength = VIEWER_FLASH_LENGTH_PX / zoom;
+  const middle = t * (total + flashLength) - flashLength / 2;
 
   const ctx = p.drawingContext as CanvasRenderingContext2D;
   ctx.save();
@@ -405,18 +392,29 @@ export function drawMainTimelineGlow(
     ctx.rect(b.left, b.top, b.width, b.height);
   }
   ctx.clip('evenodd');
-  ctx.shadowBlur = MAIN_GLOW_TRAVEL_BLUR;
-  ctx.shadowColor = glowColour;
-  p.noFill();
-  p.strokeWeight(MAIN_GLOW_STRIP_WIDTH);
-  p.strokeCap(p.ROUND);
-  // Gradient along the strip: base colour at the ends, lightened in the centre.
-  const segments = strip.length - 1;
-  for (let i = 0; i < segments; i++) {
-    const frac = (i + 0.5) / segments;
-    const centre = 1 - Math.abs(frac - 0.5) * 2;
-    p.stroke(mixHex(glowColour, '#ffffff', centre * MAIN_GLOW_CENTER_LIGHTEN));
-    p.line(strip[i].x, strip[i].y, strip[i + 1].x, strip[i + 1].y);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = VIEWER_FLASH_WEIGHT_PX / zoom;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.shadowColor = '#ffffff';
+  ctx.shadowBlur = VIEWER_FLASH_GLOW_PX * p.pixelDensity();
+  ctx.globalAlpha = VIEWER_FLASH_LAYER_ALPHA;
+  // Stacked strokes, each shorter than the last, build up to brightest in the
+  // middle.
+  for (let k = 0; k < VIEWER_FLASH_LAYERS; k++) {
+    const half = (flashLength / 2) * (1 - k / VIEWER_FLASH_LAYERS);
+    const strip = extractSubPath(
+      path,
+      Math.max(0, middle - half),
+      Math.min(total, middle + half)
+    );
+    if (strip.length < 2) {
+      continue;
+    }
+    ctx.beginPath();
+    ctx.moveTo(strip[0].x, strip[0].y);
+    strip.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+    ctx.stroke();
   }
   ctx.restore();
 }
@@ -580,6 +578,10 @@ export function drawMainLaneItems(
     const isExternallyHighlighted =
       deps.items[index]._id === ctx.highlightedMainContentId;
 
+    // The halo and picture get a canvas state of their own: Safari otherwise
+    // paints faded pictures drawn after a cleared shadow at full strength, so
+    // pictures fading out stayed solid until they vanished.
+    p.push();
     if (ctx.isFocusActive && ctx.isFocusedTarget('main', index)) {
       // Selected image: no coloured glow, just the halo.
       applyItemHalo(p, mainCtx, visibilityAlpha, haloScreenY);
@@ -634,6 +636,7 @@ export function drawMainLaneItems(
       }
     }
 
+    p.pop();
     resetCanvasEffects(mainCtx);
 
     // Viewing a collection greys out every picture of the viewer's own (the
@@ -649,8 +652,14 @@ export function drawMainLaneItems(
         imageAlpha
       );
     }
-    // The collection's own items catch a sweeping sheen while it's viewed.
-    if (ctx.collectionContentIds.has(deps.items[index]._id)) {
+    // The collection's items the viewer has still to collect catch a
+    // sweeping sheen while it's viewed.
+    const toCollect =
+      ctx.collectionContentIds.has(deps.items[index]._id) &&
+      !deps.refs.collectorsRef.current
+        ?.get(deps.items[index]._id)
+        ?.some((collector) => collector.username === deps.currentUsername);
+    if (toCollect) {
       drawSheen(
         mainCtx,
         imageLeft,
@@ -712,6 +721,31 @@ export function drawMainLaneItems(
       resetCanvasEffects(mainCtx);
     }
 
+    // One of the collection's the viewer already has says so while it's
+    // viewed, over its border.
+    if (
+      ctx.collectionContentIds.has(deps.items[index]._id) &&
+      !toCollect &&
+      ctx.isolateGrey > 0
+    ) {
+      mainCtx.globalAlpha = ctx.isolateGrey * imageAlpha;
+      drawCentredTag(
+        p,
+        ALREADY_COLLECTED_TEXT,
+        imageLeft + width / 2,
+        top + height / 2,
+        deps.runtime.zoom,
+        (mapTagTilt(
+          deps.items[index]._id,
+          ALREADY_COLLECTED_MAX_TILT_DEG,
+          ALREADY_COLLECTED_MIN_TILT_DEG
+        ) *
+          Math.PI) /
+          180
+      );
+      resetCanvasEffects(mainCtx);
+    }
+
     // The item's title over its date, deferred so it renders
     // above the connectors/nodes; hidden on the item being viewed.
     if (
@@ -722,11 +756,9 @@ export function drawMainLaneItems(
       )
     ) {
       // The kind tag and label are hidden while a collection is being viewed,
-      // unless it's one of the collection's own items.
-      const labelHide = ctx.collectionContentIds.has(deps.items[index]._id)
-        ? 0
-        : ctx.isolateGrey;
-      const kind = contentKicker(item.contentType);
+      // unless it's one of its items the viewer has still to collect.
+      const labelHide = toCollect ? 0 : ctx.isolateGrey;
+      const kind = getContentTypeKicker(item.contentType);
       if (kind && labelHide < 1) {
         mainCtx.globalAlpha =
           (ctx.isTypeHighlightActive && !typeMatch
@@ -750,7 +782,8 @@ export function drawMainLaneItems(
           font: CANVAS_LABEL_FONT,
           scale: ITEM_LABEL_SCALE,
           letterSpacing: ITEM_LABEL_LETTER_SPACING,
-          textFont: CANVAS_LABEL_FONT_MEDIUM,
+          textFont: CANVAS_TITLE_FONT,
+          textScale: ITEM_TITLE_SCALE,
           collectedBy: collectedByFor(
             deps.refs.collectorsRef.current?.get(deps.items[index]._id)
           ),
@@ -819,19 +852,6 @@ export function drawMainLaneItems(
         r: buttonR,
         src: item.audioUrl,
       });
-    }
-
-    // Gallery navigation arrows, fixed to the item's slot so they don't shift
-    // position as differently-shaped images are navigated to.
-    if (galleryActive && galleryImages) {
-      const regions = drawGalleryControls(
-        p,
-        mainCtx,
-        { left: imageLeft, top, width, height },
-        item.galleryUrls.length,
-        visibilityAlpha
-      );
-      gallery.setNavRegions(regions);
     }
   });
 }
@@ -918,7 +938,7 @@ export function drawMainLaneConnectorDots(
           ...dFrom,
           title: deps.processed[index + 1].title,
           timeline: MAIN_USERNAME,
-          colour: MAIN_LINE_COLOUR,
+          colour: MAIN_TAG_COLOUR,
           target: { lane: 'main', index: index + 1 },
         });
       }
@@ -927,7 +947,7 @@ export function drawMainLaneConnectorDots(
           ...dTo,
           title: deps.processed[index].title,
           timeline: MAIN_USERNAME,
-          colour: MAIN_LINE_COLOUR,
+          colour: MAIN_TAG_COLOUR,
           target: { lane: 'main', index },
         });
       }

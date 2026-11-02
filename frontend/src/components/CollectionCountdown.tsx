@@ -9,6 +9,12 @@ import { getDisplayColour } from '../services/userColor';
 type CollectionCountdownProps = {
   collection: Collection;
   onClick?: () => void;
+  // Whether its items are showing, which then stand in for the summary of
+  // what's in it.
+  open?: boolean;
+  // Shown inside the box under its details (the collection's items, when
+  // it's open).
+  children?: React.ReactNode;
 };
 
 function formatCountdown(ms: number): string {
@@ -28,9 +34,31 @@ function formatCountdown(ms: number): string {
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 }
 
+// What a collection holds, by kind, e.g. "4 photos, 1 video, 2 letters".
+const CONTENT_KINDS: [type: string, one: string, many: string][] = [
+  ['imageAsset', 'photo', 'photos'],
+  ['videoAsset', 'video', 'videos'],
+  ['audioAsset', 'track', 'tracks'],
+  ['newsletter', 'letter', 'letters'],
+  ['event', 'event', 'events'],
+];
+
+function describeContents(collection: Collection): string {
+  const counts = new Map<string, number>();
+  (collection.content ?? []).forEach((item) => {
+    counts.set(item._type, (counts.get(item._type) ?? 0) + 1);
+  });
+  return CONTENT_KINDS.flatMap(([type, one, many]) => {
+    const count = counts.get(type) ?? 0;
+    return count > 0 ? [`${count} ${count === 1 ? one : many}`] : [];
+  }).join(', ');
+}
+
 function CollectionCountdown({
   collection,
   onClick,
+  open = false,
+  children,
 }: CollectionCountdownProps) {
   const [remaining, setRemaining] = useState<number>(() => {
     const expiresAt = getEffectiveExpiresAt(collection);
@@ -75,27 +103,56 @@ function CollectionCountdown({
   if (remaining <= 0) return null;
 
   const colour = getDisplayColour();
+  const contents = describeContents(collection);
 
   return (
-    <button
-      type="button"
+    <div
       className={`collection-countdown${
         isVisible ? ' collection-countdown--visible' : ''
       }`}
       style={{ '--countdown-tint': colour } as React.CSSProperties}
-      aria-live="polite"
-      aria-atomic="true"
-      onMouseDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick?.();
-      }}
     >
-      <span className="collection-countdown__label">{collection.name}</span>
-      <span className="collection-countdown__timer">
-        {formatCountdown(remaining)}
-      </span>
-    </button>
+      <button
+        type="button"
+        className="collection-countdown__toggle"
+        aria-live="polite"
+        aria-atomic="true"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick?.();
+        }}
+      >
+        <span className="collection-countdown__header">
+          <span className="collection-countdown__new">NEW COLLECTION!</span>
+          <span className="collection-countdown__timer">
+            {formatCountdown(remaining)}
+          </span>
+        </span>
+        <span className="collection-countdown__label">{collection.name}</span>
+        {collection.imageUrl && (
+          <img
+            className="collection-countdown__image"
+            src={collection.imageUrl}
+            alt=""
+            style={
+              collection.imageDimensions
+                ? { aspectRatio: collection.imageDimensions.aspectRatio }
+                : undefined
+            }
+          />
+        )}
+        {collection.description && (
+          <span className="collection-countdown__description">
+            {collection.description}
+          </span>
+        )}
+        {contents && !open && (
+          <span className="collection-countdown__contents">{contents}</span>
+        )}
+      </button>
+      {children}
+    </div>
   );
 }
 
