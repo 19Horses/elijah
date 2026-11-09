@@ -75,6 +75,7 @@ import {
   collectedByFor,
   placeViewerDots,
   type MainLaneDrawContext,
+  growAboutCentre,
 } from './drawMainLane';
 
 export type CollectedLaneDrawResult = {
@@ -375,10 +376,9 @@ export function drawCollectedLaneItems(
       return;
     }
 
-    const { left, top, width, height } = ctx.getDetailDrawBounds(
-      'collected',
-      index,
-      collectedBounds[index]
+    const { left, top, width, height } = growAboutCentre(
+      ctx.getDetailDrawBounds('collected', index, collectedBounds[index]),
+      ctx.itemHoverGrow('collected', index)
     );
     const img = loadedCollectedImages[index];
     const typeMatch = matchesHighlightedType(

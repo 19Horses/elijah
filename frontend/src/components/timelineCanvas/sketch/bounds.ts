@@ -293,17 +293,24 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
   // instead of overlapping it (see timeToWorldX) — unlike a chain after the
   // last main item, which has nothing later to collide with and so is left
   // alone.
-  let gapExtraSlotsCache: { extra: number[]; extraBeforeFirst: number } | null =
-    null;
+  let gapExtraSlotsCache: {
+    extra: number[];
+    extraBeforeFirst: number;
+    beforeFirstTimes: number[];
+  } | null = null;
   const getGapExtraSlots = (): {
     extra: number[];
     extraBeforeFirst: number;
+    // The distinct dates of the timelines' starting items that come before
+    // the first main item, so each gets its own column there.
+    beforeFirstTimes: number[];
   } => {
     if (gapExtraSlotsCache) {
       return gapExtraSlotsCache;
     }
     const extra = new Array<number>(Math.max(items.length, 1)).fill(0);
     let extraBeforeFirst = 0;
+    const beforeFirst = new Set<number>();
     const depthCache = new Map<number, number>();
     const depthOf = (index: number): number => {
       const cached = depthCache.get(index);
@@ -318,6 +325,9 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     processedCollected.forEach((item, index) => {
       const gap = getPreviousMainIndex(item.anchorTime);
       if (gap === -1) {
+        if (getChainPredecessorIndex(index) < 0) {
+          beforeFirst.add(item.anchorTime);
+        }
         const depth = depthOf(index);
         if (depth > 1 && depth > extraBeforeFirst) {
           extraBeforeFirst = depth;
@@ -338,7 +348,11 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
         extra[gap] = depth;
       }
     });
-    gapExtraSlotsCache = { extra, extraBeforeFirst };
+    gapExtraSlotsCache = {
+      extra,
+      extraBeforeFirst,
+      beforeFirstTimes: [...beforeFirst],
+    };
     return gapExtraSlotsCache;
   };
 
@@ -377,8 +391,12 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       // A chain rooted here grows rightward from this point (see
       // getCollectedBounds), so a deep chain needs a head start further left
       // of the first main item, not just a single step, to clear it entirely.
-      const { extraBeforeFirst } = getGapExtraSlots();
-      return slotCenterX(0) - step * extraBeforeFirst - step / 2;
+      // Everything from before the first main item would otherwise share
+      // one spot there, stacked up whatever its date: each date gets its own
+      // column instead, the earliest furthest left.
+      const { extraBeforeFirst, beforeFirstTimes } = getGapExtraSlots();
+      const later = beforeFirstTimes.filter((time) => time > targetTime).length;
+      return slotCenterX(0) - step * (extraBeforeFirst + later) - step / 2;
     }
 
     const prev = firstFuture - 1;
@@ -1227,6 +1245,72 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     return slots;
   };
 
+  // Which row each collector's timeline sits in. Each keeps its side of the
+  // main line (by its own row's parity), but collectors whose lines don't
+  // overlap left to right share a row, nearest the main line first, rather
+  // than each taking a row of its own further out.
+  const collectorLanes = (): Map<number, number> => {
+    const mainBounds = getAllBounds();
+    type Extent = { left: number; right: number };
+    // What each row holds: its items (whose labels hang below them), and the
+    // stretches of line to them, each running from the main item before it to
+    // the one after. (A line to an item several collected runs along that
+    // item's row, which is its first collector's.)
+    const stretches = new Map<number, Extent[]>();
+    const tiles = new Map<number, Extent[]>();
+    processedCollected.forEach((item) => {
+      const centre = timeToWorldX(item.anchorTime);
+      const tile = {
+        left: centre - ITEM_WIDTH / 2,
+        right: centre + ITEM_WIDTH / 2,
+      };
+      let { left, right } = tile;
+      const prev = getPreviousMainIndex(item.anchorTime);
+      if (prev >= 0 && mainBounds[prev]) {
+        left = Math.min(left, mainBounds[prev].right);
+      }
+      if (mainBounds[prev + 1]) {
+        right = Math.max(right, mainBounds[prev + 1].left);
+      }
+      const row = item.rowIndex;
+      stretches.set(row, [...(stretches.get(row) ?? []), { left, right }]);
+      tiles.set(row, [...(tiles.get(row) ?? []), tile]);
+    });
+    const apart = (a: Extent, b: Extent) =>
+      a.right + ITEM_GAP <= b.left || a.left >= b.right + ITEM_GAP;
+    const allApart = (as: Extent[], bs: Extent[]) =>
+      as.every((a) => bs.every((b) => apart(a, b)));
+    const lanes = new Map<number, number>();
+    // Per side, what's already in each of its rows (nearest first).
+    const taken: { stretches: Extent[]; tiles: Extent[] }[][] = [[], []];
+    [...stretches.keys()]
+      .sort((a, b) => a - b)
+      .forEach((rowIndex) => {
+        const ownStretches = stretches.get(rowIndex) ?? [];
+        const ownTiles = tiles.get(rowIndex) ?? [];
+        const side = rowIndex % 2;
+        const slots = taken[side];
+        // Its lines clear of those already in the row, and its items clear
+        // of those in the rows either side, so no label hangs over another
+        // item's picture.
+        const fits = (slot: number) =>
+          allApart(ownStretches, slots[slot]?.stretches ?? []) &&
+          allApart(ownTiles, slots[slot - 1]?.tiles ?? []) &&
+          allApart(ownTiles, slots[slot + 1]?.tiles ?? []);
+        let slot = 0;
+        while (!fits(slot)) {
+          slot += 1;
+        }
+        while (slots.length <= slot) {
+          slots.push({ stretches: [], tiles: [] });
+        }
+        slots[slot].stretches.push(...ownStretches);
+        slots[slot].tiles.push(...ownTiles);
+        lanes.set(rowIndex, slot * 2 + side);
+      });
+    return lanes;
+  };
+
   const getCollectedBounds = (
     rowGrowthOverride?: number,
     swap = collectionSwap()
@@ -1275,6 +1359,8 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
         ? collectionSlotCentres(runtime.branchIsolateRow)
         : null;
 
+    const laneFor = collectorLanes();
+
     // Place in chronological order so a chain's predecessor is positioned
     // before the items that attach next to it.
     const order = processedCollected
@@ -1307,7 +1393,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
         const columnLeft = bounds[predecessor].right + ITEM_GAP;
         baseLeft = columnLeft + (ITEM_WIDTH - width) / 2;
       } else {
-        rowIndex = item.rowIndex;
+        rowIndex = laneFor.get(item.rowIndex) ?? item.rowIndex;
         baseLeft = timeToWorldX(item.anchorTime) - width / 2;
       }
 

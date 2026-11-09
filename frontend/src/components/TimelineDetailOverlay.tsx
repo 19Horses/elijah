@@ -210,14 +210,16 @@ function TimelineDetailOverlay({
   // picture.
   const infoBeside = detail.isAudio || isGallery;
 
-  // The way back out to the whole map, above the picture: heading the title
-  // when that sits above it too, else on its own.
+  // The way back out to the whole map: heading the title when that sits
+  // above the picture, or heading the photo gallery's info column; else on
+  // its own above the picture.
   const metaAbove = !infoBeside && !isNewsletter;
+  const backHeadsTitle = metaAbove || isGallery;
   const backNode = onBack ? (
     <button
       type="button"
       className={`timeline-detail__back${
-        metaAbove ? '' : ' timeline-detail__back--alone'
+        backHeadsTitle ? '' : ' timeline-detail__back--alone'
       }`}
       onClick={onBack}
     >
@@ -249,7 +251,7 @@ function TimelineDetailOverlay({
         height: `${imageRect.height}px`,
       }}
     >
-      {metaAbove ? null : backNode}
+      {backHeadsTitle ? null : backNode}
       {isGallery ? (
         <div
           className="timeline-detail__gallery"
@@ -311,6 +313,7 @@ function TimelineDetailOverlay({
             paddingBottom: `${imageRect.top}px`,
           }}
         >
+          {isGallery ? backNode : null}
           <h2 className="timeline-detail__title">{detail.title}</h2>
           {detail.dateLabel ? (
             <p className="timeline-detail__date">{detail.dateLabel}</p>

@@ -289,6 +289,9 @@ export const MAX_ZOOM_LEVEL = 1.2;
 // from the first of these zooms to the second.
 export const SUBLABEL_SHOW_ZOOM = 0.34;
 export const SUBLABEL_HIDE_ZOOM = 0.3;
+// A hovered item's picture grows by this share of its size, over this long.
+export const ITEM_HOVER_GROW = 0.06;
+export const ITEM_HOVER_GROW_MS = 180;
 // How strongly nodes and connector lines grow as the camera zooms out below
 // the default fit level. 1 = they merely hold their on-screen size instead of
 // shrinking; >1 = they actively grow larger the further out you zoom.

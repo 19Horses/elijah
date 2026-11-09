@@ -22,6 +22,12 @@ export type TimelineCanvasProps = {
   highlightedPreviewContentId?: string | null;
   centerOnPreviewContentId?: string | null;
   highlightedMainContentId?: string | null;
+  // An item (by content id) hovered outside the canvas (its card in the left
+  // column), whose picture grows on the map as though hovered there.
+  hoveredItemContentId?: string | null;
+  // Whether the left column has collection boxes to show on the world view,
+  // so the map can leave room for them before they render.
+  hasCollectionPanel?: boolean;
   // Who's currently viewing each item, by slug.
   viewersBySlug?: Map<string, ItemViewer[]>;
   focusContentIdControlRef?: MutableRefObject<
@@ -95,9 +101,11 @@ export type DetailImageRect = {
 export type BranchFocusInfo = {
   username: string;
   colour: string;
-  // Their timeline shown alone (from their name in the menu), rather than
-  // zoomed into from the map.
-  alone: boolean;
+  // The viewer's own timeline (the menu then offers the way back to the
+  // world view).
+  own: boolean;
+  // The main timeline items it branches off, rejoins or runs along.
+  mainItemIds: string[];
 };
 
 // The persistent mini-player state: the loaded audio track's metadata, shown
@@ -446,6 +454,8 @@ export type TimelineSketchRefs = {
   highlightedPreviewIdRef: RefObject<string | null>;
   centerOnPreviewIdRef: RefObject<string | null>;
   highlightedMainContentIdRef: RefObject<string | null>;
+  hoveredItemContentIdRef: RefObject<string | null>;
+  hasCollectionPanelRef: RefObject<boolean>;
   viewersRef: RefObject<Map<string, ItemViewer[]>>;
   // Who has collected each item, by content id, most recent first.
   collectorsRef: RefObject<Map<string, ItemCollector[]>>;

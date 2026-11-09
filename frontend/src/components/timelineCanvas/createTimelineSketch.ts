@@ -6,6 +6,8 @@ import {
 } from './constants';
 import garamondUrl from '../../EBGaramond-Regular.ttf';
 import type {
+  ContentBounds,
+  FocusTarget,
   ProcessedCollected,
   ProcessedCollectionPreview,
   TimelineSketchDeps,
@@ -109,6 +111,57 @@ export function createTimelineSketch(
         );
       });
     };
+    // An open item stays put through a layout change (someone collecting,
+    // its own collect landing): rather than ease across to its new place —
+    // flying off from under its details — it moves there at once, and the
+    // view moves with it, so nothing shifts on screen.
+    // (`measure` must be how `before` was taken.)
+    const holdItemInPlace = (
+      target: FocusTarget | null,
+      before: ContentBounds | null,
+      measure: (target: FocusTarget) => ContentBounds = view.getFocusBounds
+    ) => {
+      const { runtime } = deps;
+      if (!before || !target || target.lane === 'preview') {
+        return;
+      }
+      const shift = runtime.layoutChange.shift;
+      if (target.lane === 'collected') {
+        if (shift?.collected[target.index]) {
+          shift.collected[target.index] = { dx: 0, dy: 0 };
+        }
+        const offset = deps.collectedOffsets[target.index];
+        if (offset) {
+          offset.dx = 0;
+          offset.dy = 0;
+        }
+      } else {
+        if (shift?.main[target.index]) {
+          shift.main[target.index] = { dx: 0, dy: 0 };
+        }
+        const offset = deps.itemOffsets[target.index];
+        if (offset) {
+          offset.dx = 0;
+          offset.dy = 0;
+        }
+      }
+      const after = measure(target);
+      const dx = after.left - before.left;
+      const dy = after.centerY - before.centerY;
+      if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) {
+        return;
+      }
+      runtime.cameraX += dx;
+      runtime.cameraY += dy;
+      runtime.targetCameraX += dx;
+      runtime.targetCameraY += dy;
+      runtime.animationWorldX += dx;
+      runtime.animationWorldY += dy;
+      runtime.animationStartCameraX += dx;
+      runtime.animationStartCameraY += dy;
+      runtime.panTargetCameraX += dx;
+      runtime.panTargetCameraY += dy;
+    };
     deps.refs.reloadCollectedRef.current = (items) => {
       const { runtime } = deps;
       const reuse = new Map<string, p5.Image>();
@@ -132,6 +185,18 @@ export function createTimelineSketch(
         runtime.focusTarget?.lane === 'collected'
           ? deps.processedCollected[runtime.focusTarget.index]?.contentId
           : undefined;
+      // Where an open item sits now, to keep it there on screen however the
+      // new layout moves it.
+      const focusedBefore =
+        runtime.focusTarget && runtime.focusTarget.lane !== 'preview'
+          ? view.getFocusBounds(runtime.focusTarget)
+          : null;
+      // Likewise the viewer's just-collected item while it waits, landed, to
+      // open: the camera's been set to hold it where it came to rest.
+      const returningBefore =
+        runtime.collectReturnIndex !== -1 && runtime.focusTarget === null
+          ? boundsCtx.getCollectedBounds()[runtime.collectReturnIndex] ?? null
+          : null;
 
       deps.processedCollected.splice(
         0,
@@ -160,6 +225,7 @@ export function createTimelineSketch(
           runtime.focusTarget = { lane: 'collected', index };
         }
       }
+      holdItemInPlace(runtime.focusTarget, focusedBefore);
 
       const collectContentId = runtime.collectContentId;
       if (!collectContentId) {
@@ -181,6 +247,11 @@ export function createTimelineSketch(
           view.animateToFitView();
         } else {
           runtime.collectReturnIndex = collectedIndex;
+          holdItemInPlace(
+            { lane: 'collected', index: collectedIndex },
+            returningBefore,
+            (target) => boundsCtx.getCollectedBounds()[target.index]
+          );
         }
       } else if (runtime.collectReported && runtime.collectFinalRect) {
         if (

@@ -61,6 +61,7 @@ import {
   SOLO_GRID_TEXT_SIZE,
   SUBLABEL_HIDE_ZOOM,
   SUBLABEL_SHOW_ZOOM,
+  ITEM_HOVER_GROW_MS,
 } from '../constants';
 import {
   getBranchRoute,
@@ -274,6 +275,10 @@ export function createDrawFrameHandler(
   // How far each hovered (or lately hovered) collection item has grown, 0-1
   // linearly over PREVIEW_EXPAND_MS; it's eased in and out when applied.
   const previewExpandProgress = new Map<string, number>();
+  // How far each hovered (or lately hovered) item's picture has grown, 0-1
+  // linearly over ITEM_HOVER_GROW_MS; eased when applied.
+  const itemHoverProgress = new Map<string, number>();
+  const itemHoverEased = new Map<string, number>();
 
   const reportAudioState = (isFocusActive: boolean) => {
     const current = deps.audio.getCurrent();
@@ -775,6 +780,8 @@ export function createDrawFrameHandler(
       },
       soloRow,
       soloOtherAlpha: soloFade,
+      itemHoverGrow: (lane, index) =>
+        itemHoverEased.get(`${lane}:${index}`) ?? 0,
       // A hovered main line thickens to double width, easing with its tag, and
       // so does any stretch a hovered branch's timeline runs along.
       mainConnectorGrow: (connectorIndex: number) => {
@@ -1175,6 +1182,51 @@ export function createDrawFrameHandler(
       });
     };
     updateLineTags();
+
+    // The hovered item's picture grows a touch (not while one's being viewed),
+    // easing in and back out.
+    {
+      // (Or the one whose card is hovered in the left column.)
+      const cardHoveredId = deps.refs.hoveredItemContentIdRef.current;
+      const cardHoveredKey = (() => {
+        if (!cardHoveredId) {
+          return null;
+        }
+        const mainIndex = deps.items.findIndex(
+          (item) => item._id === cardHoveredId
+        );
+        if (mainIndex !== -1) {
+          return `main:${mainIndex}`;
+        }
+        const collectedIndex = deps.processedCollected.findIndex(
+          (item) => item.contentId === cardHoveredId
+        );
+        return collectedIndex !== -1 ? `collected:${collectedIndex}` : null;
+      })();
+      const hoveredKey = isFocusActive
+        ? null
+        : mainHover.hoveredMain !== -1
+        ? `main:${mainHover.hoveredMain}`
+        : collectedHover.hoveredCollected !== -1 &&
+          collectedHover.hoveredCollectedIsImage
+        ? `collected:${collectedHover.hoveredCollected}`
+        : cardHoveredKey;
+      if (hoveredKey && !itemHoverProgress.has(hoveredKey)) {
+        itemHoverProgress.set(hoveredKey, 0);
+      }
+      const step = Math.min(p.deltaTime, 100) / ITEM_HOVER_GROW_MS;
+      itemHoverEased.clear();
+      itemHoverProgress.forEach((progress, key) => {
+        const next =
+          key === hoveredKey ? Math.min(1, progress + step) : progress - step;
+        if (next <= 0) {
+          itemHoverProgress.delete(key);
+          return;
+        }
+        itemHoverProgress.set(key, next);
+        itemHoverEased.set(key, 1 - (1 - next) ** 3);
+      });
+    }
 
     // Viewers' flashes along the timelines, passing behind the items — only
     // on the map, not while an item is being zoomed into or viewed.

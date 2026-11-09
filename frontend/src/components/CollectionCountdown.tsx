@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Collection } from '../queries/collection';
 import {
   DEBUG_TIMERS_EVENT,
@@ -17,6 +18,9 @@ type CollectionCountdownProps = {
   // Shown inside the box under its details (the collection's items, when
   // it's open).
   children?: React.ReactNode;
+  // Shown beside the mouse over the box when it can't be opened yet (to
+  // someone signed out), saying what to do first.
+  cursorLabel?: string | null;
 };
 
 function formatCountdown(ms: number): string {
@@ -45,7 +49,7 @@ const CONTENT_KINDS: [type: string, one: string, many: string][] = [
   ['event', 'event', 'events'],
 ];
 
-function describeContents(collection: Collection): string {
+export function describeContents(collection: Collection): string {
   const counts = new Map<string, number>();
   (collection.content ?? []).forEach((item) => {
     counts.set(item._type, (counts.get(item._type) ?? 0) + 1);
@@ -61,7 +65,35 @@ function CollectionCountdown({
   onClick,
   open = false,
   children,
+  cursorLabel = null,
 }: CollectionCountdownProps) {
+  // Where the mouse is over the box, for the label that follows it.
+  const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  // The box can stop taking the mouse without it ever leaving (the column
+  // hides while an item is open), so watch where the mouse goes from here
+  // and drop the label once it's anywhere else.
+  useEffect(() => {
+    if (!pointer) {
+      return;
+    }
+    const onMove = (event: PointerEvent) => {
+      const toggle = toggleRef.current;
+      if (
+        !toggle ||
+        !(event.target instanceof Node) ||
+        !toggle.contains(event.target)
+      ) {
+        setPointer(null);
+      }
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerdown', onMove);
+    return () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerdown', onMove);
+    };
+  }, [pointer]);
   const [remaining, setRemaining] = useState<number>(() => {
     const expiresAt = getEffectiveExpiresAt(collection);
     if (!expiresAt) return 0;
@@ -114,19 +146,33 @@ function CollectionCountdown({
       }`}
       style={{ '--countdown-tint': colour } as React.CSSProperties}
     >
+      {cursorLabel && pointer && isVisible
+        ? createPortal(
+            <span
+              className="cursor-label"
+              style={{ left: `${pointer.x}px`, top: `${pointer.y}px` }}
+            >
+              {cursorLabel}
+            </span>,
+            document.body
+          )
+        : null}
       <button
         type="button"
+        ref={toggleRef}
         className="collection-countdown__toggle"
         aria-live="polite"
         aria-atomic="true"
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();
+          setPointer(null);
           onClick?.();
         }}
+        onMouseMove={(e) => setPointer({ x: e.clientX, y: e.clientY })}
+        onMouseLeave={() => setPointer(null)}
       >
         <span className="collection-countdown__header">
-          <span className="collection-countdown__new">NEW COLLECTION!</span>
           <span className="collection-countdown__timer">
             {formatCountdown(remaining)}
           </span>

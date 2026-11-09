@@ -130,6 +130,9 @@ export function buildProcessedCollected(
         }
         existing.sources.push(source);
         existing.rowIndex = Math.min(existing.rowIndex, rowIndex);
+        // Private to the viewer only while no copy of it says otherwise (the
+        // one they've just collected doesn't).
+        existing.isPrivate = existing.isPrivate && item.content.isPrivate;
         return;
       }
 

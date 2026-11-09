@@ -61,6 +61,7 @@ import {
   VIEWER_FLASH_LAYERS,
   VIEWER_FLASH_LENGTH_PX,
   VIEWER_FLASH_WEIGHT_PX,
+  ITEM_HOVER_GROW,
 } from '../constants';
 import {
   distanceToPolyline,
@@ -152,6 +153,8 @@ export type MainLaneDrawContext = {
   // alpha every line fades to meanwhile.
   soloRow: number | null;
   soloOtherAlpha: number;
+  // How far a hovered item's picture has grown (0-1, eased).
+  itemHoverGrow: (lane: 'main' | 'collected', index: number) => number;
   // Content ids of the collection being viewed (empty otherwise), whose items
   // the viewer has still to collect keep their labels while the others' are
   // hidden.
@@ -273,6 +276,26 @@ export function placeViewerDots(
       alpha,
     });
   });
+}
+
+// `bounds` grown about its centre by ITEM_HOVER_GROW times `grow` (0-1), for
+// a hovered item's picture.
+export function growAboutCentre<
+  T extends { left: number; top: number; width: number; height: number }
+>(bounds: T, grow: number): T {
+  if (grow <= 0) {
+    return bounds;
+  }
+  const scale = 1 + ITEM_HOVER_GROW * grow;
+  const width = bounds.width * scale;
+  const height = bounds.height * scale;
+  return {
+    ...bounds,
+    left: bounds.left - (width - bounds.width) / 2,
+    top: bounds.top - (height - bounds.height) / 2,
+    width,
+    height,
+  };
 }
 
 export type MainLaneDrawResult = {
@@ -538,10 +561,9 @@ export function drawMainLaneItems(
       return;
     }
 
-    const { left, top, width, height } = ctx.getDetailDrawBounds(
-      'main',
-      index,
-      bounds[index]
+    const { left, top, width, height } = growAboutCentre(
+      ctx.getDetailDrawBounds('main', index, bounds[index]),
+      ctx.itemHoverGrow('main', index)
     );
     const img = loadedImages[index];
     const typeMatch = matchesHighlightedType(

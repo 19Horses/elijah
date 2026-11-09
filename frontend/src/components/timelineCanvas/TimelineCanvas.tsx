@@ -45,6 +45,8 @@ function TimelineCanvas({
   cancelPreviewCollectControlRef,
   collectFocusedPreviewControlRef,
   highlightedMainContentId = null,
+  hoveredItemContentId = null,
+  hasCollectionPanel = false,
   viewersBySlug = EMPTY_VIEWERS,
   focusContentIdControlRef,
   resetViewControlRef,
@@ -80,15 +82,13 @@ function TimelineCanvas({
   const onDetailImageRectRef = useRef(onDetailImageRect);
   const onEntranceCompleteRef = useRef(onEntranceComplete);
   const [branchFocus, setBranchFocus] = useState<BranchFocusInfo | null>(null);
-  const soloTimelineActive = branchFocus?.alone ?? false;
+  const soloTimelineActive = branchFocus?.own ?? false;
   useEffect(() => {
     onSoloTimelineChange?.(soloTimelineActive);
   }, [onSoloTimelineChange, soloTimelineActive]);
-  // (A timeline shown alone has its own way back, in the menu.)
-  const clickedBranch = branchFocus && !branchFocus.alone ? branchFocus : null;
   useEffect(() => {
-    onBranchFocusChange?.(clickedBranch);
-  }, [onBranchFocusChange, clickedBranch]);
+    onBranchFocusChange?.(branchFocus);
+  }, [onBranchFocusChange, branchFocus]);
   const onBranchFocusRef = useRef<
     ((info: BranchFocusInfo | null) => void) | undefined
   >(setBranchFocus);
@@ -228,6 +228,16 @@ function TimelineCanvas({
   useEffect(() => {
     highlightedMainContentIdRef.current = highlightedMainContentId ?? null;
   }, [highlightedMainContentId]);
+
+  const hasCollectionPanelRef = useRef(hasCollectionPanel);
+  useEffect(() => {
+    hasCollectionPanelRef.current = hasCollectionPanel;
+  }, [hasCollectionPanel]);
+
+  const hoveredItemContentIdRef = useRef<string | null>(hoveredItemContentId);
+  useEffect(() => {
+    hoveredItemContentIdRef.current = hoveredItemContentId;
+  }, [hoveredItemContentId]);
 
   useEffect(() => {
     viewersRef.current = viewersBySlug;
@@ -393,6 +403,8 @@ function TimelineCanvas({
         collectFocusedPreviewRef,
         reloadCollectedRef,
         highlightedMainContentIdRef,
+        hoveredItemContentIdRef,
+        hasCollectionPanelRef,
         viewersRef,
         collectorsRef,
         focusContentIdRef,

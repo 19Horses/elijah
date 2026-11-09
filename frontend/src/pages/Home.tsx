@@ -8,11 +8,15 @@ import {
   type MutableRefObject,
 } from 'react';
 
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import CollectedBranchStrip, {
   type BranchStripPreviewItem,
 } from '../components/CollectedBranchStrip';
 import CollectionCountdown from '../components/CollectionCountdown';
+import OpenedCollectionCards from '../components/OpenedCollectionCards';
+import TimelineItemCards, {
+  type TimelineItemCardEntry,
+} from '../components/TimelineItemCards';
 import { getContentTypeKicker } from '../constants/contentTypes';
 import {
   ALREADY_COLLECTED_MAX_TILT_DEG,
@@ -141,6 +145,7 @@ function Home({
     Record<string, boolean>
   >({});
   const [highlightedType] = useState<ContentType | null>(null);
+  const navigate = useNavigate();
   const [focusSlug, setFocusSlug] = useState<string | null>(null);
   const [collectingItemId, setCollectingItemId] = useState<string | null>(null);
   const [detailReady, setDetailReady] = useState(false);
@@ -222,6 +227,40 @@ function Home({
   // knows whose timeline is whose — a collected item lands on the right one.
   // The collector's timeline the map is zoomed into, if any.
   const [branchFocus, setBranchFocus] = useState<BranchFocusInfo | null>(null);
+  // The items of the timeline being viewed, for the cards listing them: the
+  // ones its owner collected and the main timeline ones it passes through
+  // (those shown as smaller cards).
+  const viewedTimelineItems = useMemo(() => {
+    if (!branchFocus) {
+      return null;
+    }
+    const mainItems = timeline?.items ?? [];
+    const mainIds = new Set(mainItems.map((item) => item._id));
+    const row = collectedRows?.find(
+      (candidate) => candidate.username === branchFocus.username
+    );
+    const seen = new Set<string>();
+    const entries: TimelineItemCardEntry[] = [];
+    const add = (content: MainTimelineItem, collectedAt?: string) => {
+      if (seen.has(content._id)) {
+        return;
+      }
+      seen.add(content._id);
+      entries.push({ content, compact: mainIds.has(content._id), collectedAt });
+    };
+    row?.items.forEach((item) => add(item.content, item.collectedAt));
+    branchFocus.mainItemIds.forEach((id) => {
+      const item = mainItems.find((candidate) => candidate._id === id);
+      if (item) {
+        add(item);
+      }
+    });
+    return entries;
+  }, [branchFocus, collectedRows, timeline]);
+  // The item whose card is hovered, grown on the map.
+  const [hoveredCardContentId, setHoveredCardContentId] = useState<
+    string | null
+  >(null);
   const [currentUsername, setCurrentUsername] = useState(
     () => getStoredUser()?.username ?? null
   );
@@ -474,8 +513,18 @@ function Home({
   // parallel, so each badge can independently decide whether to show.
   useEffect(() => {
     const currentUser = getStoredUser();
-    if (!currentUser || !collections || collections.length === 0) {
+    if (!collections || collections.length === 0) {
       setCollectedStatus({});
+      return;
+    }
+    // Signed out, nothing's been collected: every collection shows, inviting
+    // them to sign in to open it.
+    if (!currentUser) {
+      setCollectedStatus(
+        Object.fromEntries(
+          collections.map((collection) => [collection._id, false])
+        )
+      );
       return;
     }
 
@@ -555,6 +604,10 @@ function Home({
           cancelPreviewCollectControlRef={cancelPreviewCollectRef}
           collectFocusedPreviewControlRef={collectFocusedPreviewRef}
           highlightedMainContentId={highlightedContentId}
+          hoveredItemContentId={hoveredCardContentId}
+          hasCollectionPanel={(collections ?? []).some(
+            (collection) => collectedStatus[collection._id] === false
+          )}
           focusContentIdControlRef={focusContentIdControlRef}
           resetViewControlRef={resetViewControlRef}
           soloTimelineControlRef={soloTimelineControlRef}
@@ -583,6 +636,23 @@ function Home({
           fading={collectingItemId !== null}
           onBack={() => resetViewControlRef?.current?.()}
         />
+        {/* The right-hand column, as wide as the left: the audio player
+            while a track is loaded. */}
+        {audioState && (
+          <div
+            className={`right-stack${
+              drawerOpen ? ' top-right-stack--drawer-open' : ''
+            }`}
+          >
+            <MediaPlayer
+              state={audioState}
+              onToggle={() => audioControlRef.current?.(audioState.src)}
+              onJumpToItem={() =>
+                focusItemControlRef.current?.(audioState.focusTarget)
+              }
+            />
+          </div>
+        )}
         <div
           className={`top-right-stack${
             drawerOpen ? ' top-right-stack--drawer-open' : ''
@@ -614,15 +684,6 @@ function Home({
               </button>
             </div>
           )}
-          {audioState && (
-            <MediaPlayer
-              state={audioState}
-              onToggle={() => audioControlRef.current?.(audioState.src)}
-              onJumpToItem={() =>
-                focusItemControlRef.current?.(audioState.focusTarget)
-              }
-            />
-          )}
           {/* The collections, scrolling once they run past the screen;
               hidden while an item is being viewed. */}
           <div
@@ -630,162 +691,214 @@ function Home({
               focusSlug !== null ? ' collection-card-list--hidden' : ''
             }`}
           >
+            {/* A timeline being viewed lists its items, in place of the
+                collections. */}
             {!canvasHidden &&
-              (collections ?? [])
-                .filter(
-                  (collection) => collectedStatus[collection._id] === false
-                )
-                .map((collection) => (
-                  <div
-                    data-collection-id={collection._id}
-                    className={`collection-card-stack${
-                      collectingItemId !== null
-                        ? ' collection-card-stack--hidden collection-card-stack--collecting'
-                        : ''
-                    }`}
-                    key={collection._id}
-                  >
-                    <CollectionCountdown
-                      collection={collection}
-                      open={openPanelId === collection._id}
-                      onClick={() => handleCollectionBadgeClick(collection._id)}
-                    >
+              (viewedTimelineItems ? (
+                <TimelineItemCards
+                  entries={viewedTimelineItems}
+                  onOpen={(contentId) => {
+                    setHoveredCardContentId(null);
+                    focusContentIdControlRef?.current?.(contentId);
+                  }}
+                  onHover={setHoveredCardContentId}
+                />
+              ) : (
+                <>
+                  {(collections ?? [])
+                    .filter(
+                      (collection) => collectedStatus[collection._id] === false
+                    )
+                    .map((collection) => (
                       <div
-                        className={`collection-card-panel${
-                          openPanelId === collection._id
-                            ? ' collection-card-panel--visible'
+                        data-collection-id={collection._id}
+                        className={`collection-card-stack${
+                          collectingItemId !== null
+                            ? ' collection-card-stack--hidden collection-card-stack--collecting'
                             : ''
                         }`}
+                        key={collection._id}
                       >
-                        <div
-                          className="collection-card-titles"
-                          style={
-                            {
-                              '--collection-title-colour': branchColour,
-                            } as React.CSSProperties
+                        <CollectionCountdown
+                          collection={collection}
+                          open={openPanelId === collection._id}
+                          // Signed out, a collection can't be opened: the
+                          // label says so, and a click goes to log in.
+                          cursorLabel={
+                            currentUsername
+                              ? null
+                              : 'Create an account/log in to open this collection'
+                          }
+                          onClick={() =>
+                            currentUsername
+                              ? handleCollectionBadgeClick(collection._id)
+                              : navigate('/login')
                           }
                         >
-                          {(collection.content ?? []).map((item, index) => {
-                            const isFocused =
-                              focusSlug !== null && item.slug === focusSlug;
-                            const isCollected = collectedContentIds.has(
-                              item._id
-                            );
-                            const kind = getContentTypeKicker(item._type);
-                            const description =
-                              item._type === 'newsletter'
-                                ? null
-                                : item.description;
-                            return (
-                              <button
-                                key={item._id}
-                                type="button"
-                                className={`collection-card-title${
-                                  isFocused
-                                    ? ' collection-card-title--active'
-                                    : ''
-                                }${
-                                  isCollected
-                                    ? ' collection-card-title--collected'
-                                    : ''
-                                }`}
-                                style={
-                                  {
-                                    '--title-index': index,
-                                  } as React.CSSProperties
-                                }
-                                // One already collected can't be hovered or
-                                // clicked; the rest are collected on a click.
-                                disabled={isCollected}
-                                onClick={() => {
-                                  setSelectedItemIndexByCollection((prev) => ({
-                                    ...prev,
-                                    [collection._id]: index,
-                                  }));
-                                  collectFocusedPreviewRef.current?.(item._id);
-                                }}
-                                onMouseEnter={() => {
-                                  setHoveredCollectionItemId(item._id);
-                                  setCenterOnCollectionItemId(item._id);
-                                }}
-                                onMouseLeave={() => {
-                                  setHoveredCollectionItemId((current) =>
-                                    current === item._id ? null : current
-                                  );
-                                  setCenterOnCollectionItemId((current) =>
-                                    current === item._id ? null : current
-                                  );
-                                }}
-                              >
-                                <span className="collection-card-title__thumb">
-                                  {item.imageUrl ? (
-                                    <img src={item.imageUrl} alt="" />
-                                  ) : (
-                                    <ContentTypeIcon
-                                      type={item._type}
-                                      className="collection-card-title__icon"
-                                    />
-                                  )}
-                                  {!isCollected && (
-                                    <span
-                                      className="collection-card-title__plus"
-                                      aria-hidden="true"
-                                    >
-                                      +
-                                    </span>
-                                  )}
-                                </span>
-                                {isCollected && (
-                                  <span
-                                    className="collection-card-title__collected"
+                          <div
+                            className={`collection-card-panel${
+                              openPanelId === collection._id
+                                ? ' collection-card-panel--visible'
+                                : ''
+                            }`}
+                          >
+                            <div
+                              className="collection-card-titles"
+                              style={
+                                {
+                                  '--collection-title-colour': branchColour,
+                                } as React.CSSProperties
+                              }
+                            >
+                              {(collection.content ?? []).map((item, index) => {
+                                const isFocused =
+                                  focusSlug !== null && item.slug === focusSlug;
+                                const isCollected = collectedContentIds.has(
+                                  item._id
+                                );
+                                const kind = getContentTypeKicker(item._type);
+                                const description =
+                                  item._type === 'newsletter'
+                                    ? null
+                                    : item.description;
+                                return (
+                                  <button
+                                    key={item._id}
+                                    type="button"
+                                    className={`collection-card-title${
+                                      isFocused
+                                        ? ' collection-card-title--active'
+                                        : ''
+                                    }${
+                                      isCollected
+                                        ? ' collection-card-title--collected'
+                                        : ''
+                                    }`}
                                     style={
                                       {
-                                        '--collected-tilt': `${panelTagTilt(
-                                          item._id,
-                                          ALREADY_COLLECTED_MAX_TILT_DEG,
-                                          ALREADY_COLLECTED_MIN_TILT_DEG
-                                        )}deg`,
+                                        '--title-index': index,
                                       } as React.CSSProperties
                                     }
+                                    // One already collected can't be hovered or
+                                    // clicked; the rest are collected on a click.
+                                    disabled={isCollected}
+                                    onClick={() => {
+                                      setSelectedItemIndexByCollection(
+                                        (prev) => ({
+                                          ...prev,
+                                          [collection._id]: index,
+                                        })
+                                      );
+                                      collectFocusedPreviewRef.current?.(
+                                        item._id
+                                      );
+                                    }}
+                                    onMouseEnter={() => {
+                                      setHoveredCollectionItemId(item._id);
+                                      setCenterOnCollectionItemId(item._id);
+                                    }}
+                                    onMouseLeave={() => {
+                                      setHoveredCollectionItemId((current) =>
+                                        current === item._id ? null : current
+                                      );
+                                      setCenterOnCollectionItemId((current) =>
+                                        current === item._id ? null : current
+                                      );
+                                    }}
                                   >
-                                    Already
-                                    <br />
-                                    collected
-                                  </span>
-                                )}
-                                <span className="collection-card-title__body">
-                                  <span className="collection-card-title__text">
-                                    {item.title}
-                                  </span>
-                                  {kind && (
-                                    <span className="collection-card-title__kind">
-                                      {kind}
+                                    <span className="collection-card-title__thumb">
+                                      {item.imageUrl ? (
+                                        <img src={item.imageUrl} alt="" />
+                                      ) : (
+                                        <ContentTypeIcon
+                                          type={item._type}
+                                          className="collection-card-title__icon"
+                                        />
+                                      )}
+                                      {!isCollected && (
+                                        <span
+                                          className="collection-card-title__plus"
+                                          aria-hidden="true"
+                                        >
+                                          +
+                                        </span>
+                                      )}
                                     </span>
-                                  )}
-                                  {/* What a click does, on one still to
+                                    {isCollected && (
+                                      <span
+                                        className="collection-card-title__collected"
+                                        style={
+                                          {
+                                            '--collected-tilt': `${panelTagTilt(
+                                              item._id,
+                                              ALREADY_COLLECTED_MAX_TILT_DEG,
+                                              ALREADY_COLLECTED_MIN_TILT_DEG
+                                            )}deg`,
+                                          } as React.CSSProperties
+                                        }
+                                      >
+                                        Already
+                                        <br />
+                                        collected
+                                      </span>
+                                    )}
+                                    <span className="collection-card-title__body">
+                                      <span className="collection-card-title__text">
+                                        {item.title}
+                                      </span>
+                                      {kind && (
+                                        <span className="collection-card-title__kind">
+                                          {kind}
+                                        </span>
+                                      )}
+                                      {/* What a click does, on one still to
                                       collect; one already collected doesn't
                                       repeat its description. */}
-                                  {!isCollected && (
-                                    <span className="collection-card-title__kind">
-                                      + ADD TO YOUR TIMELINE
+                                      {!isCollected && (
+                                        <span className="collection-card-title__kind collection-card-title__kind--add">
+                                          + ADD TO YOUR TIMELINE
+                                        </span>
+                                      )}
                                     </span>
-                                  )}
-                                </span>
-                                {/* Under the picture and those lines, the
+                                    {/* Under the picture and those lines, the
                                     row's full width. */}
-                                {hasRichText(description) && !isCollected && (
-                                  <span className="collection-card-title__description">
-                                    <RichText value={description} />
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
+                                    {hasRichText(description) &&
+                                      !isCollected && (
+                                        <span className="collection-card-title__description">
+                                          <RichText value={description} />
+                                        </span>
+                                      )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </CollectionCountdown>
                       </div>
-                    </CollectionCountdown>
-                  </div>
-                ))}
+                    ))}
+                  {/* Those already opened, collapsed at the foot (not once every
+                    one's been opened). */}
+                  <OpenedCollectionCards
+                    collections={
+                      (collections ?? []).some(
+                        (collection) =>
+                          collectedStatus[collection._id] === false
+                      )
+                        ? (collections ?? []).filter(
+                            (collection) =>
+                              collectedStatus[collection._id] === true
+                          )
+                        : []
+                    }
+                    collectedContentIds={collectedContentIds}
+                    onOpen={(contentId) => {
+                      setHoveredCardContentId(null);
+                      focusContentIdControlRef?.current?.(contentId);
+                    }}
+                    onHover={setHoveredCardContentId}
+                  />
+                </>
+              ))}
           </div>
         </div>
       </div>

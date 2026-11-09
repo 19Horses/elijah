@@ -211,7 +211,11 @@ function NavDrawer({
               }
             }}
           >
-            {!user ? 'Login' : soloTimelineActive ? 'World view' : 'Your items'}
+            {!user
+              ? 'Login'
+              : soloTimelineActive
+              ? 'World view'
+              : 'Your timeline'}
           </Link>
           <Link
             to="/shop"
