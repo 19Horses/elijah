@@ -69,6 +69,13 @@ const COLLECTIONS_QUERY = `*[_type == "collection" && expiresAt > now()] | order
       "imageUrl": image.asset->url,
       "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio},
       "audioUrl": audio.asset->url
+    },
+    _type == "videoAsset" => {
+      title,
+      description,
+      "imageUrl": poster.asset->url,
+      "imageDimensions": poster.asset->metadata.dimensions{width, height, aspectRatio},
+      "videoKey": video.key
     }
   }
 }`;

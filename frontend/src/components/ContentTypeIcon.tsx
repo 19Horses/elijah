@@ -4,13 +4,13 @@ import photoIcon from '../assets/icons/photo.svg';
 import videoIcon from '../assets/icons/video.svg';
 import type { ContentType } from '../types/content';
 
-type IconType = ContentType | 'video';
+type IconType = ContentType;
 
 export const CONTENT_TYPE_ICONS: Partial<Record<IconType, string>> = {
   audioAsset: musicIcon,
   newsletter: newsIcon,
   imageAsset: photoIcon,
-  video: videoIcon,
+  videoAsset: videoIcon,
 };
 
 export const CONTENT_TYPE_ICON_SCALE: Partial<Record<IconType, number>> = {

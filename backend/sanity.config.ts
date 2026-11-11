@@ -11,6 +11,10 @@ export default defineConfig({
   projectId: '8l62ppj0',
   dataset: 'production',
 
+  // The S3 video upload field sends the editor's token to the upload Lambda,
+  // which can't see Sanity's session cookie.
+  auth: {loginMethod: 'token'},
+
   plugins: [structureTool({structure}), visionTool()],
 
   schema: {

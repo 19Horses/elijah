@@ -9,6 +9,7 @@ export type ContentTypeEntry = {
 export const CONTENT_TYPES: ContentTypeEntry[] = [
   { type: 'imageAsset', label: 'Image', colour: '#2563EB' },
   { type: 'audioAsset', label: 'Audio', colour: '#9333EA' },
+  { type: 'videoAsset', label: 'Video', colour: '#DC2626' },
   { type: 'newsletter', label: 'Newsletter', colour: '#059669' },
   { type: 'event', label: 'Event', colour: '#EA580C' },
 ];

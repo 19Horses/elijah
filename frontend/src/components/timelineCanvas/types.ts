@@ -83,6 +83,8 @@ export type TimelineCanvasProps = {
   // the box naming it with a way back out.
   onBranchFocusChange?: (info: BranchFocusInfo | null) => void;
   onBranchIsolationExit?: () => void;
+  activeVideoSlug?: string | null;
+  onDismissVideo?: () => void;
 };
 
 export type DetailImageRect = {
@@ -488,6 +490,8 @@ export type TimelineSketchRefs = {
   reloadCollectedRef: MutableRefObject<
     ((items: ProcessedCollected[]) => void) | undefined
   >;
+  activeVideoSlugRef: RefObject<string | null>;
+  onDismissVideoRef: RefObject<(() => void) | undefined>;
 };
 
 export type TimelineSketchDeps = {

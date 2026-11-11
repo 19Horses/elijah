@@ -8,6 +8,7 @@ import type {
   Event,
   ImageAsset,
   Newsletter,
+  VideoAsset,
 } from '../types/content';
 
 type SanityResponse<T> = {
@@ -25,6 +26,9 @@ export type MainTimelineImage = MainTimelineItemBase &
 export type MainTimelineAudio = MainTimelineItemBase &
   AudioAsset & { image: SanityImageSource | null };
 
+export type MainTimelineVideo = MainTimelineItemBase &
+  VideoAsset & { image: SanityImageSource | null };
+
 export type MainTimelineNewsletter = MainTimelineItemBase &
   Newsletter & { image: SanityImageSource | null };
 
@@ -34,6 +38,7 @@ export type MainTimelineEvent = MainTimelineItemBase &
 export type MainTimelineItem =
   | MainTimelineImage
   | MainTimelineAudio
+  | MainTimelineVideo
   | MainTimelineNewsletter
   | MainTimelineEvent;
 
@@ -70,6 +75,14 @@ export const CONTENT_PROJECTION = `_id,
     "imageUrl": image.asset->url,
     "imageDimensions": image.asset->metadata.dimensions{width, height, aspectRatio},
     "audioUrl": audio.asset->url
+  },
+  _type == "videoAsset" => {
+    title,
+    description,
+    "image": poster,
+    "imageUrl": poster.asset->url,
+    "imageDimensions": poster.asset->metadata.dimensions{width, height, aspectRatio},
+    "videoKey": video.key
   },
   _type == "newsletter" => {
     title,

@@ -125,6 +125,9 @@ export type TimelineDetailView = {
   description: RichTextValue;
   link: string | null;
   newsletterContent: RichTextValue;
+  videoUrl: string | null;
+  posterUrl: string | null;
+  newsletterContent: string | null;
   // A solitary image is laid out like a newsletter (description beside the
   // image) even though it has no newsletter content of its own.
   presentAsNewsletter: boolean;
