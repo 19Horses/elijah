@@ -192,6 +192,8 @@ export type DateLabel = {
   textScale?: number;
   // Who collected the item, on a fainter line after that.
   collectedBy?: CollectedBy;
+  // How strongly the "owned by" line shows (fading as the view zooms out).
+  ownerAlpha?: number;
   // Widest (world units) the text may run before wrapping onto more lines.
   maxWidth?: number;
   // Hang the label below `y` (wrapping downward) rather than sitting on it.
@@ -636,25 +638,8 @@ export function drawMainLaneItems(
     const videoPosterFade = isFocusedVideo
       ? Math.max(0, 1 - deps.runtime.detailLayout * 5)
       : 1;
-    const isVideoOut =
-      Boolean(deps.refs.activeVideoSlugRef.current) &&
-      deps.refs.activeVideoSlugRef.current === item.slug &&
-      !isFocusedVideo;
-
-    if (isVideoOut) {
-      // While out in mini player mode, show just a dotted border on the timeline.
-      mainCtx.globalAlpha =
-        ctx.isTypeHighlightActive && !typeMatch
-          ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
-          : visibilityAlpha;
-      p.noFill();
-      p.stroke(255);
-      p.strokeWeight(1.5);
-      mainCtx.setLineDash([3, 4]);
-      p.rect(imageLeft, top, width, height);
-      mainCtx.setLineDash([]);
-      resetCanvasEffects(mainCtx);
-    } else if (videoPosterFade > 0.02) {
+    // (A video playing on in its small player keeps its picture here.)
+    if (videoPosterFade > 0.02) {
       if (isFocusedVideo) {
         mainCtx.globalAlpha *= videoPosterFade;
       }
@@ -758,19 +743,6 @@ export function drawMainLaneItems(
         height,
         visibilityAlpha
       );
-    }
-
-    // White border on every item except the selected (focused) one.
-    if (!(ctx.isFocusActive && ctx.isFocusedTarget('main', index))) {
-      mainCtx.globalAlpha =
-        ctx.isTypeHighlightActive && !typeMatch
-          ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
-          : visibilityAlpha;
-      p.noFill();
-      p.stroke(255);
-      p.strokeWeight(2);
-      p.rect(imageLeft, top, width, height);
-      resetCanvasEffects(mainCtx);
     }
 
     // One of the collection's the viewer already has says so while it's

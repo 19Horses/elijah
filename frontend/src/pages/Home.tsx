@@ -1054,6 +1054,21 @@ function Home({
               ))}
           </div>
         </div>
+        {/* Out of its item, the video carries on in a small player (whose
+            place the item keeps on the map, outlined). */}
+        {videoState && !isVideoFocused && (
+          <VideoOverlayPlayer
+            state={videoState}
+            isZoomedIn={false}
+            fading={videoFadingOut}
+            onTogglePlay={handleToggleVideoPlay}
+            onPlay={handleVideoPlay}
+            onPause={handleVideoPause}
+            onEnded={handleVideoEnded}
+            onClose={handleCloseVideo}
+            onJumpToItem={handleJumpToVideoItem}
+          />
+        )}
         {videoState && isVideoZoomedIn && (
           <VideoOverlayPlayer
             state={videoState}

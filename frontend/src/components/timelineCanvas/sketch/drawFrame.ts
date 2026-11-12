@@ -1493,14 +1493,6 @@ export function createDrawFrameHandler(
           previewAlpha
         );
 
-        // White border on every collectible except the focused one, matching
-        // the main/collected lanes' own convention.
-        if (!(isFocusActive && isFocusedPreview)) {
-          p.noFill();
-          p.stroke(255);
-          p.strokeWeight(2);
-          p.rect(rect.left, rect.top, rect.width, rect.height);
-        }
         resetCanvasEffects(previewCtx);
 
         const hideLabel =
@@ -1637,8 +1629,8 @@ export function createDrawFrameHandler(
       ];
       const canvasFont = p.textFont();
       p.noStroke();
-      // Zoomed far out, items' labels (title, date, who owns it) fade out
-      // between these zooms.
+      // Zoomed far out, items' labels lose their "owned by" line, fading it
+      // out between these zooms; the title and date stay.
       const subLabelAlpha = Math.max(
         0,
         Math.min(
@@ -1648,12 +1640,12 @@ export function createDrawFrameHandler(
         )
       );
       for (const rawLabel of dateLabels) {
-        if (rawLabel.anchor && subLabelAlpha <= 0) {
-          continue;
-        }
-        const label = rawLabel.anchor
-          ? { ...rawLabel, alpha: rawLabel.alpha * subLabelAlpha }
-          : rawLabel;
+        const label =
+          rawLabel.anchor && rawLabel.collectedBy
+            ? subLabelAlpha <= 0
+              ? { ...rawLabel, collectedBy: undefined }
+              : { ...rawLabel, ownerAlpha: subLabelAlpha }
+            : rawLabel;
         dateCtx.globalAlpha = label.alpha * collectFade;
         if (label.icon) {
           const iconSize = PREVIEW_ICON_SIZE / runtime.zoom;
@@ -1968,11 +1960,12 @@ export function createDrawFrameHandler(
             let before = '';
             runs.forEach((part) => {
               runX = startX + p.textWidth(`${before}|`) - p.textWidth('|');
-              dateCtx.globalAlpha = part.colour
-                ? baseAlpha
-                : part.alpha !== undefined
-                ? baseAlpha * part.alpha
-                : lineAlpha(k);
+              dateCtx.globalAlpha =
+                (part.colour
+                  ? baseAlpha
+                  : part.alpha !== undefined
+                  ? baseAlpha * part.alpha
+                  : lineAlpha(k)) * (label.ownerAlpha ?? 1);
               p.fill(part.colour ?? label.colour);
               p.text(part.text, runX, lineY(k));
               before += part.text;

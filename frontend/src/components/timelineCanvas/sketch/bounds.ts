@@ -1252,19 +1252,19 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
   const collectorLanes = (): Map<number, number> => {
     const mainBounds = getAllBounds();
     type Extent = { left: number; right: number };
-    // What each row holds: its items (whose labels hang below them), and the
-    // stretches of line to them, each running from the main item before it to
-    // the one after. (A line to an item several collected runs along that
-    // item's row, which is its first collector's.)
+    // What each row holds: the stretches of line to its items, each running
+    // from the main item before it to the one after. (A line to an item
+    // several collected runs along that item's row, which is its first
+    // collector's.)
     const stretches = new Map<number, Extent[]>();
-    const tiles = new Map<number, Extent[]>();
-    processedCollected.forEach((item) => {
+    processedCollected.forEach((item, index) => {
+      // One chained onto another sits beside it, in that one's row.
+      if (getChainPredecessorIndex(index) >= 0) {
+        return;
+      }
       const centre = timeToWorldX(item.anchorTime);
-      const tile = {
-        left: centre - ITEM_WIDTH / 2,
-        right: centre + ITEM_WIDTH / 2,
-      };
-      let { left, right } = tile;
+      let left = centre - ITEM_WIDTH / 2;
+      let right = centre + ITEM_WIDTH / 2;
       const prev = getPreviousMainIndex(item.anchorTime);
       if (prev >= 0 && mainBounds[prev]) {
         left = Math.min(left, mainBounds[prev].right);
@@ -1274,7 +1274,6 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       }
       const row = item.rowIndex;
       stretches.set(row, [...(stretches.get(row) ?? []), { left, right }]);
-      tiles.set(row, [...(tiles.get(row) ?? []), tile]);
     });
     const apart = (a: Extent, b: Extent) =>
       a.right + ITEM_GAP <= b.left || a.left >= b.right + ITEM_GAP;
@@ -1282,30 +1281,25 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       as.every((a) => bs.every((b) => apart(a, b)));
     const lanes = new Map<number, number>();
     // Per side, what's already in each of its rows (nearest first).
-    const taken: { stretches: Extent[]; tiles: Extent[] }[][] = [[], []];
+    const taken: { stretches: Extent[] }[][] = [[], []];
     [...stretches.keys()]
       .sort((a, b) => a - b)
       .forEach((rowIndex) => {
         const ownStretches = stretches.get(rowIndex) ?? [];
-        const ownTiles = tiles.get(rowIndex) ?? [];
         const side = rowIndex % 2;
         const slots = taken[side];
-        // Its lines clear of those already in the row, and its items clear
-        // of those in the rows either side, so no label hangs over another
-        // item's picture.
+        // Its lines clear of those already in the row. (Rows stay evenly
+        // spaced, with none left empty between them.)
         const fits = (slot: number) =>
-          allApart(ownStretches, slots[slot]?.stretches ?? []) &&
-          allApart(ownTiles, slots[slot - 1]?.tiles ?? []) &&
-          allApart(ownTiles, slots[slot + 1]?.tiles ?? []);
+          allApart(ownStretches, slots[slot]?.stretches ?? []);
         let slot = 0;
         while (!fits(slot)) {
           slot += 1;
         }
         while (slots.length <= slot) {
-          slots.push({ stretches: [], tiles: [] });
+          slots.push({ stretches: [] });
         }
         slots[slot].stretches.push(...ownStretches);
-        slots[slot].tiles.push(...ownTiles);
         lanes.set(rowIndex, slot * 2 + side);
       });
     return lanes;

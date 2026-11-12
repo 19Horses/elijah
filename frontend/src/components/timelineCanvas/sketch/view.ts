@@ -254,6 +254,25 @@ export function createViewContext(
       runtime.targetZoom = 1;
       runtime.targetCameraX = 0;
       runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
+    } else if (collectedBounds.length > 0) {
+      // Up and down, the whole map (branches and their labels too) sits
+      // centred in the space the header leaves, when it fits; else the main
+      // timeline stays centred, the branches running off above and below.
+      const all = [...mainBounds, ...collectedBounds];
+      const top = Math.min(...all.map((b) => b.top));
+      const bottom = Math.max(
+        ...all.map((b) => Math.max(b.top + b.height, b.dateBottom))
+      );
+      const zoom = runtime.targetZoom;
+      const space =
+        p.height -
+        MAIN_FIT_VIEW_MARGINS_PX.top -
+        MAIN_FIT_VIEW_MARGINS_PX.bottom;
+      const height = (bottom - top) * zoom;
+      if (height <= space) {
+        runtime.targetCameraY =
+          top - (MAIN_FIT_VIEW_MARGINS_PX.top + (space - height) / 2) / zoom;
+      }
     }
     runtime.fitZoomLevel = wholeMapZoom;
     runtime.mapZoom = runtime.targetZoom;

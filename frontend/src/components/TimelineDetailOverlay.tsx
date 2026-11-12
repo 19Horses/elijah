@@ -208,9 +208,9 @@ function TimelineDetailOverlay({
   );
 
   const isGallery = detail.imageUrls.length > 1;
-  // Galleries and music tracks put all their info in a column beside the
-  // picture.
-  const infoBeside = detail.isAudio || isGallery;
+  // Galleries, music tracks and videos put all their info in a column beside
+  // the picture.
+  const infoBeside = detail.isAudio || isGallery || detail.videoUrl !== null;
 
   // The way back out to the whole map: heading the title when that sits
   // above the picture, or heading the photo gallery's info column; else on

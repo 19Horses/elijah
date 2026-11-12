@@ -466,25 +466,8 @@ export function drawCollectedLaneItems(
     const videoPosterFade = isFocusedVideo
       ? Math.max(0, 1 - deps.runtime.detailLayout * 5)
       : 1;
-    const isVideoOut =
-      Boolean(deps.refs.activeVideoSlugRef.current) &&
-      deps.refs.activeVideoSlugRef.current === item.slug &&
-      !isFocusedVideo;
-
-    if (isVideoOut) {
-      // While out in mini player mode, show just a dotted border on the timeline.
-      collectedCtx.globalAlpha =
-        (ctx.isTypeHighlightActive && !typeMatch
-          ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
-          : visibilityAlpha) * branchDimAlpha;
-      p.noFill();
-      p.stroke(255);
-      p.strokeWeight(1.5);
-      collectedCtx.setLineDash([3, 4]);
-      p.rect(imageLeft, top, width, height);
-      collectedCtx.setLineDash([]);
-      resetCanvasEffects(collectedCtx);
-    } else if (videoPosterFade > 0.02) {
+    // (A video playing on in its small player keeps its picture here.)
+    if (videoPosterFade > 0.02) {
       if (isFocusedVideo) {
         collectedCtx.globalAlpha *= videoPosterFade;
       }
@@ -569,19 +552,6 @@ export function drawCollectedLaneItems(
         height,
         visibilityAlpha
       );
-    }
-
-    // White border on every item except the selected (focused) one.
-    if (!(ctx.isFocusActive && ctx.isFocusedTarget('collected', index))) {
-      collectedCtx.globalAlpha =
-        (ctx.isTypeHighlightActive && !typeMatch
-          ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
-          : visibilityAlpha) * branchDimAlpha;
-      p.noFill();
-      p.stroke(255);
-      p.strokeWeight(1);
-      p.rect(imageLeft, top, width, height);
-      resetCanvasEffects(collectedCtx);
     }
 
     // A collection's item the viewer already has says so while it's viewed,

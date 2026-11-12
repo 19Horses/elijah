@@ -206,9 +206,10 @@ function VideoOverlayPlayer({
       }
     : !isZoomedIn
     ? {
+        // In the right-hand column, as far in as the "e" button.
         position: 'fixed',
-        right: `${MARGIN_PX}px`,
-        top: `${MARGIN_PX}px`,
+        right: '2.25rem',
+        top: '2.25rem',
         width: 'var(--top-right-card-width, 240px)',
         zIndex: 22,
       }

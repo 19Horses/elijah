@@ -226,13 +226,15 @@ export const EDGE_GRADIENT_PX = 140;
 // Base gap between the main line and the nearest branch row, and between
 // adjacent branch rows beyond that. Both grow with ZOOM_OUT_GROWTH_POWER at
 // draw time (see bounds.ts) to keep pace with the enlarged nodes/lines.
-export const LANE_GAP = 25;
+// Matches COLLECTED_ROW_EXTRA_GAP, so the rows sit evenly spaced out from
+// the main line.
+export const LANE_GAP = 80;
 // Extra space (world units) between the viewer's row and the main timeline
 // while a collection is viewed, for the labels in between.
 export const COLLECTION_ROW_GAP_EXTRA = 200;
 // How strongly the items not in a collection show while it's viewed.
 export const COLLECTION_OTHER_ITEM_ALPHA = 0.6;
-export const COLLECTED_ROW_EXTRA_GAP = 30;
+export const COLLECTED_ROW_EXTRA_GAP = 80;
 export const MAIN_LINE_Y = PADDING_Y + IMAGE_HEIGHT / 2;
 // How far (screen px) either side of a timeline line still counts as hovering
 // it. When several lines are in reach, the nearest one wins.
