@@ -823,31 +823,6 @@ function Home({
                       '--branch-colour': branchFocus.colour,
                     } as React.CSSProperties
                   }
-          )}
-          {videoState && !isVideoFocused && (
-            <VideoOverlayPlayer
-              state={videoState}
-              isZoomedIn={false}
-              fading={videoFadingOut}
-              onTogglePlay={handleToggleVideoPlay}
-              onPlay={handleVideoPlay}
-              onPause={handleVideoPause}
-              onEnded={handleVideoEnded}
-              onClose={handleCloseVideo}
-              onJumpToItem={handleJumpToVideoItem}
-            />
-          )}
-          {!canvasHidden &&
-            (collections ?? [])
-              .filter((collection) => collectedStatus[collection._id] === false)
-              .map((collection) => (
-                <div
-                  className={`collection-card-stack${
-                    collectingItemId !== null
-                      ? ' collection-card-stack--hidden collection-card-stack--collecting'
-                      : ''
-                  }`}
-                  key={collection._id}
                 >
                   {branchFocus.username}
                 </span>

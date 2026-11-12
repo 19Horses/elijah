@@ -535,7 +535,7 @@ export function drawCollectedLaneItems(
       );
     }
 
-    collectedCtx.globalAlpha = visibilityAlpha;
+    collectedCtx.globalAlpha = visibilityAlpha * videoPosterFade;
     drawBackgroundFade(
       p,
       collectedCtx,
@@ -547,57 +547,40 @@ export function drawCollectedLaneItems(
       ((top - deps.runtime.cameraY) * deps.runtime.zoom) / p.height
     );
 
-      resetCanvasEffects(collectedCtx);
-
-      collectedCtx.globalAlpha = visibilityAlpha * videoPosterFade;
-      drawBackgroundFade(
+    if (ctx.isTypeHighlightActive && !typeMatch) {
+      drawDimOverlay(
         p,
         collectedCtx,
         imageLeft,
         top,
         width,
         height,
-        1 - branchDimAlpha,
-        ((top - deps.runtime.cameraY) * deps.runtime.zoom) / p.height
+        ctx.typeHighlightStrength * visibilityAlpha
       );
+    }
 
-      if (ctx.isTypeHighlightActive && !typeMatch) {
-        drawDimOverlay(
-          p,
-          collectedCtx,
-          imageLeft,
-          top,
-          width,
-          height,
-          ctx.typeHighlightStrength * visibilityAlpha
-        );
-      }
+    if (item.isPrivate) {
+      drawPrivateOverlay(
+        p,
+        collectedCtx,
+        imageLeft,
+        top,
+        width,
+        height,
+        visibilityAlpha
+      );
+    }
 
-      if (item.isPrivate) {
-        drawPrivateOverlay(
-          p,
-          collectedCtx,
-          imageLeft,
-          top,
-          width,
-          height,
-          visibilityAlpha
-        );
-      }
-
-      // White border on every item except the selected (focused) one.
-      if (!(ctx.isFocusActive && ctx.isFocusedTarget('collected', index))) {
-        collectedCtx.globalAlpha =
-          (ctx.isTypeHighlightActive && !typeMatch
-            ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
-            : visibilityAlpha) * branchDimAlpha;
-        p.noFill();
-        p.stroke(255);
-        p.strokeWeight(1);
-        p.rect(imageLeft, top, width, height);
-        resetCanvasEffects(collectedCtx);
-      }
-    } else {
+    // White border on every item except the selected (focused) one.
+    if (!(ctx.isFocusActive && ctx.isFocusedTarget('collected', index))) {
+      collectedCtx.globalAlpha =
+        (ctx.isTypeHighlightActive && !typeMatch
+          ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
+          : visibilityAlpha) * branchDimAlpha;
+      p.noFill();
+      p.stroke(255);
+      p.strokeWeight(1);
+      p.rect(imageLeft, top, width, height);
       resetCanvasEffects(collectedCtx);
     }
 

@@ -279,7 +279,6 @@ export function createDrawFrameHandler(
   // linearly over ITEM_HOVER_GROW_MS; eased when applied.
   const itemHoverProgress = new Map<string, number>();
   const itemHoverEased = new Map<string, number>();
-  const isolatedLineX = new Map<string, number>();
   // True while the pointer is inside the active video's timeline slot, so we
   // only dismiss the mini player on a real cross-in, not because the pointer
   // was already over the item after zooming out.

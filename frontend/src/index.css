@@ -2555,15 +2555,6 @@ main.main--home {
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 0.15em;
-.timeline-detail__video {
-  position: absolute;
-  inset: 0;
-  background: #000;
-}
-
-.timeline-detail__video > div {
-  position: absolute;
-  inset: 0;
 }
 
 .video-overlay-player {

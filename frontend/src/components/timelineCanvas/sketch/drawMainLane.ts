@@ -736,57 +736,40 @@ export function drawMainLaneItems(
       ((top - deps.runtime.cameraY) * deps.runtime.zoom) / p.height
     );
 
-      resetCanvasEffects(mainCtx);
-
-      mainCtx.globalAlpha = imageAlpha * videoPosterFade;
-      drawBackgroundFade(
+    if (ctx.isTypeHighlightActive && !typeMatch) {
+      drawDimOverlay(
         p,
         mainCtx,
         imageLeft,
         top,
         width,
         height,
-        branchFade,
-        ((top - deps.runtime.cameraY) * deps.runtime.zoom) / p.height
+        ctx.typeHighlightStrength * visibilityAlpha
       );
+    }
 
-      if (ctx.isTypeHighlightActive && !typeMatch) {
-        drawDimOverlay(
-          p,
-          mainCtx,
-          imageLeft,
-          top,
-          width,
-          height,
-          ctx.typeHighlightStrength * visibilityAlpha
-        );
-      }
+    if (item.isPrivate) {
+      drawPrivateOverlay(
+        p,
+        mainCtx,
+        imageLeft,
+        top,
+        width,
+        height,
+        visibilityAlpha
+      );
+    }
 
-      if (item.isPrivate) {
-        drawPrivateOverlay(
-          p,
-          mainCtx,
-          imageLeft,
-          top,
-          width,
-          height,
-          visibilityAlpha
-        );
-      }
-
-      // White border on every item except the selected (focused) one.
-      if (!(ctx.isFocusActive && ctx.isFocusedTarget('main', index))) {
-        mainCtx.globalAlpha =
-          ctx.isTypeHighlightActive && !typeMatch
-            ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
-            : visibilityAlpha;
-        p.noFill();
-        p.stroke(255);
-        p.strokeWeight(2);
-        p.rect(imageLeft, top, width, height);
-        resetCanvasEffects(mainCtx);
-      }
-    } else {
+    // White border on every item except the selected (focused) one.
+    if (!(ctx.isFocusActive && ctx.isFocusedTarget('main', index))) {
+      mainCtx.globalAlpha =
+        ctx.isTypeHighlightActive && !typeMatch
+          ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
+          : visibilityAlpha;
+      p.noFill();
+      p.stroke(255);
+      p.strokeWeight(2);
+      p.rect(imageLeft, top, width, height);
       resetCanvasEffects(mainCtx);
     }
 
