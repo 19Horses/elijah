@@ -38,6 +38,7 @@ import {
   ALREADY_COLLECTED_WIDTH,
   ALREADY_COLLECTED_MAX_TILT_DEG,
   ALREADY_COLLECTED_MIN_TILT_DEG,
+  MAIN_LINE_Y,
 } from '../constants';
 import {
   distanceToPolyline,
@@ -610,6 +611,10 @@ export function drawCollectedLaneItems(
           x: imageLeft + width / 2,
           y: top + height + 12,
           below: true,
+          // Labelled on the side away from the main line: on top of an item
+          // above it, under one below it.
+          placement: top + height / 2 < MAIN_LINE_Y ? 'above' : 'below',
+          measureKey: item.contentId,
           font: CANVAS_LABEL_FONT,
           scale: ITEM_LABEL_SCALE,
           letterSpacing: ITEM_LABEL_LETTER_SPACING,

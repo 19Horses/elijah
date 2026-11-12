@@ -316,6 +316,7 @@ export function createDrawFrameHandler(
     syncCollectedCaches();
     stepLayoutChange(deps, p.millis());
     view.refitHomeForPanel();
+    view.followFocusedItem();
     view.animateView();
     view.animatePan();
     view.animateZoom();
@@ -506,12 +507,16 @@ export function createDrawFrameHandler(
     const isCollecting = runtime.collectStartMs !== null;
 
     const returnIndex = runtime.collectReturnIndex;
+    const returnLane = runtime.collectReturnLane;
     let returnFade = 1;
     if (returnIndex !== -1) {
       if (runtime.collectReturnStartMs === null) {
         const imageReady =
-          loadedCollectedImages[returnIndex] !== null ||
-          !deps.processedCollected[returnIndex]?.imageUrl;
+          returnLane === 'main'
+            ? loadedImages[returnIndex] !== null ||
+              !deps.processed[returnIndex]?.imageUrl
+            : loadedCollectedImages[returnIndex] !== null ||
+              !deps.processedCollected[returnIndex]?.imageUrl;
         if (
           imageReady ||
           p.millis() - runtime.collectReturnWaitStartMs >=
@@ -520,14 +525,14 @@ export function createDrawFrameHandler(
           runtime.collectReturnStartMs = p.millis();
           // Now on the viewer's timeline, the item opens straight away, as
           // though they'd clicked it, zooming in from where it landed.
-          view.focusItem({ lane: 'collected', index: returnIndex });
+          view.focusItem({ lane: returnLane, index: returnIndex });
         }
       }
       // The rest of the map stays hidden meanwhile; once the item is open
       // (which hides it anyway), the collect is done.
       returnFade = 0;
       const opened =
-        runtime.focusTarget?.lane === 'collected' &&
+        runtime.focusTarget?.lane === returnLane &&
         runtime.focusTarget.index === returnIndex;
       if (
         runtime.collectReturnStartMs !== null &&
@@ -540,8 +545,8 @@ export function createDrawFrameHandler(
         returnFade = opened ? 0 : 1;
       }
     }
-    const isReturnTarget = (index: number) =>
-      returnIndex !== -1 && index === returnIndex;
+    const isReturnTarget = (lane: 'main' | 'collected', index: number) =>
+      returnIndex !== -1 && lane === returnLane && index === returnIndex;
 
     const collectFade = (1 - collectProgress) * returnFade;
     const isCollectTarget = (index: number) =>
@@ -625,7 +630,7 @@ export function createDrawFrameHandler(
       if (focus && !(focus.lane === lane && focus.index === index)) {
         alpha *= otherContentAlpha;
       }
-      if (lane === 'collected' && isReturnTarget(index)) {
+      if (isReturnTarget(lane, index)) {
         return alpha;
       }
       return alpha * collectFade;
@@ -1757,6 +1762,28 @@ export function createDrawFrameHandler(
           (count - extras.length) * textLeading +
           extras.length * leading +
           secondaryGap;
+        // (Not while an item opens or the view moves on its own, so the
+        // rows hold still under the camera.)
+        if (
+          label.measureKey &&
+          label.collectedBy &&
+          runtime.focusTarget === null &&
+          !runtime.viewAnimating &&
+          !runtime.viewUnfocusing &&
+          runtime.collectStartMs === null &&
+          runtime.collectReturnIndex === -1
+        ) {
+          // (Measured with its "owned by" line, so the rows don't close up
+          // as that fades out; eased, so they don't jump as titles rewrap.)
+          const measured = blockHeight(lines.length) * runtime.zoom;
+          const previous = runtime.labelHeights.get(label.measureKey);
+          runtime.labelHeights.set(
+            label.measureKey,
+            previous === undefined
+              ? measured
+              : previous + (measured - previous) * 0.2
+          );
+        }
         let { x, y } = label;
         let below = label.below ?? false;
         let hAlign = horizontalAlign;
@@ -1850,9 +1877,16 @@ export function createDrawFrameHandler(
             ).length *
               1000 +
             countLabelClashes(rect, drawnLines, itemRects);
-          // In a timeline's grid, labels always hang under their pictures.
+          // In a timeline's grid, labels always hang under their pictures;
+          // otherwise they keep to the spots their item allows.
           const candidates =
             runtime.soloGrid && runtime.branchSolo > 0
+              ? spots.slice(0, 1)
+              : label.placement === 'side'
+              ? spots.slice(1, 3)
+              : label.placement === 'above'
+              ? spots.slice(3, 4)
+              : label.placement === 'below'
               ? spots.slice(0, 1)
               : spots;
           const best = candidates.reduce(
@@ -1862,7 +1896,7 @@ export function createDrawFrameHandler(
                 ? chosen
                 : { spot, score: spotScore };
             },
-            { spot: spots[0], score: score(spots[0].rect) }
+            { spot: candidates[0], score: score(candidates[0].rect) }
           ).spot;
           lines = best.lines;
           x = best.x;

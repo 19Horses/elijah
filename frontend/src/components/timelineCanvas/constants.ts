@@ -228,13 +228,19 @@ export const EDGE_GRADIENT_PX = 140;
 // draw time (see bounds.ts) to keep pace with the enlarged nodes/lines.
 // Matches COLLECTED_ROW_EXTRA_GAP, so the rows sit evenly spaced out from
 // the main line.
-export const LANE_GAP = 80;
+export const LANE_GAP = 120;
 // Extra space (world units) between the viewer's row and the main timeline
 // while a collection is viewed, for the labels in between.
 export const COLLECTION_ROW_GAP_EXTRA = 200;
 // How strongly the items not in a collection show while it's viewed.
 export const COLLECTION_OTHER_ITEM_ALPHA = 0.6;
-export const COLLECTED_ROW_EXTRA_GAP = 80;
+export const COLLECTED_ROW_EXTRA_GAP = 120;
+// A label's height (screen px) before it has been drawn and measured.
+export const LABEL_HEIGHT_FALLBACK_PX = 64;
+// Clear space (world units) kept between a label and the row past it.
+export const LABEL_ROW_CLEARANCE = 16;
+// The gap (world units) between an item and the label hung from it.
+export const ITEM_LABEL_GAP = 12;
 export const MAIN_LINE_Y = PADDING_Y + IMAGE_HEIGHT / 2;
 // How far (screen px) either side of a timeline line still counts as hovering
 // it. When several lines are in reach, the nearest one wins.

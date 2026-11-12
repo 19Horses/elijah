@@ -194,6 +194,12 @@ export type DateLabel = {
   collectedBy?: CollectedBy;
   // How strongly the "owned by" line shows (fading as the view zooms out).
   ownerAlpha?: number;
+  // Where an anchored label may sit: beside its item (left or right), on
+  // top of it, or under it. Unset, it takes whichever spot is clearest.
+  placement?: 'side' | 'above' | 'below';
+  // Records the label's drawn height under this key (a collected item's
+  // content id), for the rows to leave room for.
+  measureKey?: string;
   // Widest (world units) the text may run before wrapping onto more lines.
   maxWidth?: number;
   // Hang the label below `y` (wrapping downward) rather than sitting on it.
@@ -803,6 +809,8 @@ export function drawMainLaneItems(
           x: imageLeft + width / 2,
           y: top + height + 12,
           below: true,
+          // Main timeline items are labelled beside them.
+          placement: 'side',
           font: CANVAS_LABEL_FONT,
           scale: ITEM_LABEL_SCALE,
           letterSpacing: ITEM_LABEL_LETTER_SPACING,

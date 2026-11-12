@@ -235,6 +235,8 @@ function VideoOverlayPlayer({
           height="100%"
           controls={false}
           playsinline
+          // Starts over when it reaches the end.
+          loop
           playing={state.playing}
           onPlay={onPlay}
           onPause={onPause}

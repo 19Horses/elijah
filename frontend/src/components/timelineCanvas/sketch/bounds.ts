@@ -1,6 +1,9 @@
 import {
   BRANCH_LINE_GAP_PX,
   COLLECTED_ROW_EXTRA_GAP,
+  ITEM_LABEL_GAP,
+  LABEL_HEIGHT_FALLBACK_PX,
+  LABEL_ROW_CLEARANCE,
   DATE_OFFSET,
   IMAGE_HEIGHT,
   ITEM_GAP,
@@ -1339,6 +1342,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
 
     const bounds: ContentBounds[] = new Array(processedCollected.length);
     const placedRow = new Array<number>(processedCollected.length).fill(-1);
+    const swapping = new Array<boolean>(processedCollected.length).fill(false);
     // Rightmost edge used so far per row, to keep items from overlapping.
     const rowPrevRight = new Map<number, number>();
     // How many items already attach to a given predecessor, so a fork (one
@@ -1439,9 +1443,115 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
         height: scaledHeight,
         dateBottom: top + scaledHeight + DATE_OFFSET,
       });
+      if (swap > 0 && rowTop !== homeTop) {
+        swapping[index] = true;
+      }
     }
 
+    makeRoomForLabels(
+      bounds,
+      placedRow,
+      swapping,
+      swap,
+      rowGrowthOverride !== undefined
+    );
     return bounds;
+  };
+
+  // Rows sit their usual distance apart unless an item's label (hung away
+  // from the main line: under items below it, on top of those above) would
+  // reach the next row out where something sits across from it; then that
+  // row, and every row past it, moves out just enough to clear it.
+  const makeRoomForLabels = (
+    bounds: ContentBounds[],
+    placedRow: number[],
+    swapping: boolean[],
+    swap: number,
+    settled: boolean
+  ) => {
+    // Each side's rows, nearest the main line first, holding their items.
+    const slots: number[][][] = [[], []];
+    placedRow.forEach((row, index) => {
+      if (row < 0 || !bounds[index]) {
+        return;
+      }
+      // (Items moving over to view a collection keep out of it.)
+      if (swapping[index] && swap > 0) {
+        return;
+      }
+      const side = row % 2;
+      const slot = Math.floor(row / 2);
+      (slots[side][slot] ??= []).push(index);
+    });
+    // Labels keep their size on screen, so on the map they take more room
+    // the further out the view is. Past the zoom that fits the whole map they
+    // count at that zoom's size, so the rows hold still as the view zooms in
+    // (on an item, say) and the settled layout an item is aimed at matches.
+    const fitZoom = runtime.fitZoomLevel > 0 ? runtime.fitZoomLevel : null;
+    const labelZoom = Math.max(
+      settled
+        ? fitZoom ?? runtime.zoom
+        : fitZoom === null
+        ? runtime.zoom
+        : Math.min(runtime.zoom, fitZoom),
+      1e-6
+    );
+    const labelHeight = (index: number) =>
+      (runtime.labelHeights.get(processedCollected[index].contentId) ??
+        LABEL_HEIGHT_FALLBACK_PX) / labelZoom;
+    const labelSpan = (b: ContentBounds) => {
+      const half = Math.max(b.width, ITEM_WIDTH * 0.8) / 2;
+      const centre = (b.left + b.right) / 2;
+      return { left: centre - half, right: centre + half };
+    };
+    const across = (a: ContentBounds, b: ContentBounds) => {
+      const span = labelSpan(a);
+      return span.left < b.right && span.right > b.left;
+    };
+    const shiftBySlot: number[][] = [[], []];
+    [0, 1].forEach((side) => {
+      let shift = 0;
+      const rows = slots[side];
+      for (let slot = 0; slot < rows.length; slot++) {
+        const inner = rows[slot - 1] ?? [];
+        let need = 0;
+        (rows[slot] ?? []).forEach((outerIndex) => {
+          const outer = bounds[outerIndex];
+          inner.forEach((innerIndex) => {
+            const near = bounds[innerIndex];
+            if (!across(near, outer)) {
+              return;
+            }
+            const reach =
+              ITEM_LABEL_GAP + labelHeight(innerIndex) + LABEL_ROW_CLEARANCE;
+            const room =
+              side === 0
+                ? outer.top - (near.top + near.height)
+                : near.top - (outer.top + outer.height);
+            need = Math.max(need, reach - room);
+          });
+        });
+        shift += need;
+        shiftBySlot[side][slot] = shift;
+      }
+    });
+    placedRow.forEach((row, index) => {
+      const b = bounds[index];
+      if (row < 0 || !b) {
+        return;
+      }
+      const side = row % 2;
+      const shift =
+        (shiftBySlot[side][Math.floor(row / 2)] ?? 0) *
+        (swapping[index] ? 1 - swap : 1);
+      if (shift === 0) {
+        return;
+      }
+      const dy = side === 0 ? shift : -shift;
+      b.top += dy;
+      b.centerY += dy;
+      b.dateBottom += dy;
+    });
   };
 
   const getIsolatedLineTargets = (

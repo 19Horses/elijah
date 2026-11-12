@@ -116,13 +116,15 @@ export function createTimelineSketch(
     // flying off from under its details — it moves there at once, and the
     // view moves with it, so nothing shifts on screen.
     // (`measure` must be how `before` was taken.)
+    // (`before` null: just stop it easing; the open item's own view follows
+    // it — see followFocusedItem.)
     const holdItemInPlace = (
       target: FocusTarget | null,
       before: ContentBounds | null,
       measure: (target: FocusTarget) => ContentBounds = view.getFocusBounds
     ) => {
       const { runtime } = deps;
-      if (!before || !target || target.lane === 'preview') {
+      if (!target || target.lane === 'preview') {
         return;
       }
       const shift = runtime.layoutChange.shift;
@@ -144,6 +146,9 @@ export function createTimelineSketch(
           offset.dx = 0;
           offset.dy = 0;
         }
+      }
+      if (!before) {
+        return;
       }
       const after = measure(target);
       const dx = after.left - before.left;
@@ -185,16 +190,13 @@ export function createTimelineSketch(
         runtime.focusTarget?.lane === 'collected'
           ? deps.processedCollected[runtime.focusTarget.index]?.contentId
           : undefined;
-      // Where an open item sits now, to keep it there on screen however the
-      // new layout moves it.
-      const focusedBefore =
-        runtime.focusTarget && runtime.focusTarget.lane !== 'preview'
-          ? view.getFocusBounds(runtime.focusTarget)
-          : null;
-      // Likewise the viewer's just-collected item while it waits, landed, to
-      // open: the camera's been set to hold it where it came to rest.
+      // The viewer's just-collected item while it waits, landed, to open:
+      // the camera's been set to hold it where it came to rest, so keeps it
+      // there however the new layout moves it.
       const returningBefore =
-        runtime.collectReturnIndex !== -1 && runtime.focusTarget === null
+        runtime.collectReturnIndex !== -1 &&
+        runtime.collectReturnLane === 'collected' &&
+        runtime.focusTarget === null
           ? boundsCtx.getCollectedBounds()[runtime.collectReturnIndex] ?? null
           : null;
 
@@ -225,7 +227,8 @@ export function createTimelineSketch(
           runtime.focusTarget = { lane: 'collected', index };
         }
       }
-      holdItemInPlace(runtime.focusTarget, focusedBefore);
+      holdItemInPlace(runtime.focusTarget, null);
+      view.followFocusedItem();
 
       const collectContentId = runtime.collectContentId;
       if (!collectContentId) {
@@ -238,7 +241,12 @@ export function createTimelineSketch(
             (source) => source.username === deps.currentUsername
           )
       );
-      if (runtime.collectReturnIndex !== -1) {
+      if (runtime.collectReturnLane === 'main') {
+        // Landing on the main timeline, which a reload doesn't move.
+        if (runtime.collectReturnIndex !== -1) {
+          return;
+        }
+      } else if (runtime.collectReturnIndex !== -1) {
         if (collectedIndex === -1) {
           runtime.collectReturnIndex = -1;
           runtime.collectReturnStartMs = null;
@@ -260,21 +268,25 @@ export function createTimelineSketch(
         ) {
           return;
         }
-        // It hasn't landed as a tile on the viewer's timeline (something on
-        // the main timeline never gets one): rather than hold the item
-        // mid-air, back out to the map and open it where it does sit.
+        // It hasn't landed as a tile on the viewer's timeline: something on
+        // the main timeline never gets one, so lands there instead, opening
+        // from where it came to rest just as a tile would.
+        const mainIndex = deps.items.findIndex(
+          (item) => item._id === collectContentId
+        );
+        if (
+          mainIndex !== -1 &&
+          view.startCollectReturn(mainIndex, runtime.collectFinalRect, 'main')
+        ) {
+          return;
+        }
+        // Otherwise, rather than hold the item mid-air, back out to the map.
         runtime.collectStartMs = null;
         runtime.collectIndex = -1;
         runtime.collectReported = false;
         runtime.collectContentId = null;
         runtime.collectFinalRect = null;
         view.showFullMap();
-        const mainIndex = deps.items.findIndex(
-          (item) => item._id === collectContentId
-        );
-        if (mainIndex !== -1) {
-          view.focusItem({ lane: 'main', index: mainIndex });
-        }
       }
     };
     const gallery = createGalleryController(p);

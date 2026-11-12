@@ -352,7 +352,13 @@ export type TimelineRuntime = {
   mapZoom: number;
   // Easing the map from one set of collected timelines to the next.
   layoutChange: LayoutChangeState;
+  // How tall (screen px) each collected item's label is, by content id, as
+  // last drawn (eased), so rows can leave room for the labels between them.
+  labelHeights: Map<string, number>;
   collectReturnIndex: number;
+  // Which lane that item lands in: a tile on the viewer's timeline, or (for
+  // something on the main timeline) the main timeline itself.
+  collectReturnLane: 'main' | 'collected';
   collectReturnWaitStartMs: number;
   collectReturnStartMs: number | null;
   loadStartMs: number;

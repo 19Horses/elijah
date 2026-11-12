@@ -1004,17 +1004,16 @@ function Home({
                                           {kind}
                                         </span>
                                       )}
-                                      {/* What a click does, on one still to
-                                      collect; one already collected doesn't
-                                      repeat its description. */}
-                                      {!isCollected && (
-                                        <span className="collection-card-title__kind collection-card-title__kind--add">
-                                          + ADD TO YOUR TIMELINE
-                                        </span>
-                                      )}
                                     </span>
                                     {/* Under the picture and those lines, the
-                                    row's full width. */}
+                                    row's full width: what a click does, then
+                                    the description (one already collected
+                                    shows neither). */}
+                                    {!isCollected && (
+                                      <span className="collection-card-title__kind collection-card-title__kind--add">
+                                        + ADD TO YOUR TIMELINE
+                                      </span>
+                                    )}
                                     {hasRichText(description) &&
                                       !isCollected && (
                                         <span className="collection-card-title__description">

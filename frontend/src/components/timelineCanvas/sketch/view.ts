@@ -60,6 +60,7 @@ export type ViewContext = {
   ) => void;
   computeFitViewTargets: () => void;
   refitHomeForPanel: () => void;
+  followFocusedItem: () => void;
   computeFocusViewTargets: (bounds: ContentBounds) => void;
   getFocusBounds: (target: FocusTarget) => ContentBounds;
   applyViewTargets: () => void;
@@ -70,8 +71,9 @@ export type ViewContext = {
   fitView: () => void;
   playEntranceAnimation: () => void;
   startCollectReturn: (
-    collectedIndex: number,
-    rect: DetailImageRect
+    index: number,
+    rect: DetailImageRect,
+    lane?: 'main' | 'collected'
   ) => boolean;
   animateToFitView: () => void;
   startPreviewCollect: (previewIndex: number) => boolean;
@@ -338,6 +340,62 @@ export function createViewContext(
       runtime.targetCameraY + p.height / (2 * runtime.targetZoom)
     );
     runtime.viewAnimating = true;
+  };
+
+  // Where the open item sat when the view was aimed at it.
+  let focusAim: ContentBounds | null = null;
+
+  // An open (or opening) item whose place on the map changes — the
+  // timelines reloading as a collect is saved, rows making room for labels —
+  // takes the view with it, so it stays framed beside its details. Checked
+  // every frame.
+  const followFocusedItem = () => {
+    const target = runtime.focusTarget;
+    if (!target) {
+      focusAim = null;
+      return;
+    }
+    if (!focusAim || runtime.viewUnfocusing || target.lane === 'preview') {
+      return;
+    }
+    const now = getFocusBounds(target);
+    if (!now) {
+      return;
+    }
+    const resized =
+      Math.abs(now.width - focusAim.width) > 0.5 ||
+      Math.abs(now.height - focusAim.height) > 0.5;
+    const dx = now.left - focusAim.left;
+    const dy = now.top - focusAim.top;
+    if (!resized && Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) {
+      return;
+    }
+    focusAim = { ...now };
+    if (resized) {
+      // A different size frames afresh.
+      computeFocusViewTargets(now);
+      if (runtime.viewAnimating) {
+        beginViewAnimation(
+          (now.left + now.right) / 2,
+          now.top + now.height / 2
+        );
+      } else {
+        runtime.zoom = runtime.targetZoom;
+        runtime.cameraX = runtime.targetCameraX;
+        runtime.cameraY = runtime.targetCameraY;
+      }
+      return;
+    }
+    runtime.cameraX += dx;
+    runtime.cameraY += dy;
+    runtime.targetCameraX += dx;
+    runtime.targetCameraY += dy;
+    runtime.animationWorldX += dx;
+    runtime.animationWorldY += dy;
+    runtime.animationStartCameraX += dx;
+    runtime.animationStartCameraY += dy;
+    runtime.panTargetCameraX += dx;
+    runtime.panTargetCameraY += dy;
   };
 
   const computeFocusViewTargets = (focusBounds: ContentBounds) => {
@@ -676,42 +734,6 @@ export function createViewContext(
     return Math.max(contentMin, Math.min(camera, contentMax - viewSize));
   };
 
-  // Whether every item (and its label room) is on screen at the current
-  // zoom, beside the collection panel — on the map, not a grid or an item.
-  const wholeMapOnScreen = (): boolean => {
-    if (
-      runtime.branchSoloActive ||
-      runtime.focusTarget !== null ||
-      runtime.branchIsolateActive
-    ) {
-      return false;
-    }
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
-    for (const b of [
-      ...bounds.getAllBounds(),
-      ...bounds.getCollectedBounds(),
-    ]) {
-      minX = Math.min(minX, b.left);
-      maxX = Math.max(maxX, b.right);
-      minY = Math.min(minY, b.top);
-      maxY = Math.max(maxY, b.dateBottom);
-    }
-    if (!Number.isFinite(minX)) {
-      return false;
-    }
-    const toScreenX = (x: number) => (x - runtime.cameraX) * runtime.zoom;
-    const toScreenY = (y: number) => (y - runtime.cameraY) * runtime.zoom;
-    return (
-      toScreenX(minX) >= panelInsets(0).left &&
-      toScreenX(maxX) <= p.width - panelInsets(0).right &&
-      toScreenY(minY) >= 0 &&
-      toScreenY(maxY) <= p.height
-    );
-  };
-
   // Keep the camera inside the timeline's content so panning/zooming can't
   // stray into empty space.
   const clampCameraToContent = () => {
@@ -742,11 +764,6 @@ export function createViewContext(
   // previous pan has settled, or the camera moved via zoom/focus/fit since —
   // so a fresh gesture never resumes from a stale, abandoned target.
   const nudgePanTarget = (deltaX: number, deltaY: number) => {
-    // With the whole map already on screen (clear of the collection panel),
-    // there's nowhere to drag it to.
-    if (wholeMapOnScreen()) {
-      return;
-    }
     if (!runtime.panning) {
       runtime.panTargetCameraX = runtime.cameraX;
       runtime.panTargetCameraY = runtime.cameraY;
@@ -930,11 +947,17 @@ export function createViewContext(
     runtime.viewUnfocusing = false;
   };
 
+  // (`lane` 'main': something on the main timeline, which lands there.)
   const startCollectReturn = (
     collectedIndex: number,
-    rect: DetailImageRect
+    rect: DetailImageRect,
+    lane: 'main' | 'collected' = 'collected'
   ) => {
-    const roughBounds = bounds.getCollectedBounds()[collectedIndex];
+    const boundsFor = () =>
+      lane === 'main'
+        ? bounds.getAllBounds()[collectedIndex]
+        : bounds.getCollectedBounds()[collectedIndex];
+    const roughBounds = boundsFor();
     if (!roughBounds || roughBounds.width <= 0) {
       return false;
     }
@@ -959,7 +982,7 @@ export function createViewContext(
       deps.refs.onBranchIsolationExitRef.current?.();
     }
     runtime.zoom = rect.width / roughBounds.width;
-    const itemBounds = bounds.getCollectedBounds()[collectedIndex];
+    const itemBounds = boundsFor();
     runtime.zoom = rect.width / itemBounds.width;
     runtime.cameraX = itemBounds.left - rect.left / runtime.zoom;
     runtime.cameraY = itemBounds.top - rect.top / runtime.zoom;
@@ -968,6 +991,7 @@ export function createViewContext(
     runtime.viewAnimating = false;
     runtime.viewUnfocusing = false;
     runtime.collectReturnIndex = collectedIndex;
+    runtime.collectReturnLane = lane;
     runtime.collectReturnWaitStartMs = p.millis();
     runtime.collectReturnStartMs = null;
     syncInteractionLock(deps);
@@ -1401,6 +1425,7 @@ export function createViewContext(
     }
     const focusBounds = getFocusBounds(target);
     computeFocusViewTargets(focusBounds);
+    focusAim = { ...focusBounds };
     beginViewAnimation(
       (focusBounds.left + focusBounds.right) / 2,
       focusBounds.top + focusBounds.height / 2
@@ -1708,6 +1733,7 @@ export function createViewContext(
     setCameraFromScreenAnchor,
     computeFitViewTargets,
     refitHomeForPanel,
+    followFocusedItem,
     computeFocusViewTargets,
     getFocusBounds,
     applyViewTargets,
