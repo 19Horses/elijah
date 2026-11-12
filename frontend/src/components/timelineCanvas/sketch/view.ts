@@ -5,6 +5,10 @@ import {
   DETAIL_TEXT_GAP_PX,
   DETAIL_TEXT_VIEWPORT_LEFT,
   ENTRANCE_ZOOM_START_FACTOR,
+  COLLECTION_FRAME_BOTTOM_PX,
+  COLLECTION_FRAME_SIDE_PX,
+  COLLECTION_FRAME_TOP_PX,
+  COLLECTION_PANEL_GAP_PX,
   FIT_VIEW_MARGINS_PX,
   MAIN_FIT_VIEW_MARGINS_PX,
   MAIN_FIT_ZOOM_SCALAR,
@@ -16,7 +20,8 @@ import {
   MIN_ZOOM_FACTOR,
   PAN_LERP,
   PAN_SETTLE_THRESHOLD_PX,
-  PREVIEW_ISOLATE_HOVER_MAX_ZOOM,
+  SOLO_GRID_BOTTOM_PX,
+  SOLO_GRID_TOP_PX,
   VIEW_ANIMATION_LERP,
   COLLECT_RETURN_ZOOM_LERP,
   VIEW_SNAP_THRESHOLD,
@@ -54,6 +59,7 @@ export type ViewContext = {
     nextZoom: number
   ) => void;
   computeFitViewTargets: () => void;
+  refitHomeForPanel: () => void;
   computeFocusViewTargets: (bounds: ContentBounds) => void;
   getFocusBounds: (target: FocusTarget) => ContentBounds;
   applyViewTargets: () => void;
@@ -77,11 +83,13 @@ export type ViewContext = {
   findClickedBranch: (worldX: number, worldY: number) => number | null;
   focusItem: (target: FocusTarget) => void;
   focusBranch: (rowIndex: number) => void;
+  soloOwnBranch: () => void;
   unfocusItem: () => void;
+  // Back out of any focused item or isolated branch to the full map.
+  showFullMap: () => void;
   previewFocusItem: (target: FocusTarget) => void;
   clearPreviewFocus: () => void;
   previewContentId: (contentId: string) => void;
-  previewIsolatedContentId: (contentId: string) => void;
   focusContentId: (contentId: string) => void;
   setCollectionViewActive: (active: boolean) => void;
   toggleOwnBranchIsolation: () => void;
@@ -189,6 +197,20 @@ export function createViewContext(
     return { centerX, centerY };
   };
 
+  // The home view as last framed, and the collection panel width it left
+  // room for, so it can be re-framed when the panel comes or goes.
+  let home: { zoom: number; x: number; y: number; panelInset: number } | null =
+    null;
+  // The focused timeline's framing likewise, to re-frame as its cards load.
+  let branchFrame: {
+    rowIndex: number;
+    bounds: ContentBounds[];
+    zoom: number;
+    x: number;
+    y: number;
+    panelInset: number;
+  } | null = null;
+
   const computeFitViewTargets = () => {
     // Item and line sizing is measured against the zoom that frames the whole
     // map — the main timeline and every branch above and below it (collected
@@ -200,11 +222,32 @@ export function createViewContext(
       FIT_VIEW_MARGINS_PX
     );
     const wholeMapZoom = wholeMap ? runtime.targetZoom : 1;
-    // The view itself starts on the main timeline, spanning the screen; the
-    // branches above and below overflow it until you zoom out.
+    // The view itself starts on the main timeline, spanning the screen
+    // beside the collection panel; the branches above and below overflow it
+    // until you zoom out.
+    const insets = panelInsets(COLLECTION_PANEL_GAP_PX, false, true);
+    const panelInset = insets.left + insets.right;
+    // Across, it spans every item, the branches' too (something dated before
+    // the first main item sits out to its left), so none starts under the
+    // panel; up and down it stays on the main timeline.
+    const mainBounds = bounds.getAllBounds();
+    const across = [...mainBounds];
+    const collectedBounds = bounds.getCollectedBounds(1);
+    if (mainBounds.length > 0 && collectedBounds.length > 0) {
+      const minLeft = Math.min(...collectedBounds.map((b) => b.left));
+      const maxRight = Math.max(...collectedBounds.map((b) => b.right));
+      across.push(
+        { ...mainBounds[0], left: minLeft, right: minLeft, width: 0 },
+        { ...mainBounds[0], left: maxRight, right: maxRight, width: 0 }
+      );
+    }
     const framed = computeFitTargetsForBounds(
-      bounds.getAllBounds(),
-      MAIN_FIT_VIEW_MARGINS_PX,
+      across,
+      {
+        ...MAIN_FIT_VIEW_MARGINS_PX,
+        left: Math.max(MAIN_FIT_VIEW_MARGINS_PX.left, insets.left),
+        right: Math.max(MAIN_FIT_VIEW_MARGINS_PX.right, insets.right),
+      },
       MAIN_FIT_ZOOM_SCALAR
     );
     if (!framed) {
@@ -213,6 +256,69 @@ export function createViewContext(
       runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
     }
     runtime.fitZoomLevel = wholeMapZoom;
+    runtime.mapZoom = runtime.targetZoom;
+    home = {
+      zoom: runtime.targetZoom,
+      x: runtime.targetCameraX,
+      y: runtime.targetCameraY,
+      panelInset,
+    };
+  };
+
+  // The collection panel loads in after the map (and goes once everything's
+  // collected): while the view is still on the home framing, re-frame it
+  // around the panel as it is now. Checked now and then, not every frame.
+  let lastPanelCheckMs = -Infinity;
+  const refitHomeForPanel = () => {
+    const now = p.millis();
+    if (now - lastPanelCheckMs < 250) {
+      return;
+    }
+    lastPanelCheckMs = now;
+    if (branchFrame) {
+      const stillFramed =
+        runtime.focusedBranchRow === branchFrame.rowIndex &&
+        runtime.focusTarget === null &&
+        Math.abs(runtime.targetZoom - branchFrame.zoom) < 1e-6 &&
+        Math.abs(runtime.targetCameraX - branchFrame.x) < 1e-3 &&
+        Math.abs(runtime.targetCameraY - branchFrame.y) < 1e-3;
+      if (!stillFramed) {
+        branchFrame = null;
+      } else if (
+        Math.abs(
+          collectionPanelInset(COLLECTION_PANEL_GAP_PX, true) -
+            branchFrame.panelInset
+        ) >= 1
+      ) {
+        frameBranchBounds();
+        return;
+      }
+    }
+    if (!home) {
+      return;
+    }
+    const onHome =
+      runtime.focusTarget === null &&
+      runtime.branchIsolateRow === null &&
+      !runtime.isCollectionViewActive &&
+      Math.abs(runtime.targetZoom - home.zoom) < 1e-6 &&
+      Math.abs(runtime.targetCameraX - home.x) < 1e-3 &&
+      Math.abs(runtime.targetCameraY - home.y) < 1e-3;
+    if (
+      !onHome ||
+      Math.abs(
+        collectionPanelInset(COLLECTION_PANEL_GAP_PX, false, true) -
+          home.panelInset
+      ) < 1
+    ) {
+      return;
+    }
+    computeFitViewTargets();
+    beginViewAnimation(
+      runtime.targetCameraX + p.width / (2 * runtime.targetZoom),
+      runtime.targetCameraY + p.height / (2 * runtime.targetZoom)
+    );
+    runtime.viewAnimating = true;
   };
 
   const computeFocusViewTargets = (focusBounds: ContentBounds) => {
@@ -234,23 +340,185 @@ export function createViewContext(
     runtime.targetCameraY = focusBounds.top - targetTopScreen / zoom;
   };
 
-  // Sets the camera targets to frame an isolated branch's even-spaced layout
-  // (main line edge-to-edge, vertically centred) — its own items merged by
-  // date with the active collection's collectibles, per
-  // bounds.getIsolatedMergedLine — and returns its centroid for the
-  // zoom-animation anchor, or null if the row has no items.
-  const frameIsolatedBranch = (rowIndex: number): number | null => {
-    const line = bounds.getIsolatedMergedLine(rowIndex);
-    if (!line) {
+  // Screen px the left column (collection boxes, or a viewed timeline's
+  // cards) covers from the canvas's left edge while it's showing, plus a
+  // gap, so framing can keep the timeline clear of it.
+  // `expectColumn`: count the column as filled even before its contents
+  // render — a timeline being viewed always fills it (its "You are viewing"
+  // box and item cards), so it's framed for them from the click on, rather
+  // than once they appear.
+  // `forWorldView`: as the column will be on the world view — its collection
+  // boxes, if there are any to show, and not a timeline's cards that are on
+  // their way out — so leaving a timeline frames the map once, not again as
+  // the column swaps over.
+  const panelInsets = (
+    gap = COLLECTION_PANEL_GAP_PX,
+    expectColumn = false,
+    forWorldView = false
+  ): { left: number; right: number } => {
+    // The column holds collection boxes, or a timeline's "You are viewing"
+    // box and item cards: whatever of it is showing.
+    const parts = document.querySelectorAll(
+      forWorldView
+        ? '.collection-card-stack:not(.collection-card-stack--hidden), .timeline-item-card--opened'
+        : '.collection-card-stack:not(.collection-card-stack--hidden), .branch-focus-card, .collection-card-list:not(.collection-card-list--hidden) .timeline-item-card'
+    );
+    const stack =
+      expectColumn ||
+      (forWorldView &&
+        parts.length === 0 &&
+        deps.refs.hasCollectionPanelRef.current)
+        ? document.querySelector('.top-right-stack')
+        : null;
+    if (parts.length === 0 && !stack) {
+      return { left: 0, right: 0 };
+    }
+    const canvasRect = (
+      p.drawingContext as CanvasRenderingContext2D
+    ).canvas.getBoundingClientRect();
+    let panelRight = -Infinity;
+    parts.forEach((part) => {
+      panelRight = Math.max(panelRight, part.getBoundingClientRect().right);
+    });
+    if (stack) {
+      // The column's cards are --top-right-card-width wide:
+      // clamp(140px, 18vw, 260px).
+      const left = stack.getBoundingClientRect().left;
+      const cardWidth = Math.min(260, Math.max(140, window.innerWidth * 0.18));
+      panelRight = Math.max(panelRight, left + cardWidth);
+    }
+    // (The right-hand column, the audio player, is left to float over the
+    // map.)
+    return {
+      left:
+        panelRight === -Infinity
+          ? 0
+          : Math.max(0, panelRight - canvasRect.left + gap),
+      right: 0,
+    };
+  };
+  const collectionPanelInset = (
+    gap = COLLECTION_PANEL_GAP_PX,
+    expectColumn = false,
+    forWorldView = false
+  ): number => {
+    const { left, right } = panelInsets(gap, expectColumn, forWorldView);
+    return left + right;
+  };
+
+  // Frames a collection view: the viewer's branch with the collection's
+  // items on it, and the stretch of main timeline beneath them, in the space
+  // the header and the collection panel leave. Returns the framed centre (for
+  // the zoom animation anchor), or null when there's nothing to frame.
+  const frameIsolatedBranch = (
+    rowIndex: number
+  ): { x: number; y: number } | null => {
+    // Framed as it will settle: with the main and collection items' sizes
+    // swapped over.
+    const frameAtCurrentZoom = () => {
+      const line = bounds.getIsolatedMergedLine(rowIndex, null, 1);
+      if (!line) {
+        return null;
+      }
+      // Just the collection's own items: those still to collect, and any the
+      // viewer already has, on their branch or the main timeline. (One on the
+      // main timeline they haven't collected shows as one to collect, above
+      // it; its main-timeline copy isn't counted.)
+      const collectionIds = new Set(
+        deps.processedPreview.map((preview) => preview.contentId)
+      );
+      const mainBounds = bounds.getAllBounds(1);
+      const collectionRects = [
+        ...line.entries
+          .filter((entry) => collectionIds.has(entry.contentId))
+          .map((entry) => entry.rect),
+        ...deps.items.flatMap((item, index) =>
+          collectionIds.has(item._id) &&
+          deps.refs.collectorsRef.current
+            ?.get(item._id)
+            ?.some((collector) => collector.username === deps.currentUsername)
+            ? [mainBounds[index]]
+            : []
+        ),
+      ];
+      // (With nothing of the collection placed, the branch and the main
+      // timeline under it — or the whole main timeline.)
+      const hasBranch = line.entries.some(
+        (entry) => entry.kind === 'collected'
+      );
+      const fallback = [
+        ...line.entries.map((entry) => entry.rect),
+        ...mainBounds.filter(
+          (b) => !hasBranch || (b.right >= line.minX && b.left <= line.maxX)
+        ),
+      ];
+      // (The pack's own items alone are centred; the main timeline under
+      // them may run off the screen's foot.)
+      const framed = computeFitTargetsForBounds(
+        collectionRects.length > 0 ? collectionRects : fallback,
+        // Centred in the space the header, panel and labels leave.
+        collectionFrameMargins()
+      );
+      if (framed) {
+        capTargetZoom(framed, Math.max(MAX_ZOOM_LEVEL, runtime.fitZoomLevel));
+      }
+      return framed;
+    };
+    // The rows spread apart (and items grow) as the camera zooms out, so
+    // measure the layout at the zoom it lands on: frame, lay out again at
+    // that zoom, and re-frame, until the zoom settles.
+    const liveZoom = runtime.zoom;
+    // (Laid out as the map, not as "your items" grid, should that still be
+    // fading away from just before.)
+    const liveSolo = runtime.branchSolo;
+    runtime.branchSolo = 0;
+    let framed = frameAtCurrentZoom();
+    for (
+      let pass = 0;
+      framed &&
+      pass < 4 &&
+      Math.abs(runtime.targetZoom / runtime.zoom - 1) > 1e-3;
+      pass++
+    ) {
+      runtime.zoom = runtime.targetZoom;
+      framed = frameAtCurrentZoom();
+    }
+    runtime.zoom = liveZoom;
+    runtime.branchSolo = liveSolo;
+    if (!framed) {
       return null;
     }
-    const paddedWidth = line.maxX - line.minX + FIT_VIEW_PADDING * 2;
-    runtime.targetZoom = (p.width / paddedWidth) * FIT_ZOOM_SCALAR;
-    const maxZoom = Math.max(MAX_ZOOM_LEVEL, runtime.fitZoomLevel);
-    runtime.targetZoom = Math.min(runtime.targetZoom, maxZoom);
-    runtime.targetCameraX = line.centroid - p.width / (2 * runtime.targetZoom);
-    runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
-    return line.centroid;
+    return { x: framed.centerX, y: framed.centerY };
+  };
+
+  // Margins that allow for the header, the collection panel and the labels
+  // hung around the items, for framing within a collection view.
+  const collectionFrameMargins = (expectColumn = false) => {
+    const insets = panelInsets(COLLECTION_PANEL_GAP_PX, expectColumn);
+    return {
+      top: COLLECTION_FRAME_TOP_PX,
+      bottom: COLLECTION_FRAME_BOTTOM_PX,
+      left: COLLECTION_FRAME_SIDE_PX + insets.left,
+      right: COLLECTION_FRAME_SIDE_PX + insets.right,
+    };
+  };
+
+  // Holds a just-framed target zoom to `maxZoom`, keeping the framed centre
+  // where it was on screen.
+  const capTargetZoom = (
+    framed: { centerX: number; centerY: number },
+    maxZoom: number
+  ) => {
+    if (runtime.targetZoom <= maxZoom) {
+      return;
+    }
+    const screenX =
+      (framed.centerX - runtime.targetCameraX) * runtime.targetZoom;
+    const screenY =
+      (framed.centerY - runtime.targetCameraY) * runtime.targetZoom;
+    runtime.targetZoom = maxZoom;
+    runtime.targetCameraX = framed.centerX - screenX / maxZoom;
+    runtime.targetCameraY = framed.centerY - screenY / maxZoom;
   };
 
   const getFocusBounds = (target: FocusTarget): ContentBounds => {
@@ -295,6 +563,17 @@ export function createViewContext(
     runtime.viewAnimating = false;
   };
 
+  // The collection panel's inset, measured now and then rather than on every
+  // clamp (it reads the page layout).
+  let panelInset = { value: { left: 0, right: 0 }, atMs: -Infinity };
+  const cachedPanelInset = () => {
+    const now = p.millis();
+    if (now - panelInset.atMs > 250) {
+      panelInset = { value: panelInsets(), atMs: now };
+    }
+    return panelInset.value;
+  };
+
   // The world-space rectangle covering every item (main + collected), padded so
   // a little breathing room shows past the outermost items. The camera is kept
   // inside this so the user can't pan off into empty space.
@@ -304,6 +583,23 @@ export function createViewContext(
     minY: number;
     maxY: number;
   } | null => {
+    // A timeline shown alone scrolls only up and down its grid, held to the
+    // width it's framed at.
+    const area = runtime.branchSoloActive ? runtime.soloGridArea : null;
+    if (area) {
+      const margins = soloGridMargins();
+      const gridMinX = area.left - margins.left / runtime.zoom;
+      const gridMinY = area.top - margins.top / runtime.zoom;
+      return {
+        minX: gridMinX,
+        maxX: gridMinX + p.width / runtime.zoom,
+        minY: gridMinY,
+        maxY: Math.max(
+          area.bottom + margins.bottom / runtime.zoom,
+          gridMinY + p.height / runtime.zoom
+        ),
+      };
+    }
     let minX = Infinity;
     let maxX = -Infinity;
     let minY = Infinity;
@@ -325,9 +621,17 @@ export function createViewContext(
     // user-card/mini-player stack (or flush against any other edge) — matches
     // the clearance the default fit view already leaves on top.
     const extraClearance = FIT_VIEW_TOP_CLEARANCE_PX / runtime.zoom;
+    // Either end can come out from under the collection panel.
+    const insets = cachedPanelInset();
     return {
-      minX: minX - FIT_VIEW_PADDING - extraClearance,
-      maxX: maxX + FIT_VIEW_PADDING + extraClearance,
+      minX:
+        minX -
+        FIT_VIEW_PADDING -
+        Math.max(extraClearance, insets.left / runtime.zoom),
+      maxX:
+        maxX +
+        FIT_VIEW_PADDING +
+        Math.max(extraClearance, insets.right / runtime.zoom),
       minY: minY - FIT_VIEW_PADDING - extraClearance,
       maxY: maxY + FIT_VIEW_PADDING + extraClearance,
     };
@@ -351,6 +655,42 @@ export function createViewContext(
       return Math.max(contentMax - viewSize, Math.min(camera, contentMin));
     }
     return Math.max(contentMin, Math.min(camera, contentMax - viewSize));
+  };
+
+  // Whether every item (and its label room) is on screen at the current
+  // zoom, beside the collection panel — on the map, not a grid or an item.
+  const wholeMapOnScreen = (): boolean => {
+    if (
+      runtime.branchSoloActive ||
+      runtime.focusTarget !== null ||
+      runtime.branchIsolateActive
+    ) {
+      return false;
+    }
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const b of [
+      ...bounds.getAllBounds(),
+      ...bounds.getCollectedBounds(),
+    ]) {
+      minX = Math.min(minX, b.left);
+      maxX = Math.max(maxX, b.right);
+      minY = Math.min(minY, b.top);
+      maxY = Math.max(maxY, b.dateBottom);
+    }
+    if (!Number.isFinite(minX)) {
+      return false;
+    }
+    const toScreenX = (x: number) => (x - runtime.cameraX) * runtime.zoom;
+    const toScreenY = (y: number) => (y - runtime.cameraY) * runtime.zoom;
+    return (
+      toScreenX(minX) >= panelInsets(0).left &&
+      toScreenX(maxX) <= p.width - panelInsets(0).right &&
+      toScreenY(minY) >= 0 &&
+      toScreenY(maxY) <= p.height
+    );
   };
 
   // Keep the camera inside the timeline's content so panning/zooming can't
@@ -383,6 +723,11 @@ export function createViewContext(
   // previous pan has settled, or the camera moved via zoom/focus/fit since —
   // so a fresh gesture never resumes from a stale, abandoned target.
   const nudgePanTarget = (deltaX: number, deltaY: number) => {
+    // With the whole map already on screen (clear of the collection panel),
+    // there's nowhere to drag it to.
+    if (wholeMapOnScreen()) {
+      return;
+    }
     if (!runtime.panning) {
       runtime.panTargetCameraX = runtime.cameraX;
       runtime.panTargetCameraY = runtime.cameraY;
@@ -610,17 +955,27 @@ export function createViewContext(
     return true;
   };
 
-  const startPreviewCollect = (previewIndex: number): boolean => {
+  // Collects a collection item: by default only the one being viewed (a
+  // click on it in its detail view); `fromPanel` (a click on its title in
+  // the collection panel) collects it straight from the collection view.
+  const startPreviewCollect = (
+    previewIndex: number,
+    fromPanel = false
+  ): boolean => {
     const item = deps.processedPreview[previewIndex];
     if (
       !item ||
-      runtime.viewAnimating ||
       runtime.collectStartMs !== null ||
-      runtime.focusTarget?.lane !== 'preview' ||
-      runtime.focusTarget.index !== previewIndex
+      (!fromPanel &&
+        (runtime.viewAnimating ||
+          runtime.focusTarget?.lane !== 'preview' ||
+          runtime.focusTarget.index !== previewIndex))
     ) {
       return false;
     }
+    // Settle wherever a hover zoom had got to, so the item flies in from
+    // where it's shown.
+    runtime.viewAnimating = false;
     runtime.collectStartMs = p.millis();
     runtime.collectIndex = previewIndex;
     runtime.collectReported = false;
@@ -628,15 +983,28 @@ export function createViewContext(
     return true;
   };
 
+  // A click on a collection item's title in its panel. One not collected yet
+  // is collected (which ends back out on the full map); one the viewer
+  // already has just takes them back out to the full map.
   const collectFocusedPreviewContentId = (contentId: string) => {
-    const previewIndex = deps.processedPreview.findIndex(
-      (item) => item.contentId === contentId
-    );
-    if (previewIndex !== -1) {
-      startPreviewCollect(previewIndex);
+    const row = runtime.branchIsolateRow;
+    const entry =
+      row === null
+        ? undefined
+        : bounds
+            .getIsolatedMergedLine(row)
+            ?.entries.find(
+              (e) => e.kind === 'preview' && e.contentId === contentId
+            );
+    if (entry) {
+      startPreviewCollect(entry.index, true);
+      return;
     }
+    showFullMap();
   };
 
+  // Back out to the full map (when a collected item fails to land on the
+  // viewer's timeline).
   const animateToFitView = () => {
     runtime.panning = false;
     runtime.zooming = false;
@@ -756,14 +1124,22 @@ export function createViewContext(
     worldY: number
   ): FocusTarget | null => {
     const allBounds = bounds.getAllBounds();
+    const collectedBounds = bounds.getCollectedBounds();
+    // Showing one timeline alone, only the items in its grid can be clicked.
+    const soloGrid = runtime.branchSoloActive ? runtime.soloGrid : null;
     for (let index = deps.processed.length - 1; index >= 0; index--) {
+      if (soloGrid && !soloGrid.has(`main:${index}`)) {
+        continue;
+      }
       if (hitTest(allBounds[index], worldX, worldY)) {
         return { lane: 'main', index };
       }
     }
 
-    const collectedBounds = bounds.getCollectedBounds();
     for (let index = deps.processedCollected.length - 1; index >= 0; index--) {
+      if (soloGrid && !soloGrid.has(`collected:${index}`)) {
+        continue;
+      }
       if (hitTest(collectedBounds[index], worldX, worldY)) {
         return { lane: 'collected', index };
       }
@@ -777,6 +1153,8 @@ export function createViewContext(
   const setBranchFocus = (rowIndex: number | null) => {
     runtime.focusedBranchRow = rowIndex;
     if (rowIndex === null) {
+      // Leaving the branch brings everything else back.
+      runtime.branchSoloActive = false;
       deps.refs.onBranchFocusRef.current?.(null);
       return;
     }
@@ -784,7 +1162,18 @@ export function createViewContext(
     for (const item of deps.processedCollected) {
       const source = item.sources.find((s) => s.rowIndex === rowIndex);
       if (source) {
-        info = { username: source.username, colour: source.colour };
+        info = {
+          username: source.username,
+          colour: source.colour,
+          own: source.username === deps.currentUsername,
+          mainItemIds: [
+            ...bounds.getBranchMainItems(
+              rowIndex,
+              bounds.getAllBounds(),
+              bounds.getCollectedBounds()
+            ),
+          ].map((index) => deps.items[index]._id),
+        };
         break;
       }
     }
@@ -849,9 +1238,35 @@ export function createViewContext(
     runtime.viewUnfocusing = false;
     syncInteractionLock(deps);
 
-    const center = computeFitTargetsForBounds(branchBounds);
-    if (!center) {
+    branchFrame = {
+      rowIndex,
+      bounds: branchBounds,
+      x: 0,
+      y: 0,
+      zoom: 0,
+      panelInset: 0,
+    };
+    if (!frameBranchBounds()) {
+      branchFrame = null;
       return;
+    }
+    setBranchFocus(rowIndex);
+  };
+
+  // Frames the focused timeline beside the left column (its item cards come
+  // in just after the click, so this runs again when the column changes).
+  const frameBranchBounds = (): boolean => {
+    if (!branchFrame) {
+      return false;
+    }
+    // Framed beside the column when it's showing (else across the screen),
+    // with room for the header and labels.
+    const center = computeFitTargetsForBounds(
+      branchFrame.bounds,
+      collectionFrameMargins(true)
+    );
+    if (!center) {
+      return false;
     }
     // Don't zoom past the manual zoom ceiling for a tiny branch; keep the
     // framed centre.
@@ -863,17 +1278,91 @@ export function createViewContext(
       runtime.targetCameraY =
         center.centerY - p.height / (2 * runtime.targetZoom);
     }
-
-    setBranchFocus(rowIndex);
+    branchFrame.x = runtime.targetCameraX;
+    branchFrame.y = runtime.targetCameraY;
+    branchFrame.zoom = runtime.targetZoom;
+    branchFrame.panelInset = collectionPanelInset(
+      COLLECTION_PANEL_GAP_PX,
+      true
+    );
     beginViewAnimation(center.centerX, center.centerY);
     runtime.viewAnimating = true;
+    return true;
+  };
+
+  // Screen margins around a timeline's grid: the header's room above, the
+  // collection panel's beside.
+  const soloGridMargins = () => ({
+    ...collectionFrameMargins(),
+    top: SOLO_GRID_TOP_PX,
+    bottom: SOLO_GRID_BOTTOM_PX,
+  });
+  // Where the grid was scrolled to when an item was opened from it, to come
+  // back to.
+  let soloScrollY: number | null = null;
+
+  // Frames a timeline shown alone: its grid spanning the width between the
+  // margins, from its top (or where it was last scrolled to). Returns the
+  // framed centre, or null when there's no grid.
+  const frameSoloGrid = (): { x: number; y: number } | null => {
+    const area = runtime.soloGridArea;
+    if (!area) {
+      return null;
+    }
+    const margins = soloGridMargins();
+    const zoom =
+      Math.max(1, p.width - margins.left - margins.right) /
+      Math.max(1, area.right - area.left);
+    runtime.targetZoom = zoom;
+    runtime.targetCameraX = area.left - margins.left / zoom;
+    const topY = area.top - margins.top / zoom;
+    const bottomY = Math.max(
+      topY,
+      area.bottom + margins.bottom / zoom - p.height / zoom
+    );
+    runtime.targetCameraY = Math.min(
+      bottomY,
+      Math.max(topY, soloScrollY ?? topY)
+    );
+    return {
+      x: runtime.targetCameraX + p.width / (2 * zoom),
+      y: runtime.targetCameraY + p.height / (2 * zoom),
+    };
+  };
+
+  // The viewer's own timeline (from "Your items" in the menu), highlighted
+  // just as clicking it on the map would; back to the full map when they
+  // haven't collected anything.
+  const soloOwnBranch = () => {
+    const username = deps.currentUsername;
+    const row = deps.processedCollected
+      .flatMap((item) => item.sources)
+      .find((source) => source.username === username)?.rowIndex;
+    if (row === undefined) {
+      showFullMap();
+      return;
+    }
+    // Leaving a collection that's open for it: the collection closes (its
+    // box too).
+    if (runtime.branchIsolateActive) {
+      runtime.branchIsolateActive = false;
+      deps.refs.onBranchIsolationExitRef.current?.();
+    }
+    // Just as clicking their own line on the map would.
+    focusBranch(row);
   };
 
   const focusItem = (target: FocusTarget) => {
     if (isPrivateTarget(deps, target)) {
       return;
     }
-    clearBranchFocus();
+    // Opening an item from a timeline shown alone keeps it (and its grid)
+    // underneath, to come back to.
+    if (runtime.branchSoloActive) {
+      soloScrollY = runtime.cameraY;
+    } else {
+      clearBranchFocus();
+    }
     // Focusing an item from the isolated view keeps the isolation active
     // underneath (the branch stays straightened and the others stay faded), so
     // getFocusBounds aims at the item's straightened position and unfocusing
@@ -905,18 +1394,28 @@ export function createViewContext(
   };
 
   const unfocusItem = () => {
-    clearBranchFocus();
+    const soloCentre = runtime.branchSoloActive ? frameSoloGrid() : null;
+    if (!soloCentre) {
+      clearBranchFocus();
+    }
     resetCanvasFocus(runtime);
     deps.refs.onContentUnfocusRef.current?.();
     runtime.panning = false;
     runtime.zooming = false;
     runtime.viewUnfocusing = true;
+    // An item opened from a timeline shown alone closes back to its grid.
+    if (soloCentre) {
+      syncInteractionLock(deps);
+      beginViewAnimation(soloCentre.x, soloCentre.y);
+      runtime.viewAnimating = true;
+      return;
+    }
     // If an item was focused from within the isolated view, unfocusing returns
     // to that isolated branch, not the full timeline.
     if (runtime.branchIsolateRow !== null) {
-      const centroid = frameIsolatedBranch(runtime.branchIsolateRow);
+      const centre = frameIsolatedBranch(runtime.branchIsolateRow);
       syncInteractionLock(deps);
-      beginViewAnimation(centroid ?? p.width / 2, MAIN_LINE_Y);
+      beginViewAnimation(centre?.x ?? p.width / 2, centre?.y ?? MAIN_LINE_Y);
       runtime.viewAnimating = true;
       return;
     }
@@ -955,20 +1454,6 @@ export function createViewContext(
       return;
     }
     panToFocusBounds(getFocusBounds(target));
-  };
-
-  const previewIsolatedContentId = (contentId: string) => {
-    if (runtime.branchIsolateRow === null) {
-      return;
-    }
-    const target = resolveContentFocusTarget(contentId);
-    if (!target) {
-      return;
-    }
-    panToFocusBounds(
-      getFocusBounds(target),
-      Math.max(PREVIEW_ISOLATE_HOVER_MAX_ZOOM, runtime.fitZoomLevel)
-    );
   };
 
   const clearPreviewFocus = () => {
@@ -1146,19 +1631,26 @@ export function createViewContext(
     deps.refs.onBranchIsolationExitRef.current?.();
   };
 
+  const showFullMap = () => {
+    if (runtime.branchIsolateActive) {
+      exitBranchIsolation();
+      return;
+    }
+    // Out of a timeline shown alone too, even from an item opened in it.
+    runtime.branchSoloActive = false;
+    unfocusItem();
+  };
+
   const toggleOwnBranchIsolation = () => {
     if (runtime.branchIsolateActive) {
       exitBranchIsolation();
       return;
     }
 
+    // A viewer who hasn't collected anything yet has no branch (row -1): the
+    // collection view then shows the main timeline with the collection's
+    // items in a row above it.
     const ownRow = getOwnBranchRow();
-    const hasOwnBranchItems = deps.processedCollected.some((item) =>
-      item.sources.some((source) => source.rowIndex === ownRow)
-    );
-    if (ownRow < 0 || !hasOwnBranchItems) {
-      return;
-    }
 
     clearBranchFocus();
     resetCanvasFocus(runtime);
@@ -1175,9 +1667,9 @@ export function createViewContext(
     // Frame the branch's final even-spaced straightened layout (main line
     // edge-to-edge, vertically centred), not its scattered date-driven
     // positions.
-    const centroid = frameIsolatedBranch(ownRow);
-    if (centroid !== null) {
-      beginViewAnimation(centroid, MAIN_LINE_Y);
+    const centre = frameIsolatedBranch(ownRow);
+    if (centre !== null) {
+      beginViewAnimation(centre.x, centre.y);
       runtime.viewAnimating = true;
     }
   };
@@ -1186,9 +1678,9 @@ export function createViewContext(
     if (!runtime.branchIsolateActive || runtime.branchIsolateRow === null) {
       return;
     }
-    const centroid = frameIsolatedBranch(runtime.branchIsolateRow);
-    if (centroid !== null) {
-      beginViewAnimation(centroid, MAIN_LINE_Y);
+    const centre = frameIsolatedBranch(runtime.branchIsolateRow);
+    if (centre !== null) {
+      beginViewAnimation(centre.x, centre.y);
       runtime.viewAnimating = true;
     }
   };
@@ -1196,6 +1688,7 @@ export function createViewContext(
   return {
     setCameraFromScreenAnchor,
     computeFitViewTargets,
+    refitHomeForPanel,
     computeFocusViewTargets,
     getFocusBounds,
     applyViewTargets,
@@ -1216,11 +1709,12 @@ export function createViewContext(
     findClickedBranch,
     focusItem,
     focusBranch,
+    soloOwnBranch,
     unfocusItem,
+    showFullMap,
     previewFocusItem,
     clearPreviewFocus,
     previewContentId,
-    previewIsolatedContentId,
     focusContentId,
     setCollectionViewActive,
     toggleOwnBranchIsolation,

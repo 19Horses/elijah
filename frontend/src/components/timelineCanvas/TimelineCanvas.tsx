@@ -45,9 +45,12 @@ function TimelineCanvas({
   cancelPreviewCollectControlRef,
   collectFocusedPreviewControlRef,
   highlightedMainContentId = null,
+  hoveredItemContentId = null,
+  hasCollectionPanel = false,
   viewersBySlug = EMPTY_VIEWERS,
   focusContentIdControlRef,
   resetViewControlRef,
+  soloTimelineControlRef,
   isCollectionView = false,
   colour,
   currentUsername = null,
@@ -63,6 +66,8 @@ function TimelineCanvas({
   onDetailLayoutStart,
   onDetailImageRect,
   onEntranceComplete,
+  onSoloTimelineChange,
+  onBranchFocusChange,
   onBranchIsolationExit,
   activeVideoSlug = null,
   onDismissVideo,
@@ -79,12 +84,21 @@ function TimelineCanvas({
   const onDetailImageRectRef = useRef(onDetailImageRect);
   const onEntranceCompleteRef = useRef(onEntranceComplete);
   const [branchFocus, setBranchFocus] = useState<BranchFocusInfo | null>(null);
+  const soloTimelineActive = branchFocus?.own ?? false;
+  useEffect(() => {
+    onSoloTimelineChange?.(soloTimelineActive);
+  }, [onSoloTimelineChange, soloTimelineActive]);
+  useEffect(() => {
+    onBranchFocusChange?.(branchFocus);
+  }, [onBranchFocusChange, branchFocus]);
   const onBranchFocusRef = useRef<
     ((info: BranchFocusInfo | null) => void) | undefined
   >(setBranchFocus);
   const onBranchIsolationExitRef = useRef(onBranchIsolationExit);
   const localResetViewRef = useRef<(() => void) | undefined>(undefined);
   const resetViewRef = resetViewControlRef ?? localResetViewRef;
+  const localSoloTimelineRef = useRef<(() => void) | undefined>(undefined);
+  const soloTimelineRef = soloTimelineControlRef ?? localSoloTimelineRef;
   const localIsolateRef = useRef<(() => void) | undefined>(undefined);
   const isolateOwnBranchRef = isolateControlRef ?? localIsolateRef;
   const localFocusItemRef = useRef<((target: FocusTarget) => void) | undefined>(
@@ -227,6 +241,16 @@ function TimelineCanvas({
     highlightedMainContentIdRef.current = highlightedMainContentId ?? null;
   }, [highlightedMainContentId]);
 
+  const hasCollectionPanelRef = useRef(hasCollectionPanel);
+  useEffect(() => {
+    hasCollectionPanelRef.current = hasCollectionPanel;
+  }, [hasCollectionPanel]);
+
+  const hoveredItemContentIdRef = useRef<string | null>(hoveredItemContentId);
+  useEffect(() => {
+    hoveredItemContentIdRef.current = hoveredItemContentId;
+  }, [hoveredItemContentId]);
+
   useEffect(() => {
     viewersRef.current = viewersBySlug;
   }, [viewersBySlug]);
@@ -255,10 +279,21 @@ function TimelineCanvas({
 
   useEffect(() => {
     const preventScrollWhileFocused = (event: WheelEvent) => {
+      // Over the collection panel, the wheel scrolls it rather than the map.
       if (
-        event.target instanceof HTMLElement &&
-        event.target.closest('.collection-card-description')
+        event.target instanceof Element &&
+        event.target.closest('.collection-card-list')
       ) {
+        event.stopImmediatePropagation();
+        return;
+      }
+
+      // A picture open full screen: nothing behind it scrolls or zooms.
+      if (
+        event.target instanceof Element &&
+        event.target.closest('.full-screen-image')
+      ) {
+        event.preventDefault();
         event.stopImmediatePropagation();
         return;
       }
@@ -269,6 +304,17 @@ function TimelineCanvas({
       // since the image fills much of the screen) and never zooms the canvas.
       if (overlay) {
         const step = event.deltaMode === 1 ? 16 : 1;
+        // Over a photo gallery's column, the wheel scrolls its pictures.
+        const gallery =
+          event.target instanceof Element
+            ? event.target.closest('.timeline-detail__gallery')
+            : null;
+        if (gallery instanceof HTMLElement) {
+          gallery.scrollTop += event.deltaY * step;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
         // Nudge every text container; only the one that overflows actually
         // moves, so we don't need to know which is the scroll element.
         overlay
@@ -355,6 +401,7 @@ function TimelineCanvas({
         onBranchIsolationExitRef,
         onAudioStateChangeRef,
         resetViewRef,
+        soloTimelineRef,
         isolateOwnBranchRef,
         focusItemRef,
         highlightedPreviewIdRef,
@@ -368,6 +415,8 @@ function TimelineCanvas({
         collectFocusedPreviewRef,
         reloadCollectedRef,
         highlightedMainContentIdRef,
+        hoveredItemContentIdRef,
+        hasCollectionPanelRef,
         viewersRef,
         collectorsRef,
         focusContentIdRef,
@@ -419,24 +468,6 @@ function TimelineCanvas({
 
   return (
     <div className="timeline-canvas-wrap">
-      {branchFocus && (
-        <div className="timeline-branch-bar">
-          <span className="timeline-branch-bar__label">
-            <span
-              className="timeline-branch-bar__dot"
-              style={{ backgroundColor: branchFocus.colour }}
-            />
-            {branchFocus.username}
-          </span>
-          <button
-            type="button"
-            className="timeline-branch-bar__cancel"
-            onClick={() => resetViewRef.current?.()}
-          >
-            Cancel
-          </button>
-        </div>
-      )}
       <P5CanvasHost containerRef={containerRef} />
     </div>
   );

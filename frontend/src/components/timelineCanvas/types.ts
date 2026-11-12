@@ -5,6 +5,7 @@ import type { MainTimelineItem } from '../../queries/mainTimeline';
 import type { CollectionContent, ContentType } from '../../types/content';
 import type { CollectedUserRow } from '../../queries/collectedContent';
 import type { AudioController } from './sketch/audioController';
+import type { LayoutChangeState } from './sketch/layoutChange';
 
 export type TimelineCanvasProps = {
   items: MainTimelineItem[];
@@ -21,6 +22,12 @@ export type TimelineCanvasProps = {
   highlightedPreviewContentId?: string | null;
   centerOnPreviewContentId?: string | null;
   highlightedMainContentId?: string | null;
+  // An item (by content id) hovered outside the canvas (its card in the left
+  // column), whose picture grows on the map as though hovered there.
+  hoveredItemContentId?: string | null;
+  // Whether the left column has collection boxes to show on the world view,
+  // so the map can leave room for them before they render.
+  hasCollectionPanel?: boolean;
   // Who's currently viewing each item, by slug.
   viewersBySlug?: Map<string, ItemViewer[]>;
   focusContentIdControlRef?: MutableRefObject<
@@ -49,6 +56,10 @@ export type TimelineCanvasProps = {
   // Populated by the canvas with a zoom-out/unfocus trigger, so an outside
   // control (e.g. the nav drawer opening) can back out of a focused item.
   resetViewControlRef?: MutableRefObject<(() => void) | undefined>;
+  // Populated by the canvas with a trigger that shows the viewer's own
+  // timeline alone, so an outside control (their name in the menu) can
+  // invoke it.
+  soloTimelineControlRef?: MutableRefObject<(() => void) | undefined>;
   // Populated by the canvas with a jump-to-item focuser, so an outside control
   // (the mini player, rendered by the caller) can invoke it.
   focusItemControlRef?: MutableRefObject<
@@ -66,6 +77,11 @@ export type TimelineCanvasProps = {
   onDetailLayoutStart?: () => void;
   onDetailImageRect?: (rect: DetailImageRect) => void;
   onEntranceComplete?: () => void;
+  // Called with whether the viewer's own timeline is being shown alone.
+  onSoloTimelineChange?: (active: boolean) => void;
+  // Called with the timeline clicked into on the map (null when none), for
+  // the box naming it with a way back out.
+  onBranchFocusChange?: (info: BranchFocusInfo | null) => void;
   onBranchIsolationExit?: () => void;
   activeVideoSlug?: string | null;
   onDismissVideo?: () => void;
@@ -76,12 +92,22 @@ export type DetailImageRect = {
   top: number;
   width: number;
   height: number;
+  // Where the image's left edge and width will settle once the zoom in has
+  // finished, so text laid out beside it can take its final width from the
+  // start rather than growing with the zoom.
+  finalLeft?: number;
+  finalWidth?: number;
 };
 // Which collector's timeline the view is currently zoomed into, for the
 // top-bar label. Null when not zoomed into any branch.
 export type BranchFocusInfo = {
   username: string;
   colour: string;
+  // The viewer's own timeline (the menu then offers the way back to the
+  // world view).
+  own: boolean;
+  // The main timeline items it branches off, rejoins or runs along.
+  mainItemIds: string[];
 };
 
 // The persistent mini-player state: the loaded audio track's metadata, shown
@@ -108,6 +134,9 @@ export type ProcessedCollected = {
   contentType: ContentType;
   title: string;
   bodyContent: string | null;
+  // Its description (or a newsletter's content) as plain text, for showing
+  // beside it in "your items" grid.
+  description: string | null;
   aspectRatio: number;
   anchorTime: number;
   rowIndex: number;
@@ -135,6 +164,9 @@ export type ProcessedItem = {
   contentType: ContentType;
   title: string;
   bodyContent: string | null;
+  // Its description (or a newsletter's content) as plain text, for showing
+  // beside it in "your items" grid.
+  description: string | null;
   aspectRatio: number;
   audioUrl: string | null;
   galleryUrls: string[];
@@ -187,6 +219,8 @@ export type NodeHoverRegion = {
   title: string;
   // Timeline the node belongs to (a collector's username, or the main line).
   timeline: string;
+  // How many other timelines' nodes to the same item it stands in for.
+  others?: number;
   colour: string;
   // The item at the opposite end — focused when the node is clicked.
   target: FocusTarget;
@@ -255,7 +289,6 @@ export type TimelineRuntime = {
   // Collector row the view is zoomed into via a branch click, or null.
   focusedBranchRow: number | null;
   lastHighlightedMainContentId: string | null;
-  lastCenterOnPreviewContentId: string | null;
   isCollectionViewActive: boolean;
   viewAnimating: boolean;
   viewUnfocusing: boolean;
@@ -274,6 +307,32 @@ export type TimelineRuntime = {
   // at full colour while it fades.
   branchDimStrength: number;
   branchDimRow: number | null;
+  // Showing one collector's timeline alone (from their name in the menu):
+  // whether it's on, the row, and how far everything else has faded (0-1).
+  branchSoloActive: boolean;
+  branchSoloRow: number | null;
+  branchSolo: number;
+  // Where each of their items sits in the grid (world), by `${lane}:${index}`;
+  // the items ease there from the map with branchSolo.
+  // (Each also with the column beside it its description fills.)
+  soloGrid: Map<
+    string,
+    {
+      left: number;
+      top: number;
+      width: number;
+      height: number;
+      text: { left: number; top: number; width: number; height: number };
+    }
+  > | null;
+  // The grid's whole area (world), labels included, for framing and
+  // scrolling it.
+  soloGridArea: {
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+  } | null;
   // The collector row isolated into a straight, centred timeline (or null; kept
   // set until the fade-out finishes), whether isolation is currently engaged
   // (the ease target), and the eased 0-1 progress for the transition.
@@ -288,6 +347,11 @@ export type TimelineRuntime = {
   collectContentId: string | null;
   collectFinalRect: DetailImageRect | null;
   collectedVersion: number;
+  // The zoom the world map is framed at, for keeping the timelines' thickness
+  // there while a collection is viewed.
+  mapZoom: number;
+  // Easing the map from one set of collected timelines to the next.
+  layoutChange: LayoutChangeState;
   collectReturnIndex: number;
   collectReturnWaitStartMs: number;
   collectReturnStartMs: number | null;
@@ -339,12 +403,11 @@ export type TimelineRuntime = {
     string,
     { region: NodeHoverRegion; grow: number; extent: number }
   >;
-  // Sprung 0-1 slide of the focused item's branch nodes out to the viewport
-  // edges (briefly past 1 as it overshoots), its per-frame velocity, the
-  // overshoot-free ease their horizontal movement follows, and the item they
-  // belong to (kept while they ease back).
+  // Eased 0-1 slide of the focused item's branch nodes out to the viewport
+  // edges (vertically and, the same, horizontally), the linear progress it's
+  // eased from, and the item they belong to (kept while they ease back).
   edgeNodes: number;
-  edgeNodesVelocity: number;
+  edgeNodesLinear: number;
   edgeNodesX: number;
   edgeNodesTarget: FocusTarget | null;
   // Connector dots drawn on the most recent frame while an item is focused, so
@@ -382,6 +445,7 @@ export type TimelineSketchRefs = {
   >;
   // React → sketch: cancel button calls this to animate back to default fit.
   resetViewRef: MutableRefObject<(() => void) | undefined>;
+  soloTimelineRef: MutableRefObject<(() => void) | undefined>;
   // React → sketch: user-card click toggles isolating the viewer's own branch
   // into a straight, centred timeline.
   isolateOwnBranchRef: MutableRefObject<(() => void) | undefined>;
@@ -392,6 +456,8 @@ export type TimelineSketchRefs = {
   highlightedPreviewIdRef: RefObject<string | null>;
   centerOnPreviewIdRef: RefObject<string | null>;
   highlightedMainContentIdRef: RefObject<string | null>;
+  hoveredItemContentIdRef: RefObject<string | null>;
+  hasCollectionPanelRef: RefObject<boolean>;
   viewersRef: RefObject<Map<string, ItemViewer[]>>;
   // Who has collected each item, by content id, most recent first.
   collectorsRef: RefObject<Map<string, ItemCollector[]>>;

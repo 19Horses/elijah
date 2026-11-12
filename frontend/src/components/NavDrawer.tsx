@@ -14,8 +14,6 @@ import Login from '../pages/Login';
 import Shop from '../pages/Shop';
 import { getStoredUser, USER_CHANGED_EVENT } from '../services/userStorage';
 
-const CLOSE_GRACE_MS = 300;
-
 let measureCtx: CanvasRenderingContext2D | null | undefined;
 
 function measureInkCenterShift(font: string): number | null {
@@ -50,18 +48,25 @@ type NavDrawerProps = {
     ((contentId: string) => void) | undefined
   >;
   resetViewControlRef?: MutableRefObject<(() => void) | undefined>;
+  // Shows the viewer's own timeline alone on the map (their name's action).
+  soloTimelineControlRef?: MutableRefObject<(() => void) | undefined>;
+  // Whether it's showing, so the name turns into a way back to every
+  // timeline.
+  soloTimelineActive?: boolean;
 };
 
 function NavDrawer({
   onCollectedItemHover,
   focusContentIdControlRef,
   resetViewControlRef,
+  soloTimelineControlRef,
+  soloTimelineActive = false,
 }: NavDrawerProps) {
   const [isVisible, setIsVisible] = useState(false);
-  const [hoverOpen, setHoverOpen] = useState(false);
+
   const [inkShift, setInkShift] = useState<number | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const closeTimeoutRef = useRef<number | null>(null);
+
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [user, setUser] = useState(() => getStoredUser());
@@ -84,19 +89,12 @@ function NavDrawer({
       ? 'collection'
       : null;
   const drawerOpen = drawerRoute !== null;
-  const listOpen = hoverOpen || drawerOpen;
+  // The menu's items always show beside the "e".
+  const listOpen = true;
 
   useEffect(() => {
     const id = window.setTimeout(() => setIsVisible(true), 0);
     return () => window.clearTimeout(id);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (closeTimeoutRef.current !== null) {
-        window.clearTimeout(closeTimeoutRef.current);
-      }
-    };
   }, []);
 
   useEffect(() => {
@@ -135,26 +133,6 @@ function NavDrawer({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [drawerOpen, navigate]);
 
-  const clearCloseTimeout = () => {
-    if (closeTimeoutRef.current !== null) {
-      window.clearTimeout(closeTimeoutRef.current);
-      closeTimeoutRef.current = null;
-    }
-  };
-
-  const handleMouseEnter = () => {
-    clearCloseTimeout();
-    setHoverOpen(true);
-  };
-
-  const handleMouseLeave = () => {
-    clearCloseTimeout();
-    closeTimeoutRef.current = window.setTimeout(() => {
-      closeTimeoutRef.current = null;
-      setHoverOpen(false);
-    }, CLOSE_GRACE_MS);
-  };
-
   const goToOrClose = (to: string) => {
     navigate(pathname === to ? '/home' : to);
   };
@@ -172,8 +150,6 @@ function NavDrawer({
         className={`e-menu${isVisible ? ' e-menu--visible' : ''}${
           listOpen ? ' e-menu--open' : ''
         }${drawerOpen ? ' e-menu--drawer-open' : ''}`}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
         style={
           inkShift !== null
             ? ({ '--e-ink-shift': `${inkShift}px` } as CSSProperties)
@@ -187,24 +163,23 @@ function NavDrawer({
           aria-haspopup="menu"
           aria-expanded={listOpen}
           onClick={() => {
-            clearCloseTimeout();
+            // The e always brings the canvas back to the full map.
+            resetViewControlRef?.current?.();
             if (drawerOpen) {
               navigate('/home');
-              return;
             }
-            setHoverOpen((current) => !current);
           }}
         >
           e
         </button>
         <div className="e-menu__items" role="menu" aria-hidden={!listOpen}>
           <Link
-            to="/events"
+            to={accountRoute}
             role="menuitem"
-            className={`e-menu__item e-menu__item--events${
-              pathname === '/events' ? ' e-menu__item--active' : ''
+            className={`e-menu__item e-menu__item--login${
+              pathname === accountRoute ? ' e-menu__item--active' : ''
             }`}
-            aria-current={pathname === '/events' ? 'page' : undefined}
+            aria-current={pathname === accountRoute ? 'page' : undefined}
             tabIndex={listOpen ? 0 : -1}
             onClick={(event) => {
               if (
@@ -218,10 +193,29 @@ function NavDrawer({
                 return;
               }
               event.preventDefault();
-              goToOrClose('/events');
+              if (!user) {
+                goToOrClose(accountRoute);
+                return;
+              }
+              // A signed-in viewer's name shows their timeline alone on the
+              // map, everything else faded away; then, as "World view",
+              // brings the full map back.
+
+              if (drawerOpen) {
+                navigate('/home');
+              }
+              if (soloTimelineActive) {
+                resetViewControlRef?.current?.();
+              } else {
+                soloTimelineControlRef?.current?.();
+              }
             }}
           >
-            Events
+            {!user
+              ? 'Login'
+              : soloTimelineActive
+              ? 'World view'
+              : 'Your timeline'}
           </Link>
           <Link
             to="/shop"
@@ -249,12 +243,12 @@ function NavDrawer({
             Shop
           </Link>
           <Link
-            to={accountRoute}
+            to="/events"
             role="menuitem"
-            className={`e-menu__item e-menu__item--login${
-              pathname === accountRoute ? ' e-menu__item--active' : ''
+            className={`e-menu__item e-menu__item--events${
+              pathname === '/events' ? ' e-menu__item--active' : ''
             }`}
-            aria-current={pathname === accountRoute ? 'page' : undefined}
+            aria-current={pathname === '/events' ? 'page' : undefined}
             tabIndex={listOpen ? 0 : -1}
             onClick={(event) => {
               if (
@@ -268,10 +262,10 @@ function NavDrawer({
                 return;
               }
               event.preventDefault();
-              goToOrClose(accountRoute);
+              goToOrClose('/events');
             }}
           >
-            {user ? user.username : 'Login'}
+            Events
           </Link>
           <button
             type="button"

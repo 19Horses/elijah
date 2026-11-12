@@ -11,6 +11,7 @@ import type {
   ProcessedCollectionPreview,
   ProcessedItem,
 } from './types';
+import { toPlainText } from '../../utils/richText';
 
 function getItemAspectRatio(item: MainTimelineItem): number {
   if ('imageDimensions' in item && item.imageDimensions?.aspectRatio) {
@@ -32,6 +33,15 @@ function getGalleryUrls(item: MainTimelineItem): string[] {
     .filter((url): url is string => url !== null);
 }
 
+// An item's description, or a newsletter's content, as plain text.
+function plainDescription(item: MainTimelineItem): string | null {
+  const text =
+    item._type === 'newsletter'
+      ? toPlainText(item.content)
+      : toPlainText(item.description);
+  return text.trim() || null;
+}
+
 export function buildProcessedItems(
   items: MainTimelineItem[]
 ): ProcessedItem[] {
@@ -39,8 +49,10 @@ export function buildProcessedItems(
     imageUrl: getMainTimelineImageUrl(item),
     slug: item.slug ?? null,
     contentType: item._type,
-    title: item.title,
-    bodyContent: item._type === 'newsletter' ? item.content ?? null : null,
+    title: item.title ?? '',
+    bodyContent:
+      item._type === 'newsletter' ? toPlainText(item.content) || null : null,
+    description: plainDescription(item),
     aspectRatio: getItemAspectRatio(item),
     audioUrl: item._type === 'audioAsset' ? item.audioUrl ?? null : null,
     galleryUrls: getGalleryUrls(item),
@@ -118,6 +130,9 @@ export function buildProcessedCollected(
         }
         existing.sources.push(source);
         existing.rowIndex = Math.min(existing.rowIndex, rowIndex);
+        // Private to the viewer only while no copy of it says otherwise (the
+        // one they've just collected doesn't).
+        existing.isPrivate = existing.isPrivate && item.content.isPrivate;
         return;
       }
 
@@ -126,11 +141,12 @@ export function buildProcessedCollected(
         slug: item.content.slug ?? null,
         imageUrl: getMainTimelineImageUrl(item.content),
         contentType: item.content._type,
-        title: item.content.title,
+        title: item.content.title ?? '',
         bodyContent:
           item.content._type === 'newsletter'
-            ? item.content.content ?? null
+            ? toPlainText(item.content.content) || null
             : null,
+        description: plainDescription(item.content),
         aspectRatio: getItemAspectRatio(item.content),
         anchorTime: Number.isNaN(contentTime) ? Date.now() : contentTime,
         rowIndex,
@@ -186,7 +202,7 @@ export function buildProcessedCollectionPreview(
         contentType: item._type,
         slug: item.slug ?? null,
         imageUrl: item.imageUrl,
-        title: item.title,
+        title: item.title ?? '',
         aspectRatio:
           item.imageDimensions?.aspectRatio || ITEM_WIDTH / IMAGE_HEIGHT,
         anchorTime,

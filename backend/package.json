@@ -10,7 +10,8 @@
     "deploy-graphql": "sanity graphql deploy",
     "dev": "sanity dev",
     "start": "sanity start",
-    "migrate:images": "sanity exec scripts/migrateImageAssets.ts --with-user-token"
+    "migrate:images": "sanity exec scripts/migrateImageAssets.ts --with-user-token",
+    "migrate:rich-text": "sanity exec scripts/migrateRichText.ts --with-user-token"
   },
   "keywords": [
     "sanity"

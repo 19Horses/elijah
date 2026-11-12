@@ -1,12 +1,19 @@
 import type p5 from 'p5';
-import { CANVAS_LABEL_FONT, CANVAS_LABEL_FONT_MEDIUM } from './constants';
+import {
+  CANVAS_LABEL_FONT,
+  CANVAS_LABEL_FONT_MEDIUM,
+  CANVAS_TITLE_FONT,
+} from './constants';
 import garamondUrl from '../../EBGaramond-Regular.ttf';
 import type {
+  ContentBounds,
+  FocusTarget,
   ProcessedCollected,
   ProcessedCollectionPreview,
   TimelineSketchDeps,
 } from './types';
 import { createBoundsContext } from './sketch/bounds';
+import { beginLayoutChange, snapshotLayout } from './sketch/layoutChange';
 import { createDrawFrameHandler } from './sketch/drawFrame';
 import { createGalleryController } from './sketch/galleryController';
 import { createInputHandlers } from './sketch/input';
@@ -17,8 +24,10 @@ export function createTimelineSketch(
   return (p: p5) => {
     const boundsCtx = createBoundsContext(deps);
     const view = createViewContext(p, deps, boundsCtx);
-    // Cancel button (top bar) → animate back to the default fit view.
-    deps.refs.resetViewRef.current = () => view.unfocusItem();
+    // Cancel button (top bar), the e, or opening the drawer → animate back out
+    // to the full map.
+    deps.refs.resetViewRef.current = () => view.showFullMap();
+    deps.refs.soloTimelineRef.current = () => view.soloOwnBranch();
     // User-card click → isolate the viewer's own branch into a straight line.
     deps.refs.isolateOwnBranchRef.current = () =>
       view.toggleOwnBranchIsolation();
@@ -102,6 +111,57 @@ export function createTimelineSketch(
         );
       });
     };
+    // An open item stays put through a layout change (someone collecting,
+    // its own collect landing): rather than ease across to its new place —
+    // flying off from under its details — it moves there at once, and the
+    // view moves with it, so nothing shifts on screen.
+    // (`measure` must be how `before` was taken.)
+    const holdItemInPlace = (
+      target: FocusTarget | null,
+      before: ContentBounds | null,
+      measure: (target: FocusTarget) => ContentBounds = view.getFocusBounds
+    ) => {
+      const { runtime } = deps;
+      if (!before || !target || target.lane === 'preview') {
+        return;
+      }
+      const shift = runtime.layoutChange.shift;
+      if (target.lane === 'collected') {
+        if (shift?.collected[target.index]) {
+          shift.collected[target.index] = { dx: 0, dy: 0 };
+        }
+        const offset = deps.collectedOffsets[target.index];
+        if (offset) {
+          offset.dx = 0;
+          offset.dy = 0;
+        }
+      } else {
+        if (shift?.main[target.index]) {
+          shift.main[target.index] = { dx: 0, dy: 0 };
+        }
+        const offset = deps.itemOffsets[target.index];
+        if (offset) {
+          offset.dx = 0;
+          offset.dy = 0;
+        }
+      }
+      const after = measure(target);
+      const dx = after.left - before.left;
+      const dy = after.centerY - before.centerY;
+      if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) {
+        return;
+      }
+      runtime.cameraX += dx;
+      runtime.cameraY += dy;
+      runtime.targetCameraX += dx;
+      runtime.targetCameraY += dy;
+      runtime.animationWorldX += dx;
+      runtime.animationWorldY += dy;
+      runtime.animationStartCameraX += dx;
+      runtime.animationStartCameraY += dy;
+      runtime.panTargetCameraX += dx;
+      runtime.panTargetCameraY += dy;
+    };
     deps.refs.reloadCollectedRef.current = (items) => {
       const { runtime } = deps;
       const reuse = new Map<string, p5.Image>();
@@ -117,10 +177,26 @@ export function createTimelineSketch(
           reuse.set(item.imageUrl, img);
         }
       });
+      // Once the map has come in, ease it from where everything is now.
+      const before = runtime.entranceComplete
+        ? snapshotLayout(deps, boundsCtx)
+        : null;
       const focusedContentId =
         runtime.focusTarget?.lane === 'collected'
           ? deps.processedCollected[runtime.focusTarget.index]?.contentId
           : undefined;
+      // Where an open item sits now, to keep it there on screen however the
+      // new layout moves it.
+      const focusedBefore =
+        runtime.focusTarget && runtime.focusTarget.lane !== 'preview'
+          ? view.getFocusBounds(runtime.focusTarget)
+          : null;
+      // Likewise the viewer's just-collected item while it waits, landed, to
+      // open: the camera's been set to hold it where it came to rest.
+      const returningBefore =
+        runtime.collectReturnIndex !== -1 && runtime.focusTarget === null
+          ? boundsCtx.getCollectedBounds()[runtime.collectReturnIndex] ?? null
+          : null;
 
       deps.processedCollected.splice(
         0,
@@ -135,6 +211,9 @@ export function createTimelineSketch(
       loadCollectedImages(items, reuse);
       boundsCtx.invalidateCollected();
       runtime.collectedVersion += 1;
+      if (before) {
+        beginLayoutChange(deps, boundsCtx, before, p.millis());
+      }
 
       if (focusedContentId !== undefined) {
         const index = items.findIndex(
@@ -146,6 +225,7 @@ export function createTimelineSketch(
           runtime.focusTarget = { lane: 'collected', index };
         }
       }
+      holdItemInPlace(runtime.focusTarget, focusedBefore);
 
       const collectContentId = runtime.collectContentId;
       if (!collectContentId) {
@@ -167,13 +247,34 @@ export function createTimelineSketch(
           view.animateToFitView();
         } else {
           runtime.collectReturnIndex = collectedIndex;
+          holdItemInPlace(
+            { lane: 'collected', index: collectedIndex },
+            returningBefore,
+            (target) => boundsCtx.getCollectedBounds()[target.index]
+          );
         }
-      } else if (
-        runtime.collectReported &&
-        runtime.collectFinalRect &&
-        collectedIndex !== -1
-      ) {
-        view.startCollectReturn(collectedIndex, runtime.collectFinalRect);
+      } else if (runtime.collectReported && runtime.collectFinalRect) {
+        if (
+          collectedIndex !== -1 &&
+          view.startCollectReturn(collectedIndex, runtime.collectFinalRect)
+        ) {
+          return;
+        }
+        // It hasn't landed as a tile on the viewer's timeline (something on
+        // the main timeline never gets one): rather than hold the item
+        // mid-air, back out to the map and open it where it does sit.
+        runtime.collectStartMs = null;
+        runtime.collectIndex = -1;
+        runtime.collectReported = false;
+        runtime.collectContentId = null;
+        runtime.collectFinalRect = null;
+        view.showFullMap();
+        const mainIndex = deps.items.findIndex(
+          (item) => item._id === collectContentId
+        );
+        if (mainIndex !== -1) {
+          view.focusItem({ lane: 'main', index: mainIndex });
+        }
       }
     };
     const gallery = createGalleryController(p);
@@ -205,11 +306,14 @@ export function createTimelineSketch(
         }
       );
       p.textSize(12);
-      // Canvas labels use Akzidenz (see CANVAS_LABEL_FONT); canvas text alone
-      // doesn't make the browser fetch a web font, so ask for it up front.
-      [CANVAS_LABEL_FONT, CANVAS_LABEL_FONT_MEDIUM].forEach((font) => {
-        void document.fonts.load(`16px ${font}`).catch(() => undefined);
-      });
+      // Canvas labels use Akzidenz (see CANVAS_LABEL_FONT), and item titles EB
+      // Garamond; canvas text alone doesn't make the browser fetch a web font,
+      // so ask for them up front.
+      [CANVAS_LABEL_FONT, CANVAS_LABEL_FONT_MEDIUM, CANVAS_TITLE_FONT].forEach(
+        (font) => {
+          void document.fonts.load(`16px ${font}`).catch(() => undefined);
+        }
+      );
       view.playEntranceAnimation();
       deps.runtime.loadStartMs = p.millis();
 

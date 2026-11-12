@@ -6,6 +6,7 @@ import { BANDSINTOWN_SLUG_PREFIX } from './bandsintownEvents';
 import type { ContentType } from '../types/content';
 import { formatFullDate } from '../utils/formatDate';
 import type { MainTimelineEvent, MainTimelineItem } from './mainTimeline';
+import type { RichTextValue } from '../utils/richText';
 
 type SanityResponse<T> = {
   result: T;
@@ -17,14 +18,16 @@ export type ContentDetail = {
   title: string;
   slug: string;
   date: string | null;
-  description: string | null;
-  content: string | null;
+  description: RichTextValue;
+  content: RichTextValue;
   link: string | null;
   videoKey: string | null;
   imageUrl: string | null;
   // Number of images on an imageAsset (null for other types). A count of 1 (or a
   // legacy single `image` field, which yields null) means a solitary image.
   imageCount: number | null;
+  // An imageAsset's gallery pictures (null for other types).
+  images?: { url: string | null; isCover: boolean | null }[] | null;
 };
 
 const CONTENT_BY_SLUG_QUERY = (slug: string) => `*[
@@ -41,7 +44,8 @@ const CONTENT_BY_SLUG_QUERY = (slug: string) => `*[
     description
   },
   _type == "imageAsset" => {
-    "imageCount": count(images)
+    "imageCount": count(images),
+    "images": images[]{ "url": asset->url, isCover }
   },
   _type == "event" => {
     link
@@ -120,7 +124,9 @@ export function useContentDetail(
   });
 }
 
-export function getContentDetailDescription(detail: ContentDetail): string {
+export function getContentDetailDescription(
+  detail: ContentDetail
+): RichTextValue {
   if (detail._type === 'newsletter') {
     return '';
   }
@@ -136,7 +142,7 @@ export function getContentDetailLink(detail: ContentDetail): string | null {
 
 export function getContentDetailNewsletterContent(
   detail: ContentDetail
-): string | null {
+): RichTextValue {
   if (detail._type === 'newsletter') {
     return detail.content;
   }
@@ -167,4 +173,18 @@ export function getContentDetailDateLabel(detail: ContentDetail): string {
 // one side with its description flowing beside it.
 export function getContentDetailIsSingleImage(detail: ContentDetail): boolean {
   return detail._type === 'imageAsset' && (detail.imageCount ?? 1) <= 1;
+}
+
+// A photo item's picture URLs, cover first (empty for anything else).
+export function getContentDetailImageUrls(detail: ContentDetail): string[] {
+  if (detail._type !== 'imageAsset') {
+    return [];
+  }
+  const images = (detail.images ?? []).filter((image) => Boolean(image.url));
+  return [
+    ...images.filter((image) => image.isCover),
+    ...images.filter((image) => !image.isCover),
+  ]
+    .map((image) => image.url)
+    .filter((url): url is string => url !== null);
 }

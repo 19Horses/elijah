@@ -1,5 +1,14 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { createPortal } from 'react-dom';
 import type { DetailImageRect } from './timelineCanvas/types';
+import RichText from './RichText';
+import { hasRichText, type RichTextValue } from '../utils/richText';
 
 // Height (px) of the fade applied to an overflowing text block's edge.
 const SCROLL_FADE_PX = 42;
@@ -67,26 +76,76 @@ function ScrollFadeText({
   );
 }
 
+// A picture shown full screen over everything; a click anywhere or Escape
+// closes it.
+function FullScreenImage({
+  url,
+  alt,
+  onClose,
+}: {
+  url: string;
+  alt: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        // Only closes the picture, not the drawer or detail behind it.
+        event.stopImmediatePropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () =>
+      window.removeEventListener('keydown', onKeyDown, { capture: true });
+  }, [onClose]);
+
+  // The whole screen is the close button, focused so Enter/Space close too.
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    closeRef.current?.focus();
+  }, []);
+
+  return (
+    <button
+      ref={closeRef}
+      type="button"
+      className="full-screen-image"
+      aria-label={`Close ${alt}`}
+      onClick={onClose}
+    >
+      <img className="full-screen-image__picture" src={url} alt={alt} />
+    </button>
+  );
+}
+
 export type TimelineDetailView = {
   title: string;
   dateLabel: string;
-  description: string;
+  description: RichTextValue;
   link: string | null;
+  newsletterContent: RichTextValue;
   videoUrl: string | null;
   posterUrl: string | null;
-  newsletterContent: string | null;
   // A solitary image is laid out like a newsletter (description beside the
   // image) even though it has no newsletter content of its own.
   presentAsNewsletter: boolean;
   // Music tracks show all their info (title, date, description) beside the
   // artwork.
   isAudio: boolean;
+  // A photo item's pictures, cover first (empty for anything else). Several
+  // make a gallery: a vertically scrolling column in the image's place, with
+  // all the info beside it like a music track's. Any can be clicked to view
+  // full screen.
+  imageUrls: string[];
 };
 
 type TimelineDetailOverlayProps = {
   detail: TimelineDetailView | null;
   imageRect?: DetailImageRect | null;
   fading?: boolean;
+  // Backs out to the whole map (the link over the picture's corner).
+  onBack?: () => void;
 };
 
 // Gap between the image and the text placed above/below it.
@@ -101,7 +160,15 @@ function TimelineDetailOverlay({
   detail,
   imageRect = null,
   fading = false,
+  onBack,
 }: TimelineDetailOverlayProps) {
+  const [fullScreenUrl, setFullScreenUrl] = useState<string | null>(null);
+  // A different item (or none) closes any picture left full screen.
+  const detailTitle = detail?.title;
+  useEffect(() => {
+    setFullScreenUrl(null);
+  }, [detailTitle]);
+
   if (!detail || !imageRect) {
     return null;
   }
@@ -119,10 +186,12 @@ function TimelineDetailOverlay({
   // starts from the left, so the text sits as far from the right edge node as
   // the image does from the left one; everything else stacks below.
   const isNewsletter =
-    detail.presentAsNewsletter || Boolean(detail.newsletterContent);
+    detail.presentAsNewsletter || hasRichText(detail.newsletterContent);
   // Real newsletters carry their own content; a solitary image reuses its
   // description as the side body.
-  const sideBody = detail.newsletterContent ?? detail.description;
+  const sideBody = hasRichText(detail.newsletterContent)
+    ? detail.newsletterContent
+    : detail.description;
   const sideGap = Math.min(
     SIDE_GAP_MAX_PX,
     Math.max(SIDE_GAP_MIN_PX, window.innerWidth * SIDE_GAP_VW)
@@ -130,10 +199,35 @@ function TimelineDetailOverlay({
   const sideWidth = Math.max(
     0,
     window.innerWidth -
-      imageRect.left -
-      (imageRect.left + imageRect.width) -
+      // At the image's settled place, so the column doesn't widen as the
+      // view zooms in.
+      (imageRect.finalLeft ?? imageRect.left) -
+      ((imageRect.finalLeft ?? imageRect.left) +
+        (imageRect.finalWidth ?? imageRect.width)) -
       sideGap
   );
+
+  const isGallery = detail.imageUrls.length > 1;
+  // Galleries and music tracks put all their info in a column beside the
+  // picture.
+  const infoBeside = detail.isAudio || isGallery;
+
+  // The way back out to the whole map: heading the title when that sits
+  // above the picture, or heading the photo gallery's info column; else on
+  // its own above the picture.
+  const metaAbove = !infoBeside && !isNewsletter;
+  const backHeadsTitle = metaAbove || isGallery;
+  const backNode = onBack ? (
+    <button
+      type="button"
+      className={`timeline-detail__back${
+        backHeadsTitle ? '' : ' timeline-detail__back--alone'
+      }`}
+      onClick={onBack}
+    >
+      <span aria-hidden="true">&larr;</span> Back to world map
+    </button>
+  ) : null;
 
   const linkNode = detail.link ? (
     <a
@@ -159,24 +253,77 @@ function TimelineDetailOverlay({
         height: `${imageRect.height}px`,
       }}
     >
-      {detail.isAudio ? (
+      {backHeadsTitle ? null : backNode}
+      {isGallery ? (
+        <div
+          className="timeline-detail__gallery"
+          // Spans the full window height (so the pictures scroll across it)
+          // while the first starts level with the image's top.
+          style={{
+            top: `${-imageRect.top}px`,
+            height: `${window.innerHeight}px`,
+            paddingTop: `${imageRect.top}px`,
+            paddingBottom: `${imageRect.top}px`,
+          }}
+        >
+          {detail.imageUrls.map((url, index) => (
+            <button
+              key={url}
+              type="button"
+              className="timeline-detail__gallery-button"
+              onClick={() => setFullScreenUrl(url)}
+            >
+              <img
+                className="timeline-detail__gallery-image"
+                src={url}
+                alt={index === 0 ? detail.title : ''}
+              />
+            </button>
+          ))}
+        </div>
+      ) : detail.imageUrls.length === 1 ? (
+        // A single picture is drawn on the canvas; this catches clicks on it.
+        <button
+          type="button"
+          className="timeline-detail__image-button"
+          aria-label={`View ${detail.title} full screen`}
+          onClick={() => setFullScreenUrl(detail.imageUrls[0])}
+        />
+      ) : null}
+      {fullScreenUrl
+        ? createPortal(
+            <FullScreenImage
+              url={fullScreenUrl}
+              alt={detail.title}
+              onClose={() => setFullScreenUrl(null)}
+            />,
+            document.body
+          )
+        : null}
+      {infoBeside ? (
         <div
           className="timeline-detail__side timeline-detail__side--audio"
+          // Spans the full window height, scrolling as one when the
+          // description runs long, while short info stays level with the
+          // picture (padded in by its top).
           style={{
             left: `calc(100% + ${sideGap}px)`,
             width: `${sideWidth}px`,
-            top: 0,
-            height: `${imageRect.height}px`,
+            top: `${-imageRect.top}px`,
+            height: `${window.innerHeight}px`,
+            paddingTop: `${imageRect.top}px`,
+            paddingBottom: `${imageRect.top}px`,
           }}
         >
+          {isGallery ? backNode : null}
           <h2 className="timeline-detail__title">{detail.title}</h2>
           {detail.dateLabel ? (
             <p className="timeline-detail__date">{detail.dateLabel}</p>
           ) : null}
-          {detail.description ? (
-            <ScrollFadeText className="timeline-detail__description">
-              {detail.description}
-            </ScrollFadeText>
+          {hasRichText(detail.description) ? (
+            <p className="timeline-detail__description timeline-detail__description--full">
+              <RichText value={detail.description} />
+            </p>
           ) : null}
           {linkNode}
         </div>
@@ -187,13 +334,14 @@ function TimelineDetailOverlay({
           // it from above.
           style={{ maxHeight: `${isNewsletter ? belowSpace : aboveSpace}px` }}
         >
+          {metaAbove ? backNode : null}
           <h2 className="timeline-detail__title">{detail.title}</h2>
           {detail.dateLabel ? (
             <p className="timeline-detail__date">{detail.dateLabel}</p>
           ) : null}
         </div>
       )}
-      {detail.isAudio ? null : isNewsletter ? (
+      {infoBeside ? null : isNewsletter ? (
         <div
           className="timeline-detail__side"
           style={{
@@ -207,7 +355,9 @@ function TimelineDetailOverlay({
             paddingBottom: `${imageRect.top}px`,
           }}
         >
-          <div className="timeline-detail__body">{sideBody}</div>
+          <div className="timeline-detail__body">
+            <RichText value={sideBody} />
+          </div>
           {linkNode}
         </div>
       ) : (
@@ -215,9 +365,9 @@ function TimelineDetailOverlay({
           className="timeline-detail__below"
           style={{ maxHeight: `${belowSpace}px` }}
         >
-          {detail.description ? (
+          {hasRichText(detail.description) ? (
             <ScrollFadeText className="timeline-detail__description">
-              {detail.description}
+              <RichText value={detail.description} />
             </ScrollFadeText>
           ) : null}
           {linkNode}

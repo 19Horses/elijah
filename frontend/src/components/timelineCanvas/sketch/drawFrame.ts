@@ -1,12 +1,23 @@
+import { getContentTypeKicker } from '../../../constants/contentTypes';
 import type p5 from 'p5';
+import { formatFullDate } from '../../../utils/formatDate';
 import {
   getStaggeredLoadAlpha,
   getTypeDimAlpha,
   hexToRgba,
   mixHex,
   resetCanvasEffects,
+  drawSheen,
 } from '../canvasEffects';
 import {
+  CANVAS_LABEL_FONT,
+  CANVAS_TITLE_FONT,
+  ITEM_TITLE_SCALE,
+  ITEM_LABEL_COLOUR,
+  ITEM_LABEL_LETTER_SPACING,
+  ITEM_LABEL_LINE_HEIGHT,
+  ITEM_LABEL_SCALE,
+  ITEM_WIDTH,
   DATE_LABEL_SHADOW_BLUR_PX,
   BRANCH_DIM_LERP,
   DATE_FONT_MERGE_SHRINK,
@@ -22,62 +33,61 @@ import {
   LOAD_IMAGE_STAGGER_MS,
   LOAD_INITIAL_DELAY_MS,
   DOT_RADIUS,
-  EDGE_NODE_SPRING_DAMPING,
-  EDGE_NODE_SPRING_STIFFNESS,
-  EDGE_NODE_X_LERP,
+  EDGE_NODE_ANIM_MS,
   MAIN_CONNECTOR_DIM_ALPHA,
   MAIN_LINE_COLOUR,
-  MAIN_LINE_Y,
   MAIN_USERNAME,
   NODE_GROW_LERP,
   NODE_HOVER_GROW,
   PAGE_BACKGROUND_BOTTOM,
   PAGE_BACKGROUND_TOP,
-  PRIVATE_BADGE_COLOUR,
-  PRIVATE_BADGE_TEXT,
   DATE_FONT_SIZE,
-  PREVIEW_EXPAND_LERP,
-  PREVIEW_ICON_GAP,
+  PREVIEW_EXPAND_MS,
+  PREVIEW_EXPAND_SCALE,
   PREVIEW_ICON_LIFT,
   PREVIEW_ICON_SIZE,
   PREVIEW_SWITCH_FADE_MS,
   COLLECT_ANIM_MS,
   COLLECT_HOLD_MS,
-  COLLECT_RETURN_FADE_MS,
   COLLECT_RETURN_IMAGE_WAIT_MS,
   SECONDARY_LABEL_ALPHA,
   SECONDARY_LABEL_GAP,
+  SHEEN_STAGGER_MS,
   ZOOM_OUT_GROWTH_POWER,
   DATE_SHRINK_TRANSITION_FACTOR,
   DATE_SHRINK_ZOOM_FACTOR,
+  COLLECTION_OTHER_ITEM_ALPHA,
+  SOLO_GRID_TEXT_LEADING,
+  SOLO_GRID_TEXT_SIZE,
+  SUBLABEL_HIDE_ZOOM,
+  SUBLABEL_SHOW_ZOOM,
+  ITEM_HOVER_GROW_MS,
 } from '../constants';
 import {
-  drawBranchConnector,
   getBranchRoute,
   getMainConnectorPoints,
   nearestArcLength,
   pointAtArcLength,
+  polylineLength,
 } from '../connectors';
 import {
-  connectorWeight,
   screenToWorld,
+  timelineWeight,
   zoomMergeProgress,
   zoomOutGrowth,
 } from '../geometry';
 import {
-  drawCollectedSourcesLabel,
+  drawKindTag,
   drawNodeCard,
   collectedByParts,
   countLabelClashes,
   drawLineTag,
   type LabelRect,
   measureLineTag,
-  drawUserLabel,
   wrapText,
 } from '../labels';
 import {
   animateDetailReveal,
-  formatDateForZoom,
   syncInteractionLock,
   updateHighlightFade,
 } from '../timelineRuntime';
@@ -107,12 +117,66 @@ import {
   drawMainLaneConnectorDots,
   drawMainLaneConnectors,
   drawMainLaneItems,
+  collectedByFor,
   drawMainTimelineGlow,
-  pushItemDateLabels,
   type DateLabel,
   type MainLaneDrawContext,
 } from './drawMainLane';
 import type { ViewContext } from './view';
+import { itemAppearProgress, stepLayoutChange } from './layoutChange';
+import {
+  createViewerDotAnimator,
+  type TimelineSegment,
+  type ViewerDotTarget,
+} from './viewerDots';
+
+// `text` broken into lines no wider than `maxWidth` (paragraph breaks kept),
+// at most `maxLines` of them, the last ending in "…" when it runs on.
+function wrapToLines(
+  measure: (line: string) => number,
+  text: string,
+  maxWidth: number,
+  maxLines: number
+): string[] {
+  const lines: string[] = [];
+  let clipped = false;
+  for (const paragraph of text.split(/\n+/)) {
+    let line = '';
+    for (const word of paragraph.split(/\s+/).filter(Boolean)) {
+      const candidate = line ? `${line} ${word}` : word;
+      if (line && measure(candidate) > maxWidth) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = candidate;
+      }
+      if (lines.length >= maxLines) {
+        clipped = true;
+        break;
+      }
+    }
+    if (clipped) {
+      break;
+    }
+    if (line) {
+      lines.push(line);
+    }
+    if (lines.length >= maxLines) {
+      clipped =
+        lines.length > maxLines || paragraph !== text.split(/\n+/).pop();
+      break;
+    }
+  }
+  const kept = lines.slice(0, maxLines);
+  if (clipped && kept.length > 0) {
+    let last = kept[kept.length - 1];
+    while (last && measure(`${last}…`) > maxWidth) {
+      last = last.slice(0, -1);
+    }
+    kept[kept.length - 1] = `${last.trimEnd()}…`;
+  }
+  return kept;
+}
 
 export function createDrawFrameHandler(
   p: p5,
@@ -140,7 +204,26 @@ export function createDrawFrameHandler(
     }
   >();
   let ownBranchRow = -1;
+  // Viewers' dots carry over between frames so they can travel item to item.
+  const viewerDotAnimator = createViewerDotAnimator();
   let syncedCollectedVersion = -1;
+  // Node cards go on a layer of their own just above the page's text for
+  // the item being viewed (which sits over the canvas), so a card opening
+  // across that text isn't hidden behind it. Cleared and sized each frame.
+  let cardLayer: p5.Graphics | null = null;
+  const prepareCardLayer = (): p5.Graphics => {
+    if (!cardLayer) {
+      cardLayer = p.createGraphics(p.width, p.height);
+      const layer = cardLayer.elt as HTMLCanvasElement;
+      layer.classList.add('timeline-canvas__cards');
+      layer.style.display = 'block';
+      (p.drawingContext as CanvasRenderingContext2D).canvas.after(layer);
+    } else if (cardLayer.width !== p.width || cardLayer.height !== p.height) {
+      cardLayer.resizeCanvas(p.width, p.height);
+    }
+    cardLayer.clear();
+    return cardLayer;
+  };
   const syncCollectedCaches = () => {
     if (syncedCollectedVersion === runtime.collectedVersion) {
       return;
@@ -189,8 +272,13 @@ export function createDrawFrameHandler(
   // id), so growing into/out of the selected/hovered look eases rather than
   // snapping straight to size.
   const previewHighlightProgress = new Map<string, number>();
+  // How far each hovered (or lately hovered) collection item has grown, 0-1
+  // linearly over PREVIEW_EXPAND_MS; it's eased in and out when applied.
   const previewExpandProgress = new Map<string, number>();
-  const isolatedLineX = new Map<string, number>();
+  // How far each hovered (or lately hovered) item's picture has grown, 0-1
+  // linearly over ITEM_HOVER_GROW_MS; eased when applied.
+  const itemHoverProgress = new Map<string, number>();
+  const itemHoverEased = new Map<string, number>();
   // True while the pointer is inside the active video's timeline slot, so we
   // only dismiss the mini player on a real cross-in, not because the pointer
   // was already over the item after zooming out.
@@ -224,7 +312,10 @@ export function createDrawFrameHandler(
   };
 
   return () => {
+    const cards = prepareCardLayer();
     syncCollectedCaches();
+    stepLayoutChange(deps, p.millis());
+    view.refitHomeForPanel();
     view.animateView();
     view.animatePan();
     view.animateZoom();
@@ -246,18 +337,7 @@ export function createDrawFrameHandler(
         view.clearPreviewFocus();
       }
     }
-    const centerOnPreviewId = deps.refs.centerOnPreviewIdRef.current;
-    if (
-      runtime.focusTarget === null &&
-      centerOnPreviewId !== runtime.lastCenterOnPreviewContentId
-    ) {
-      runtime.lastCenterOnPreviewContentId = centerOnPreviewId;
-      if (centerOnPreviewId) {
-        view.previewIsolatedContentId(centerOnPreviewId);
-      } else {
-        view.refreshIsolatedFraming();
-      }
-    }
+
     const dimAlpha = getTypeDimAlpha(typeHighlightStrength);
     const elapsed = p.millis() - runtime.loadStartMs;
     const totalImages = deps.processed.length + deps.processedCollected.length;
@@ -280,13 +360,21 @@ export function createDrawFrameHandler(
       runtime.entranceComplete = true;
       deps.refs.onEntranceCompleteRef.current?.();
     }
+    // A collected item that's just appeared fades in as its line reaches it.
     const getImageLoadAlpha = (imageIndex: number) =>
       getStaggeredLoadAlpha(
         elapsed,
         imageIndex,
         LOAD_IMAGE_FADE_MS,
         LOAD_IMAGE_STAGGER_MS
-      );
+      ) *
+      (imageIndex >= deps.processed.length
+        ? itemAppearProgress(
+            deps,
+            deps.processedCollected[imageIndex - deps.processed.length]
+              ?.contentId ?? ''
+          )
+        : 1);
     const getMainConnectorLoadAlpha = (connectorIndex: number) =>
       getStaggeredLoadAlpha(
         elapsed,
@@ -329,7 +417,8 @@ export function createDrawFrameHandler(
     const isolateOtherAlpha = isolateActive ? 1 - isolate : 1;
 
     // The isolated branch's own colour, for its straightened line/nodes.
-    let isolateColour = '#ffffff';
+    // The viewer's branch colour (their own colour before they have one).
+    let isolateColour = deps.previewColour;
     if (isolateRow !== null) {
       for (const item of deps.processedCollected) {
         const src = item.sources.find((s) => s.rowIndex === isolateRow);
@@ -349,82 +438,47 @@ export function createDrawFrameHandler(
     // boundsCtx.getIsolatedMergedLine — the same layout view.ts uses to frame
     // and focus these items, so the two can never drift apart. Lazily
     // computed on first use, once per frame.
+    // The collection item hovered in the panel's list (or on the map) grows
+    // in place, its label with it; the view stays where it is.
     const centerOnPreviewContentId =
       runtime.focusTarget === null
-        ? deps.refs.centerOnPreviewIdRef.current
+        ? deps.refs.centerOnPreviewIdRef.current ?? lastHoveredPreviewId
         : null;
-    for (const key of [...previewExpandProgress.keys()]) {
-      if (key === centerOnPreviewContentId) {
-        continue;
-      }
-      const prev = previewExpandProgress.get(key) ?? 0;
-      const next = prev + (0 - prev) * PREVIEW_EXPAND_LERP;
-      if (next < HIGHLIGHT_FADE_SNAP) {
+    // A hidden tab hands back one huge frame; don't let it skip the ease.
+    const expandStep = Math.min(p.deltaTime, 100) / PREVIEW_EXPAND_MS;
+    if (
+      centerOnPreviewContentId &&
+      !previewExpandProgress.has(centerOnPreviewContentId)
+    ) {
+      previewExpandProgress.set(centerOnPreviewContentId, 0);
+    }
+    // Each one's eased size: the hovered one growing, any left shrinking back.
+    const previewExpand = new Map<string, number>();
+    previewExpandProgress.forEach((progress, key) => {
+      const next =
+        key === centerOnPreviewContentId
+          ? Math.min(1, progress + expandStep)
+          : progress - expandStep;
+      if (next <= 0) {
         previewExpandProgress.delete(key);
-      } else {
-        previewExpandProgress.set(key, next);
+        return;
       }
-    }
-    let previewExpandAmount = 0;
-    if (centerOnPreviewContentId) {
-      const prev = previewExpandProgress.get(centerOnPreviewContentId) ?? 0;
-      const next = prev + (1 - prev) * PREVIEW_EXPAND_LERP;
-      previewExpandAmount = next > 1 - HIGHLIGHT_FADE_SNAP ? 1 : next;
-      previewExpandProgress.set(centerOnPreviewContentId, previewExpandAmount);
-    }
+      previewExpandProgress.set(key, next);
+      previewExpand.set(
+        key,
+        next < 0.5 ? 4 * next ** 3 : 1 - (-2 * next + 2) ** 3 / 2
+      );
+    });
 
     let isolatedLine: ReturnType<BoundsContext['getIsolatedMergedLine']> = null;
     const getIsolatedLine = () => {
       if (isolatedLine === null && isolateRow !== null) {
         isolatedLine = boundsCtx.getIsolatedMergedLine(
           isolateRow,
-          centerOnPreviewContentId,
-          previewExpandAmount
+          previewExpand
         );
       }
       return isolatedLine;
-    };
-    let isolatedLineXReady = false;
-    const ensureIsolatedLineX = () => {
-      if (isolatedLineXReady) {
-        return;
-      }
-      isolatedLineXReady = true;
-      const line = getIsolatedLine();
-      if (!line) {
-        return;
-      }
-      for (const entry of line.entries) {
-        if (entry.kind !== 'collected') {
-          continue;
-        }
-        const targetX = (entry.rect.left + entry.rect.right) / 2;
-        const prevX = isolatedLineX.get(entry.contentId);
-        let easedX = targetX;
-        if (prevX !== undefined) {
-          easedX = prevX + (targetX - prevX) * BRANCH_DIM_LERP;
-          if (Math.abs(targetX - easedX) < 0.5) {
-            easedX = targetX;
-          }
-        }
-        isolatedLineX.set(entry.contentId, easedX);
-      }
-    };
-    const getIsolatedTargetCenterX = (index: number): number | null => {
-      if (!isolateActive) {
-        return null;
-      }
-      const found = getIsolatedLine()?.entries.find(
-        (e) => e.kind === 'collected' && e.index === index
-      );
-      if (!found) {
-        return null;
-      }
-      ensureIsolatedLineX();
-      return (
-        isolatedLineX.get(found.contentId) ??
-        (found.rect.left + found.rect.right) / 2
-      );
     };
     let previewSwitchAlpha = 1;
     if (runtime.previewFadeOutStartMs !== null) {
@@ -464,23 +518,26 @@ export function createDrawFrameHandler(
             COLLECT_RETURN_IMAGE_WAIT_MS
         ) {
           runtime.collectReturnStartMs = p.millis();
+          // Now on the viewer's timeline, the item opens straight away, as
+          // though they'd clicked it, zooming in from where it landed.
+          view.focusItem({ lane: 'collected', index: returnIndex });
         }
       }
-      if (runtime.collectReturnStartMs === null) {
-        returnFade = 0;
-      } else {
-        const t = Math.min(
-          1,
-          (p.millis() - runtime.collectReturnStartMs) / COLLECT_RETURN_FADE_MS
-        );
-        returnFade = t * t * (3 - 2 * t);
-        if (t >= 1) {
-          runtime.collectReturnIndex = -1;
-          runtime.collectReturnStartMs = null;
-          runtime.collectContentId = null;
-          runtime.collectFinalRect = null;
-          view.animateToFitView();
-        }
+      // The rest of the map stays hidden meanwhile; once the item is open
+      // (which hides it anyway), the collect is done.
+      returnFade = 0;
+      const opened =
+        runtime.focusTarget?.lane === 'collected' &&
+        runtime.focusTarget.index === returnIndex;
+      if (
+        runtime.collectReturnStartMs !== null &&
+        (!opened || runtime.focusContentFade >= 1 - LOAD_ALPHA_SNAP)
+      ) {
+        runtime.collectReturnIndex = -1;
+        runtime.collectReturnStartMs = null;
+        runtime.collectContentId = null;
+        runtime.collectFinalRect = null;
+        returnFade = opened ? 0 : 1;
       }
     }
     const isReturnTarget = (index: number) =>
@@ -529,17 +586,39 @@ export function createDrawFrameHandler(
       }
     }
 
+    // Showing one collector's timeline alone: their items gather into a grid
+    // and everything else — every line, and every other item — fades away.
+    const soloRow = runtime.branchSolo > 0 ? runtime.branchSoloRow : null;
+    const soloFade = 1 - runtime.branchSolo;
+    const inSoloGrid = (lane: 'main' | 'collected', index: number) =>
+      runtime.soloGrid?.has(`${lane}:${index}`) ?? false;
+    const viewedCollectionIds = new Set(
+      deps.processedPreview.map((preview) => preview.contentId)
+    );
     const contentAlphaFor = (
       lane: 'main' | 'collected',
       index: number,
       base = 1
     ) => {
       let alpha = base;
+      if (soloRow !== null && !inSoloGrid(lane, index)) {
+        alpha *= soloFade;
+      }
+      // Viewing a collection, the items that aren't in it fade back a touch.
+      if (isolateActive) {
+        const contentId =
+          lane === 'main'
+            ? deps.items[index]?._id
+            : deps.processedCollected[index]?.contentId;
+        if (!viewedCollectionIds.has(contentId ?? '')) {
+          alpha *= 1 - isolate * (1 - COLLECTION_OTHER_ITEM_ALPHA);
+        }
+      }
       // Viewing an item fades every other item away, leaving it alone on
-      // screen. Isolating the viewer's own branch, though, fades everything that isn't
-      // part of it away: the main timeline's own items and every other
-      // collector's items, leaving just the isolated branch straightened out.
-      if (isolateActive && (lane === 'main' || !isIsolatedItem(index))) {
+      // screen. Isolating the viewer's own branch fades every other
+      // collector's items away, leaving the main timeline in place and the
+      // isolated branch straightened out in a row above it.
+      if (isolateActive && lane === 'collected' && !isIsolatedItem(index)) {
         alpha *= 1 - isolate;
       }
       const focus = runtime.focusTarget;
@@ -552,31 +631,13 @@ export function createDrawFrameHandler(
       return alpha * collectFade;
     };
 
-    // While isolating, a collected item in the branch eases from its normal
-    // position onto the main line (its straightened position).
+    // Item bounds while drawing: an item being viewed moves to its detail
+    // position. (Viewing a collection leaves everything where it sits.)
     const getDetailDrawBoundsIso = (
       lane: 'main' | 'collected' | 'preview',
       index: number,
       itemBounds: ContentBounds
-    ): ContentBounds => {
-      const base = getDetailDrawBounds(lane, index, itemBounds);
-      if (isolateActive && lane === 'collected' && isIsolatedItem(index)) {
-        const straightTop = MAIN_LINE_Y - base.height / 2;
-        // Ease X toward the even-spacing target as well as Y onto the main
-        // line, so the straightened branch is evenly spaced.
-        const targetCX = getIsolatedTargetCenterX(index);
-        const baseCX = (base.left + base.right) / 2;
-        const dx = targetCX !== null ? (targetCX - baseCX) * isolate : 0;
-        return {
-          ...base,
-          left: base.left + dx,
-          right: base.right + dx,
-          top: base.top + (straightTop - base.top) * isolate,
-          centerY: base.centerY + (MAIN_LINE_Y - base.centerY) * isolate,
-        };
-      }
-      return base;
-    };
+    ): ContentBounds => getDetailDrawBounds(lane, index, itemBounds);
 
     if (deps.backgroundColour) {
       p.background(deps.backgroundColour);
@@ -589,6 +650,7 @@ export function createDrawFrameHandler(
 
     const bounds = boundsCtx.getAllBounds();
     const collectedBounds = boundsCtx.getCollectedBounds();
+
     const lineWorldX = boundsCtx.getNowWorldX();
     const mouseWorld = screenToWorld(
       p.mouseX,
@@ -656,39 +718,44 @@ export function createDrawFrameHandler(
     // Where each label ended up this frame (world), for tags to keep off.
     const drawnLabelRects: LabelRect[] = [];
     const drawnLines: ConnectorPoint[][] = [];
+    const viewerDots: ViewerDotTarget[] = [];
+    const timelineSegments: TimelineSegment[] = [];
 
-    // Spring the focused item's branch nodes out to the viewport edges, and
-    // back onto the item once it's unfocused. Only their vertical movement
-    // springs; horizontally they ease with no overshoot. Coming back they land
-    // without overshooting, so the lines don't bounce into the item.
+    // Slide the focused item's branch nodes out to the viewport edges, and
+    // back onto the item once it's unfocused, easing in and out over
+    // EDGE_NODE_ANIM_MS (or, zooming back out, along with the camera).
+    // (None for an item opened from a timeline shown alone: its lines are
+    // hidden.)
     const edgeTarget =
-      isFocusActive && runtime.focusTarget?.lane !== 'preview'
+      isFocusActive &&
+      runtime.focusTarget?.lane !== 'preview' &&
+      !runtime.branchSoloActive
         ? runtime.focusTarget
         : null;
     if (edgeTarget) {
       runtime.edgeNodesTarget = edgeTarget;
     }
     const edgeGoal = edgeTarget ? 1 : 0;
-    runtime.edgeNodesVelocity =
-      (runtime.edgeNodesVelocity +
-        (edgeGoal - runtime.edgeNodes) * EDGE_NODE_SPRING_STIFFNESS) *
-      EDGE_NODE_SPRING_DAMPING;
-    runtime.edgeNodes += runtime.edgeNodesVelocity;
-    runtime.edgeNodesX += (edgeGoal - runtime.edgeNodesX) * EDGE_NODE_X_LERP;
-    const edgeSettled =
-      Math.abs(edgeGoal - runtime.edgeNodes) < HIGHLIGHT_FADE_SNAP &&
-      Math.abs(runtime.edgeNodesVelocity) < HIGHLIGHT_FADE_SNAP;
-    if (!edgeTarget && (runtime.edgeNodes <= 0 || edgeSettled)) {
-      runtime.edgeNodes = 0;
-      runtime.edgeNodesVelocity = 0;
-      runtime.edgeNodesX = 0;
-      runtime.edgeNodesTarget = edgeTarget;
-    } else if (edgeTarget && edgeSettled) {
-      runtime.edgeNodes = 1;
-      runtime.edgeNodesVelocity = 0;
+    // A hidden tab hands back one huge frame; don't let it skip the slide.
+    const edgeStep = Math.min(p.deltaTime, 100) / EDGE_NODE_ANIM_MS;
+    runtime.edgeNodesLinear =
+      edgeGoal > runtime.edgeNodesLinear
+        ? Math.min(edgeGoal, runtime.edgeNodesLinear + edgeStep)
+        : Math.max(edgeGoal, runtime.edgeNodesLinear - edgeStep);
+    // Zooming back out to the map, the nodes come home with the camera: never
+    // further out than the zoom-out has left to go.
+    if (runtime.viewUnfocusing) {
+      runtime.edgeNodesLinear = Math.min(
+        runtime.edgeNodesLinear,
+        runtime.focusContentFade
+      );
     }
-    if (Math.abs(edgeGoal - runtime.edgeNodesX) < HIGHLIGHT_FADE_SNAP) {
-      runtime.edgeNodesX = edgeGoal;
+    const edgeT = runtime.edgeNodesLinear;
+    runtime.edgeNodes =
+      edgeT < 0.5 ? 4 * edgeT * edgeT * edgeT : 1 - (-2 * edgeT + 2) ** 3 / 2;
+    runtime.edgeNodesX = runtime.edgeNodes;
+    if (!edgeTarget && runtime.edgeNodesLinear <= 0) {
+      runtime.edgeNodesTarget = edgeTarget;
     }
     const edgeNodes = buildEdgeNodeLayout(
       p,
@@ -718,32 +785,57 @@ export function createDrawFrameHandler(
       getDetailDrawBounds: getDetailDrawBoundsIso,
       contentAlphaFor,
       isolateOtherAlpha: isolateOtherAlpha * collectFade,
+      collectFade,
+      // Viewing a collection greys out the viewer's own item pictures (ones
+      // they've collected, whether or not they're in the collection) and
+      // hides their labels, easing in with the isolation.
+      isolateGrey: isolateActive ? isolate : 0,
+      isolatedRow: isolateActive ? isolateRow : null,
+      collectionContentIds: isolateActive
+        ? new Set(deps.processedPreview.map((preview) => preview.contentId))
+        : new Set(),
       edgeNodes,
       dateLabels,
       drawnLines,
+      timelineSegments,
+      viewerDots,
       // Grey only the main connectors the active branch detours below; the rest
       // of the main line (before, after, and skipped gaps) stays lit.
+      // A timeline shown alone has no lines, and collecting an item fades
+      // them all away while it flies in.
       mainConnectorTravelAlpha: (connectorIndex: number) => {
+        const solo = (soloRow !== null ? soloFade : 1) * collectFade;
         const row = runtime.branchDimRow;
         if (row === null || runtime.branchDimStrength <= 0) {
-          return 1;
+          return solo;
         }
         if (
           !boundsCtx.getBranchDetouredGaps(row).has(connectorIndex) ||
           boundsCtx.getBranchMainTravel(row).has(connectorIndex)
         ) {
-          return 1;
+          return solo;
         }
-        return 1 - runtime.branchDimStrength * (1 - MAIN_CONNECTOR_DIM_ALPHA);
+        return (
+          solo *
+          (1 - runtime.branchDimStrength * (1 - MAIN_CONNECTOR_DIM_ALPHA))
+        );
       },
+      soloRow,
+      soloOtherAlpha: soloFade,
+      itemHoverGrow: (lane, index) =>
+        itemHoverEased.get(`${lane}:${index}`) ?? 0,
       // A hovered main line thickens to double width, easing with its tag, and
       // so does any stretch a hovered branch's timeline runs along.
       mainConnectorGrow: (connectorIndex: number) => {
         const mainGrow = runtime.lineBlobs.get('main')?.scale ?? 0;
         const row = runtime.branchDimRow;
+        // (A timeline clicked into stays thick while it's viewed.)
         const branchGrow =
           row !== null && boundsCtx.getBranchMainTravel(row).has(connectorIndex)
-            ? runtime.lineBlobs.get(`row:${row}`)?.scale ?? 0
+            ? Math.max(
+                runtime.lineBlobs.get(`row:${row}`)?.scale ?? 0,
+                runtime.branchDimStrength
+              )
             : 0;
         return Math.max(mainGrow, branchGrow);
       },
@@ -819,14 +911,28 @@ export function createDrawFrameHandler(
         top: (laneBounds.top - runtime.cameraY) * runtime.zoom,
         width: laneBounds.width * runtime.zoom,
         height: laneBounds.height * runtime.zoom,
+        ...(runtime.viewUnfocusing
+          ? {}
+          : {
+              finalLeft:
+                (laneBounds.left - runtime.targetCameraX) * runtime.targetZoom,
+              finalWidth: laneBounds.width * runtime.targetZoom,
+            }),
       });
     }
 
     // While isolating, only the isolated branch's own items stay at full
     // brightness — every other collector's items are faded, so they're
     // excluded from hover here too.
+    // A collection's items the viewer already has (tagged "already
+    // collected") don't answer to the pointer while it's viewed.
+    const collectionIds = isolateActive
+      ? new Set(deps.processedPreview.map((preview) => preview.contentId))
+      : null;
     const isCollectedItemHoverable = (index: number) =>
-      !isolateActive || isIsolatedItem(index);
+      (!isolateActive || isIsolatedItem(index)) &&
+      !collectionIds?.has(deps.processedCollected[index]?.contentId ?? '') &&
+      (soloRow === null || inSoloGrid('collected', index));
     const collectedHover = computeCollectedLaneHover(
       deps,
       boundsCtx,
@@ -836,6 +942,31 @@ export function createDrawFrameHandler(
       hoverSuppressed,
       isCollectedItemHoverable
     );
+    if (
+      collectionIds &&
+      mainHover.hoveredMain !== -1 &&
+      collectionIds.has(deps.items[mainHover.hoveredMain]?._id ?? '') &&
+      deps.refs.collectorsRef.current
+        ?.get(deps.items[mainHover.hoveredMain]._id)
+        ?.some((collector) => collector.username === deps.currentUsername)
+    ) {
+      mainHover.hoveredMain = -1;
+      mainHover.mainHighlighted = mainHover.mainConnectorHover;
+    }
+    // A timeline shown alone answers to the pointer only on its own items.
+    if (soloRow !== null) {
+      if (!collectedHover.hoveredCollectedIsImage) {
+        collectedHover.hoveredUserRow = null;
+      }
+      if (
+        mainHover.hoveredMain !== -1 &&
+        !inSoloGrid('main', mainHover.hoveredMain)
+      ) {
+        mainHover.hoveredMain = -1;
+      }
+      mainHover.mainConnectorHover = false;
+      mainHover.mainHighlighted = mainHover.hoveredMain !== -1;
+    }
 
     // A main line and a branch line both in reach: the nearer one takes it.
     if (
@@ -852,6 +983,29 @@ export function createDrawFrameHandler(
         mainHover.mainConnectorHover = false;
         mainHover.mainConnectorDistance = Infinity;
         mainHover.mainHighlighted = mainHover.hoveredMain !== -1;
+      }
+    }
+
+    // Hovering a viewer's dot highlights their timeline, as hovering the line
+    // itself would — when they have one (visitors who aren't signed up don't).
+    const hoveredViewer = hoverSuppressed
+      ? null
+      : viewerDotAnimator.hitTest(mouseWorld, runtime.zoom);
+    if (hoveredViewer && !hoveredViewer.anonymous) {
+      const isMain = hoveredViewer.username === MAIN_USERNAME;
+      const row = isMain
+        ? undefined
+        : deps.processedCollected
+            .flatMap((item) => item.sources)
+            .find((source) => source.username === hoveredViewer.username)
+            ?.rowIndex;
+      if (isMain || row !== undefined) {
+        collectedHover.hoveredCollected = -1;
+        collectedHover.hoveredCollectedIsImage = false;
+        collectedHover.hoveredUserRow = row ?? null;
+        collectedHover.hoveredLineDistance = Infinity;
+        mainHover.mainConnectorHover = isMain;
+        mainHover.mainHighlighted = isMain || mainHover.hoveredMain !== -1;
       }
     }
 
@@ -909,6 +1063,19 @@ export function createDrawFrameHandler(
     } else if (runtime.branchIsolate > 1 - HIGHLIGHT_FADE_SNAP) {
       runtime.branchIsolate = 1;
     }
+    runtime.branchSolo +=
+      ((runtime.branchSoloActive ? 1 : 0) - runtime.branchSolo) *
+      BRANCH_DIM_LERP;
+    if (runtime.branchSolo < HIGHLIGHT_FADE_SNAP) {
+      runtime.branchSolo = 0;
+      if (!runtime.branchSoloActive) {
+        runtime.branchSoloRow = null;
+        runtime.soloGrid = null;
+        runtime.soloGridArea = null;
+      }
+    } else if (runtime.branchSolo > 1 - HIGHLIGHT_FADE_SNAP) {
+      runtime.branchSolo = 1;
+    }
 
     // Connectors render beneath the images, whose soft white halo fades each
     // line out where it meets an item.
@@ -956,11 +1123,53 @@ export function createDrawFrameHandler(
             .map((segment) => getBranchRoute(segment.from, segment.to, segment))
         );
     };
-    // The whole timeline as one path (its lines joined end to end), for a tag
-    // to travel along.
-    const timelinePath = (key: string) => timelineLines(key).flat();
+    // The whole timeline as one track for a tag to travel along: its lines
+    // laid end to end by length, with no distance between one and the next,
+    // so the tag only ever sits on a line (skipping across where two meet
+    // rather than cutting through the space between them).
+    const timelineTrack = (key: string) => {
+      const parts: {
+        points: ConnectorPoint[];
+        start: number;
+        length: number;
+      }[] = [];
+      let total = 0;
+      timelineLines(key).forEach((points) => {
+        const length = points.length >= 2 ? polylineLength(points) : 0;
+        if (length > 0) {
+          parts.push({ points, start: total, length });
+          total += length;
+        }
+      });
+      // The point `distance` along the track.
+      const at = (distance: number): ConnectorPoint => {
+        const clamped = Math.max(0, Math.min(total, distance));
+        const part =
+          parts.find(
+            (candidate) => clamped <= candidate.start + candidate.length
+          ) ?? parts[parts.length - 1];
+        return pointAtArcLength(part.points, clamped - part.start);
+      };
+      // How far along the track its nearest point to `point` is.
+      const nearest = (point: ConnectorPoint): number => {
+        let best = 0;
+        let bestDist = Infinity;
+        parts.forEach((part) => {
+          const local = nearestArcLength(part.points, point);
+          const on = pointAtArcLength(part.points, local);
+          const dist = Math.hypot(on.x - point.x, on.y - point.y);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = part.start + local;
+          }
+        });
+        return best;
+      };
+      return { empty: parts.length === 0, at, nearest };
+    };
     const updateLineTags = () => {
       let hoveredKey: string | null = null;
+      // The main timeline's tag is white, like its line.
       let colour = MAIN_LINE_COLOUR;
       let name = MAIN_USERNAME;
       if (!isFocusActive) {
@@ -977,9 +1186,9 @@ export function createDrawFrameHandler(
         }
       }
       if (hoveredKey) {
-        const path = timelinePath(hoveredKey);
-        if (path.length >= 2) {
-          const target = nearestArcLength(path, mouseWorld);
+        const track = timelineTrack(hoveredKey);
+        if (!track.empty) {
+          const target = track.nearest(mouseWorld);
           const blob = runtime.lineBlobs.get(hoveredKey);
           if (!blob || blob.scale <= LOAD_ALPHA_SNAP) {
             // Appearing: start right where the cursor meets the line.
@@ -1006,15 +1215,66 @@ export function createDrawFrameHandler(
           runtime.lineBlobs.delete(key);
           return;
         }
-        const path = timelinePath(key);
-        if (path.length >= 2) {
-          const at = pointAtArcLength(path, blob.distance);
+        const track = timelineTrack(key);
+        if (!track.empty) {
+          const at = track.at(blob.distance);
           blob.x = at.x;
           blob.y = at.y;
         }
       });
     };
     updateLineTags();
+
+    // The hovered item's picture grows a touch (not while one's being viewed),
+    // easing in and back out.
+    {
+      // (Or the one whose card is hovered in the left column.)
+      const cardHoveredId = deps.refs.hoveredItemContentIdRef.current;
+      const cardHoveredKey = (() => {
+        if (!cardHoveredId) {
+          return null;
+        }
+        const mainIndex = deps.items.findIndex(
+          (item) => item._id === cardHoveredId
+        );
+        if (mainIndex !== -1) {
+          return `main:${mainIndex}`;
+        }
+        const collectedIndex = deps.processedCollected.findIndex(
+          (item) => item.contentId === cardHoveredId
+        );
+        return collectedIndex !== -1 ? `collected:${collectedIndex}` : null;
+      })();
+      const hoveredKey = isFocusActive
+        ? null
+        : mainHover.hoveredMain !== -1
+        ? `main:${mainHover.hoveredMain}`
+        : collectedHover.hoveredCollected !== -1 &&
+          collectedHover.hoveredCollectedIsImage
+        ? `collected:${collectedHover.hoveredCollected}`
+        : cardHoveredKey;
+      if (hoveredKey && !itemHoverProgress.has(hoveredKey)) {
+        itemHoverProgress.set(hoveredKey, 0);
+      }
+      const step = Math.min(p.deltaTime, 100) / ITEM_HOVER_GROW_MS;
+      itemHoverEased.clear();
+      itemHoverProgress.forEach((progress, key) => {
+        const next =
+          key === hoveredKey ? Math.min(1, progress + step) : progress - step;
+        if (next <= 0) {
+          itemHoverProgress.delete(key);
+          return;
+        }
+        itemHoverProgress.set(key, next);
+        itemHoverEased.set(key, 1 - (1 - next) ** 3);
+      });
+    }
+
+    // Viewers' flashes along the timelines, passing behind the items — only
+    // on the map, not while an item is being zoomed into or viewed.
+    if (runtime.focusTarget === null) {
+      viewerDotAnimator.drawFlashes(p, runtime.zoom);
+    }
 
     drawMainLaneItems(p, deps, loadedImages, drawCtx, mainHover, gallery);
 
@@ -1028,6 +1288,49 @@ export function createDrawFrameHandler(
       gallery
     );
 
+    // "Your items" grid: each item's description beside its picture, fading
+    // in as the items settle into the grid.
+    const soloGrid = runtime.soloGrid;
+    if (soloGrid && runtime.branchSolo > LOAD_ALPHA_SNAP) {
+      const textAlpha = runtime.branchSolo ** 2 * otherContentAlpha;
+      const descCtx = p.drawingContext as CanvasRenderingContext2D;
+      const font = p.textFont();
+      p.push();
+      p.noStroke();
+      p.fill(ITEM_LABEL_COLOUR);
+      p.textFont(CANVAS_TITLE_FONT);
+      p.textSize(SOLO_GRID_TEXT_SIZE);
+      p.textAlign(p.LEFT, p.TOP);
+      descCtx.globalAlpha = textAlpha;
+      soloGrid.forEach((cell, key) => {
+        const [lane, indexText] = key.split(':');
+        const index = Number(indexText);
+        const text =
+          lane === 'main'
+            ? deps.processed[index]?.description
+            : deps.processedCollected[index]?.description;
+        if (!text) {
+          return;
+        }
+        const lines = wrapToLines(
+          (line) => p.textWidth(line),
+          text,
+          cell.text.width,
+          Math.max(1, Math.floor(cell.text.height / SOLO_GRID_TEXT_LEADING))
+        );
+        lines.forEach((line, k) =>
+          p.text(
+            line,
+            cell.text.left,
+            cell.text.top + k * SOLO_GRID_TEXT_LEADING
+          )
+        );
+      });
+      p.pop();
+      descCtx.globalAlpha = 1;
+      p.textFont(font);
+    }
+
     drawMainLaneConnectorDots(p, deps, drawCtx);
     drawCollectedLaneConnectorDots(
       p,
@@ -1040,9 +1343,21 @@ export function createDrawFrameHandler(
     );
     drawMainTimelineGlow(p, deps, boundsCtx, bounds, collectedBounds);
 
-    // Straight connectors joining the isolated branch's items — and the
-    // active collection's not-yet-collected items, merged in by date — into
-    // one line.
+    // Viewers' dots, on top of the items and their halo, fading between items
+    // as people move on; a hovered one grows. Only on the world map: they
+    // fade away while an item or a collection is being viewed.
+    viewerDotAnimator.update(
+      p,
+      viewerDots,
+      hoveredViewer?.userId ?? null,
+      otherContentAlpha * isolateOtherAlpha * (1 - runtime.branchSolo),
+      timelineSegments,
+      runtime.zoom
+    );
+    viewerDotAnimator.draw(p, runtime);
+
+    // The active collection's not-yet-collected items, placed on the viewer's
+    // branch row at their own dates among the viewer's own items.
     if (isolateActive && isolateRow !== null) {
       const isolatedOrdered = (getIsolatedLine()?.entries ?? [])
         .map((entry) => {
@@ -1050,6 +1365,8 @@ export function createDrawFrameHandler(
             return {
               kind: entry.kind,
               index: entry.index,
+              contentId: entry.contentId,
+              linkedTo: entry.linkedTo,
               rect: getDetailDrawBoundsIso(
                 'collected',
                 entry.index,
@@ -1060,6 +1377,8 @@ export function createDrawFrameHandler(
           return {
             kind: entry.kind,
             index: entry.index,
+            contentId: entry.contentId,
+            linkedTo: entry.linkedTo,
             rect: isCollectTarget(entry.index)
               ? moveToScreenCentre(entry.rect)
               : entry.rect,
@@ -1136,13 +1455,10 @@ export function createDrawFrameHandler(
           isolate *
           previewSwitchAlpha *
           (isCollectTarget(entry.index) ? 1 : collectFade);
+        // Its own canvas state for the glow and picture (see the lanes' item
+        // drawing): Safari otherwise ignores the fade on pictures after it.
+        p.push();
         previewCtx.globalAlpha = previewAlpha;
-        const greyness = 1 - progress;
-        if (greyness > 0) {
-          previewCtx.filter = `grayscale(${greyness * 80}%) brightness(${
-            1 - greyness * 0.25
-          })`;
-        }
         if (progress > 0) {
           previewCtx.shadowColor = hexToRgba(
             deps.previewColour,
@@ -1164,8 +1480,18 @@ export function createDrawFrameHandler(
             rect.top + rect.height / 2
           );
         }
-        previewCtx.filter = 'none';
-        previewCtx.shadowBlur = 0;
+        p.pop();
+        previewCtx.globalAlpha = previewAlpha;
+        drawSheen(
+          previewCtx,
+          rect.left,
+          rect.top,
+          rect.width,
+          rect.height,
+          p.millis(),
+          (deps.processedCollected.length + entry.index) * SHEEN_STAGGER_MS,
+          previewAlpha
+        );
 
         // White border on every collectible except the focused one, matching
         // the main/collected lanes' own convention.
@@ -1177,43 +1503,53 @@ export function createDrawFrameHandler(
         }
         resetCanvasEffects(previewCtx);
 
-        const isTitleShown = item.contentId === centerOnPreviewContentId;
-        const titleAlpha = isTitleShown
-          ? previewExpandAmount * isolate * previewSwitchAlpha
-          : 0;
-        const hideDateLabel =
+        const hideLabel =
           isFocusedPreview && isDetailLayoutActive && runtime.detailLayout > 0;
-
-        // Deferred so the date renders above the connectors/nodes, matching
-        // every other item's date label.
-        const hasIcon =
-          !hideDateLabel &&
-          pushItemDateLabels(dateLabels, {
-            left: rect.left,
-            right: rect.right,
-            y: rect.top - 12,
-            text: formatDateForZoom(
-              item.anchorTime,
-              runtime.zoom,
-              runtime.fitZoomLevel
-            ),
-            alpha: isolate * previewSwitchAlpha,
-            contentType: item.contentType,
-          });
-
-        if (titleAlpha > HIGHLIGHT_FADE_SNAP) {
+        // The same kind tag and label as every other item: title, full date
+        // and who owns it, under the picture (deferred so it renders above the
+        // lines).
+        const kind = getContentTypeKicker(item.contentType);
+        if (kind && !hideLabel) {
+          previewCtx.globalAlpha = previewAlpha;
+          drawKindTag(
+            p,
+            kind,
+            rect.right,
+            rect.top + rect.height,
+            runtime.zoom
+          );
+          resetCanvasEffects(previewCtx);
+        }
+        if (!hideLabel) {
           dateLabels.push({
-            x:
-              rect.left +
-              (hasIcon
-                ? (PREVIEW_ICON_SIZE + PREVIEW_ICON_GAP) / runtime.zoom
-                : 0),
-            y: rect.top - 12,
+            x: (rect.left + rect.right) / 2,
+            y: rect.top + rect.height + 12,
+            below: true,
+            font: CANVAS_LABEL_FONT,
+            scale:
+              ITEM_LABEL_SCALE *
+              (1 +
+                (PREVIEW_EXPAND_SCALE - 1) *
+                  (previewExpand.get(item.contentId) ?? 0)),
+            letterSpacing: ITEM_LABEL_LETTER_SPACING,
+            textFont: CANVAS_TITLE_FONT,
+            textScale: ITEM_TITLE_SCALE,
+            collectedBy: collectedByFor(
+              deps.refs.collectorsRef.current?.get(item.contentId)
+            ),
+            lineHeight: ITEM_LABEL_LINE_HEIGHT,
+            outlined: true,
+            anchor: {
+              left: rect.left,
+              right: rect.right,
+              top: rect.top,
+              bottom: rect.top + rect.height,
+            },
             text: item.title,
-            colour: '#ffffff',
-            alpha: titleAlpha,
-            align: 'left',
-            variant: 'title',
+            secondary: formatFullDate(item.anchorTime),
+            maxWidth: Math.max(rect.width, ITEM_WIDTH * 0.8),
+            colour: ITEM_LABEL_COLOUR,
+            alpha: isolate * previewSwitchAlpha,
           });
         }
       }
@@ -1224,32 +1560,37 @@ export function createDrawFrameHandler(
       }
 
       const ctx2 = p.drawingContext as CanvasRenderingContext2D;
-      const isolateWeight = connectorWeight(runtime.zoom, runtime.fitZoomLevel);
-      for (let k = 0; k < isolatedOrdered.length - 1; k++) {
-        const a = isolatedOrdered[k];
-        const b = isolatedOrdered[k + 1];
-        // Dotted wherever the segment touches a collectible (not-yet-
-        // collected) item, so those links read differently from the solid
-        // lines between items actually on the branch.
-        const dotted = a.kind === 'preview' || b.kind === 'preview';
-        ctx2.globalAlpha =
-          (dotted ? isolate * previewSwitchAlpha : isolate) * collectFade;
-        ctx2.setLineDash(dotted ? [0.1, zoomGrowth * 6] : []);
-        ctx2.lineCap = dotted ? 'round' : 'butt';
-        const lineFrom = { x: a.rect.right, y: a.rect.centerY };
-        const lineTo = { x: b.rect.left, y: b.rect.centerY };
-        // Routed at 0/45/90° like every other connector.
-        const points = getMainConnectorPoints(lineFrom, lineTo);
-        if (dotted) {
-          p.stroke(isolateColour);
-          p.strokeWeight(isolateWeight);
-          p.noFill();
-          p.beginShape();
-          points.forEach((point) => p.vertex(point.x, point.y));
-          p.endShape();
-        } else {
-          drawBranchConnector(p, points, isolateColour, isolateWeight);
+      const isolateWeight = timelineWeight(runtime);
+      // The viewer's own items keep their usual branch lines; each of the
+      // collection's items is linked to the item it sits beside with a
+      // dotted line.
+      const isolatedById = new Map(
+        isolatedOrdered.map((entry) => [entry.contentId, entry])
+      );
+      for (const entry of isolatedOrdered) {
+        const partner = entry.linkedTo
+          ? isolatedById.get(entry.linkedTo)
+          : undefined;
+        if (!partner) {
+          continue;
         }
+        const [a, b] =
+          entry.rect.left < partner.rect.left
+            ? [entry, partner]
+            : [partner, entry];
+        ctx2.globalAlpha = isolate * previewSwitchAlpha * collectFade;
+        ctx2.setLineDash([0.1, zoomGrowth * 6]);
+        ctx2.lineCap = 'round';
+        const points = getMainConnectorPoints(
+          { x: a.rect.right, y: a.rect.centerY },
+          { x: b.rect.left, y: b.rect.centerY }
+        );
+        p.stroke(isolateColour);
+        p.strokeWeight(isolateWeight);
+        p.noFill();
+        p.beginShape();
+        points.forEach((point) => p.vertex(point.x, point.y));
+        p.endShape();
       }
       ctx2.setLineDash([]);
       ctx2.lineCap = 'butt';
@@ -1283,15 +1624,36 @@ export function createDrawFrameHandler(
         letterSpacing: string;
       };
       // Every item, for labels to steer clear of.
-      const itemRects = [...bounds, ...collectedBounds].map((b) => ({
-        left: b.left,
-        right: b.right,
-        top: b.top,
-        bottom: b.top + b.height,
-      }));
+      // Labels keep off every item picture — including, while a collection is
+      // being viewed, the collection's own items placed on the branch.
+      const itemRects = [
+        ...[...bounds, ...collectedBounds].map((b) => ({
+          left: b.left,
+          right: b.right,
+          top: b.top,
+          bottom: b.top + b.height,
+        })),
+        ...(isolateActive ? runtime.isolatedRegions : []),
+      ];
       const canvasFont = p.textFont();
       p.noStroke();
-      for (const label of dateLabels) {
+      // Zoomed far out, items' labels (title, date, who owns it) fade out
+      // between these zooms.
+      const subLabelAlpha = Math.max(
+        0,
+        Math.min(
+          1,
+          (runtime.zoom - SUBLABEL_HIDE_ZOOM) /
+            (SUBLABEL_SHOW_ZOOM - SUBLABEL_HIDE_ZOOM)
+        )
+      );
+      for (const rawLabel of dateLabels) {
+        if (rawLabel.anchor && subLabelAlpha <= 0) {
+          continue;
+        }
+        const label = rawLabel.anchor
+          ? { ...rawLabel, alpha: rawLabel.alpha * subLabelAlpha }
+          : rawLabel;
         dateCtx.globalAlpha = label.alpha * collectFade;
         if (label.icon) {
           const iconSize = PREVIEW_ICON_SIZE / runtime.zoom;
@@ -1344,8 +1706,10 @@ export function createDrawFrameHandler(
         // medium weight for item titles); the lines after it never do. Set
         // before measuring any line, so widths allow for it.
         const bodyFont = label.font ?? canvasFont;
+        const bodySize = p.textSize();
         const styleLine = (isText: boolean) => {
           p.textFont(isText && label.textFont ? label.textFont : bodyFont);
+          p.textSize(isText ? bodySize * (label.textScale ?? 1) : bodySize);
         };
         const widthOf = (line: string, isText: boolean) => {
           styleLine(isText);
@@ -1389,12 +1753,18 @@ export function createDrawFrameHandler(
             : wrapText(p, label.text, label.maxWidth)
         );
         const isTextLine = (k: number) => k < lines.length - extras.length;
-        const leading = p.textSize() * (label.lineHeight ?? 1.2);
+        // (From the body size: measuring may have left the title's size set.)
+        const leading = bodySize * (label.lineHeight ?? 1.2);
+        // The text's own lines step by their own, larger size.
+        const textLeading = leading * (label.textScale ?? 1);
         // Extra space above the first of those lines, setting them apart from
         // the text.
         const secondaryGap =
-          extras.length === 0 ? 0 : p.textSize() * SECONDARY_LABEL_GAP;
-        const blockHeight = (count: number) => count * leading + secondaryGap;
+          extras.length === 0 ? 0 : bodySize * SECONDARY_LABEL_GAP;
+        const blockHeight = (count: number) =>
+          (count - extras.length) * textLeading +
+          extras.length * leading +
+          secondaryGap;
         let { x, y } = label;
         let below = label.below ?? false;
         let hAlign = horizontalAlign;
@@ -1488,7 +1858,12 @@ export function createDrawFrameHandler(
             ).length *
               1000 +
             countLabelClashes(rect, drawnLines, itemRects);
-          const best = spots.reduce(
+          // In a timeline's grid, labels always hang under their pictures.
+          const candidates =
+            runtime.soloGrid && runtime.branchSolo > 0
+              ? spots.slice(0, 1)
+              : spots;
+          const best = candidates.reduce(
             (chosen, spot) => {
               const spotScore = score(spot.rect);
               return chosen.score === 0 || spotScore >= chosen.score
@@ -1506,10 +1881,22 @@ export function createDrawFrameHandler(
         p.textAlign(hAlign, below ? p.TOP : p.BOTTOM);
         const last = lines.length - 1;
         const firstExtra = lines.length - extras.length;
-        const lineY = (k: number) =>
-          below
-            ? y + k * leading + (k >= firstExtra ? secondaryGap : 0)
-            : y - (last - k) * leading - (k < firstExtra ? secondaryGap : 0);
+        // Each line's step is its own height: a hung-below label steps down by
+        // the lines above, a raised one up by the lines below.
+        const step = (k: number) => (k < firstExtra ? textLeading : leading);
+        const lineY = (k: number) => {
+          let offset = 0;
+          if (below) {
+            for (let i = 0; i < k; i++) {
+              offset += step(i);
+            }
+            return y + offset + (k >= firstExtra ? secondaryGap : 0);
+          }
+          for (let i = k + 1; i <= last; i++) {
+            offset += step(i);
+          }
+          return y - offset - (k < firstExtra ? secondaryGap : 0);
+        };
         const baseAlpha = dateCtx.globalAlpha;
         // The date (the first line after the text) is as strong as the text;
         // the "owned by" lines after it are fainter.
@@ -1551,7 +1938,11 @@ export function createDrawFrameHandler(
           );
           p.strokeWeight((LABEL_OUTLINE_PX * 2) / runtime.zoom);
           p.strokeJoin(p.ROUND);
-          lines.forEach((line, k) => p.text(line, x, lineY(k)));
+          lines.forEach((line, k) => {
+            styleLine(k < firstExtra);
+
+            p.text(line, x, lineY(k));
+          });
           p.noStroke();
           p.fill(label.colour);
         }
@@ -1603,73 +1994,6 @@ export function createDrawFrameHandler(
 
     p.pop();
 
-    if (
-      runtime.focusContentFade <= LOAD_ALPHA_SNAP &&
-      collectedHover.hoveredCollected !== -1
-    ) {
-      const hovered = deps.processedCollected[collectedHover.hoveredCollected];
-      const hoveredUserSource =
-        collectedHover.hoveredUserRow !== null
-          ? hovered.sources.find(
-              (source) => source.rowIndex === collectedHover.hoveredUserRow
-            )
-          : undefined;
-
-      if (collectedHover.hoveredCollectedIsImage && hovered.isPrivate) {
-        drawUserLabel(
-          p,
-          PRIVATE_BADGE_TEXT,
-          PRIVATE_BADGE_COLOUR,
-          p.mouseX,
-          p.mouseY
-        );
-      } else if (
-        !collectedHover.hoveredCollectedIsImage &&
-        !hoveredUserSource
-      ) {
-        // A single user's line is named by its tag riding the line, and the
-        // item itself by the label under it.
-        drawCollectedSourcesLabel(p, hovered.sources, p.mouseX, p.mouseY);
-      }
-    } else if (
-      runtime.focusContentFade <= LOAD_ALPHA_SNAP &&
-      mainHover.mainHighlighted
-    ) {
-      const hoveredMainItem =
-        mainHover.hoveredMain !== -1
-          ? deps.processed[mainHover.hoveredMain]
-          : undefined;
-      if (hoveredMainItem?.isPrivate) {
-        drawUserLabel(
-          p,
-          PRIVATE_BADGE_TEXT,
-          PRIVATE_BADGE_COLOUR,
-          p.mouseX,
-          p.mouseY
-        );
-      }
-    } else if (lastHoveredPreviewId !== null) {
-      const hoveredPreviewIndex = deps.processedPreview.findIndex(
-        (item) => item.contentId === lastHoveredPreviewId
-      );
-      const isHoveredPreviewFocused =
-        isFocusActive && isFocusedTarget('preview', hoveredPreviewIndex);
-      if (
-        hoveredPreviewIndex !== -1 &&
-        (isHoveredPreviewFocused || runtime.focusContentFade <= LOAD_ALPHA_SNAP)
-      ) {
-        drawUserLabel(
-          p,
-          isHoveredPreviewFocused
-            ? '+ collect item'
-            : deps.processedPreview[hoveredPreviewIndex].title,
-          deps.previewColour,
-          p.mouseX,
-          p.mouseY
-        );
-      }
-    }
-
     // The name tags riding hovered timelines (eased along them in
     // updateLineTags), drawn on screen above the map.
     const toScreen = (point: ConnectorPoint) => ({
@@ -1713,30 +2037,25 @@ export function createDrawFrameHandler(
       // whichever side takes it higher up the screen. If that spot would cover
       // an item or its label it tries the other side, then further out along
       // the line; with nowhere clear, it sits over the cursor.
-      const path = timelinePath(key);
-      if (path.length < 2) {
+      const track = timelineTrack(key);
+      if (track.empty) {
         return;
       }
       const name = blob.name;
-      const itemCount =
-        key === 'main'
-          ? deps.items.length
-          : [...(deps.refs.collectorsRef.current?.values() ?? [])].filter(
-              (collectors) => collectors.some((c) => c.username === name)
-            ).length;
-      const detail = `${itemCount} item${itemCount === 1 ? '' : 's'}`;
+      // (The main timeline can't be clicked into, so its tag just names it.)
+      const detail = key === 'main' ? '' : 'View timeline';
       const size = measureLineTag(p, name, detail);
       const nudge = 1 / runtime.zoom;
-      const before = pointAtArcLength(path, blob.distance - nudge);
-      const after = pointAtArcLength(path, blob.distance + nudge);
+      const before = track.at(blob.distance - nudge);
+      const after = track.at(blob.distance + nudge);
       const span = Math.hypot(after.x - before.x, after.y - before.y) || 1;
       const clearance =
         (LINE_TAG_LIFT_PX +
           (Math.abs(after.y - before.y) / span) * (size.height / 2) +
           (Math.abs(after.x - before.x) / span) * (size.width / 2)) /
         runtime.zoom;
-      const ahead = pointAtArcLength(path, blob.distance + clearance);
-      const behind = pointAtArcLength(path, blob.distance - clearance);
+      const ahead = track.at(blob.distance + clearance);
+      const behind = track.at(blob.distance - clearance);
       // Only switch the preferred side once the other is clearly higher, so it
       // doesn't flicker between them.
       const switchMargin = 2 / runtime.zoom;
@@ -1759,7 +2078,7 @@ export function createDrawFrameHandler(
         blob.distance - blob.side * clearance * step,
       ]);
       const clear = candidates
-        .map((distance) => pointAtArcLength(path, distance))
+        .map((distance) => track.at(distance))
         .find((point) => !overlapsObstacle(tagRectAt(point)));
       const { x, y } = toScreen(clear ?? blob);
       drawLineTag(p, name, detail, blob.colour, x, y, blob.scale);
@@ -1861,7 +2180,7 @@ export function createDrawFrameHandler(
         }
         const { region } = card;
         const size = drawNodeCard(
-          p,
+          cards,
           region,
           (region.x - runtime.cameraX) * runtime.zoom,
           (region.y - runtime.cameraY) * runtime.zoom,

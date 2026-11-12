@@ -36,8 +36,7 @@ export const newsletter = defineType({
       name: 'content',
       title: 'Content',
       description: 'Long-form newsletter or blog content.',
-      type: 'text',
-      rows: 12,
+      type: 'richText',
       validation: (Rule) => Rule.required(),
     }),
     defineField({

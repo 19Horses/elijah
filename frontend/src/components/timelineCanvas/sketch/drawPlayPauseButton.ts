@@ -1,5 +1,10 @@
 import type p5 from 'p5';
 import { resetCanvasEffects } from '../canvasEffects';
+import {
+  PLAY_BUTTON_SHADOW_ALPHA,
+  PLAY_BUTTON_SHADOW_BLUR_PX,
+  PLAY_BUTTON_SHADOW_OFFSET_PX,
+} from '../constants';
 
 /**
  * Draws a play/pause control centred on an item's image. `playing` selects the
@@ -20,11 +25,14 @@ export function drawPlayPauseButton(
 
   ctx.globalAlpha = alpha;
 
-  // Translucent backdrop disc.
-  p.noStroke();
-  p.fill(0, 0, 0, 115);
-  p.circle(cx, cy, r * 2);
+  // No backdrop: the white glyph lifts off the artwork on a soft drop shadow
+  // (shadows are in device pixels, so the same size at any zoom).
+  const density = p.pixelDensity();
+  ctx.shadowBlur = PLAY_BUTTON_SHADOW_BLUR_PX * density;
+  ctx.shadowOffsetY = PLAY_BUTTON_SHADOW_OFFSET_PX * density;
+  ctx.shadowColor = `rgba(0, 0, 0, ${PLAY_BUTTON_SHADOW_ALPHA})`;
 
+  p.noStroke();
   p.fill(255);
   if (playing) {
     const barW = r * 0.26;

@@ -1,4 +1,5 @@
 import { formatFullDate } from '../../utils/formatDate';
+import { createLayoutChangeState } from './sketch/layoutChange';
 import {
   DATE_FORMAT_FULL_ZOOM_FACTOR,
   DATE_FORMAT_NUMERIC_ZOOM_FACTOR,
@@ -40,7 +41,6 @@ export function createTimelineRuntime(): TimelineRuntime {
     focusTarget: null,
     focusedBranchRow: null,
     lastHighlightedMainContentId: null,
-    lastCenterOnPreviewContentId: null,
     isCollectionViewActive: false,
     viewAnimating: false,
     viewUnfocusing: false,
@@ -56,6 +56,11 @@ export function createTimelineRuntime(): TimelineRuntime {
     activeHighlightType: null,
     highlightStrength: 0,
     branchDimStrength: 0,
+    branchSoloActive: false,
+    branchSoloRow: null,
+    branchSolo: 0,
+    soloGrid: null,
+    soloGridArea: null,
     branchDimRow: null,
     branchIsolateRow: null,
     branchIsolateActive: false,
@@ -68,6 +73,8 @@ export function createTimelineRuntime(): TimelineRuntime {
     collectContentId: null,
     collectFinalRect: null,
     collectedVersion: 0,
+    mapZoom: 0,
+    layoutChange: createLayoutChangeState(),
     collectReturnIndex: -1,
     collectReturnWaitStartMs: 0,
     collectReturnStartMs: null,
@@ -89,7 +96,7 @@ export function createTimelineRuntime(): TimelineRuntime {
     edgeNodePush: new Map(),
     nodeCards: new Map(),
     edgeNodes: 0,
-    edgeNodesVelocity: 0,
+    edgeNodesLinear: 0,
     edgeNodesX: 0,
     edgeNodesTarget: null,
     nodeRegions: [],

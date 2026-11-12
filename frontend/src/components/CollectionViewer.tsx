@@ -3,6 +3,8 @@ import type { Collection } from '../queries/collection';
 import type { CollectionContent } from '../types/content';
 import { getStoredUser } from '../services/userStorage';
 import { collectItem } from '../services/collectItem';
+import RichText from './RichText';
+import { hasRichText } from '../utils/richText';
 
 type CollectionViewerProps = {
   collection: Collection;
@@ -78,11 +80,15 @@ function CollectionItem({
             )}
             <p className="collection-viewer__title">{item.title}</p>
           </div>
-          {'description' in item && item.description && (
-            <p className="collection-viewer__description">{item.description}</p>
+          {'description' in item && hasRichText(item.description) && (
+            <p className="collection-viewer__description">
+              <RichText value={item.description} />
+            </p>
           )}
-          {'content' in item && item.content && (
-            <p className="collection-viewer__description">{item.content}</p>
+          {'content' in item && hasRichText(item.content) && (
+            <p className="collection-viewer__description">
+              <RichText value={item.content} />
+            </p>
           )}
         </div>
         <div className="collection-viewer__media">

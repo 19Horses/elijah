@@ -1,14 +1,26 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Collection } from '../queries/collection';
 import {
   DEBUG_TIMERS_EVENT,
   getEffectiveExpiresAt,
 } from '../services/debugTimers';
 import { getDisplayColour } from '../services/userColor';
+import RichText from './RichText';
+import { hasRichText } from '../utils/richText';
 
 type CollectionCountdownProps = {
   collection: Collection;
   onClick?: () => void;
+  // Whether its items are showing, which then stand in for the summary of
+  // what's in it.
+  open?: boolean;
+  // Shown inside the box under its details (the collection's items, when
+  // it's open).
+  children?: React.ReactNode;
+  // Shown beside the mouse over the box when it can't be opened yet (to
+  // someone signed out), saying what to do first.
+  cursorLabel?: string | null;
 };
 
 function formatCountdown(ms: number): string {
@@ -28,10 +40,60 @@ function formatCountdown(ms: number): string {
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 }
 
+// What a collection holds, by kind, e.g. "4 photos, 1 video, 2 letters".
+const CONTENT_KINDS: [type: string, one: string, many: string][] = [
+  ['imageAsset', 'photo', 'photos'],
+  ['videoAsset', 'video', 'videos'],
+  ['audioAsset', 'track', 'tracks'],
+  ['newsletter', 'letter', 'letters'],
+  ['event', 'event', 'events'],
+];
+
+export function describeContents(collection: Collection): string {
+  const counts = new Map<string, number>();
+  (collection.content ?? []).forEach((item) => {
+    counts.set(item._type, (counts.get(item._type) ?? 0) + 1);
+  });
+  return CONTENT_KINDS.flatMap(([type, one, many]) => {
+    const count = counts.get(type) ?? 0;
+    return count > 0 ? [`${count} ${count === 1 ? one : many}`] : [];
+  }).join(', ');
+}
+
 function CollectionCountdown({
   collection,
   onClick,
+  open = false,
+  children,
+  cursorLabel = null,
 }: CollectionCountdownProps) {
+  // Where the mouse is over the box, for the label that follows it.
+  const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  // The box can stop taking the mouse without it ever leaving (the column
+  // hides while an item is open), so watch where the mouse goes from here
+  // and drop the label once it's anywhere else.
+  useEffect(() => {
+    if (!pointer) {
+      return;
+    }
+    const onMove = (event: PointerEvent) => {
+      const toggle = toggleRef.current;
+      if (
+        !toggle ||
+        !(event.target instanceof Node) ||
+        !toggle.contains(event.target)
+      ) {
+        setPointer(null);
+      }
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerdown', onMove);
+    return () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerdown', onMove);
+    };
+  }, [pointer]);
   const [remaining, setRemaining] = useState<number>(() => {
     const expiresAt = getEffectiveExpiresAt(collection);
     if (!expiresAt) return 0;
@@ -75,27 +137,70 @@ function CollectionCountdown({
   if (remaining <= 0) return null;
 
   const colour = getDisplayColour();
+  const contents = describeContents(collection);
 
   return (
-    <button
-      type="button"
+    <div
       className={`collection-countdown${
         isVisible ? ' collection-countdown--visible' : ''
       }`}
       style={{ '--countdown-tint': colour } as React.CSSProperties}
-      aria-live="polite"
-      aria-atomic="true"
-      onMouseDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick?.();
-      }}
     >
-      <span className="collection-countdown__label">{collection.name}</span>
-      <span className="collection-countdown__timer">
-        {formatCountdown(remaining)}
-      </span>
-    </button>
+      {cursorLabel && pointer && isVisible
+        ? createPortal(
+            <span
+              className="cursor-label"
+              style={{ left: `${pointer.x}px`, top: `${pointer.y}px` }}
+            >
+              {cursorLabel}
+            </span>,
+            document.body
+          )
+        : null}
+      <button
+        type="button"
+        ref={toggleRef}
+        className="collection-countdown__toggle"
+        aria-live="polite"
+        aria-atomic="true"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          setPointer(null);
+          onClick?.();
+        }}
+        onMouseMove={(e) => setPointer({ x: e.clientX, y: e.clientY })}
+        onMouseLeave={() => setPointer(null)}
+      >
+        <span className="collection-countdown__header">
+          <span className="collection-countdown__timer">
+            {formatCountdown(remaining)}
+          </span>
+        </span>
+        <span className="collection-countdown__label">{collection.name}</span>
+        {collection.imageUrl && (
+          <img
+            className="collection-countdown__image"
+            src={collection.imageUrl}
+            alt=""
+            style={
+              collection.imageDimensions
+                ? { aspectRatio: collection.imageDimensions.aspectRatio }
+                : undefined
+            }
+          />
+        )}
+        {hasRichText(collection.description) && (
+          <span className="collection-countdown__description">
+            <RichText value={collection.description} />
+          </span>
+        )}
+        {contents && !open && (
+          <span className="collection-countdown__contents">{contents}</span>
+        )}
+      </button>
+      {children}
+    </div>
   );
 }
 

@@ -6,6 +6,7 @@ import {mainTimeline} from './mainTimeline'
 import {mainTimelineItem} from './mainTimelineItem'
 import {newsletter} from './newsletter'
 import {product} from './product'
+import {richText} from './richText'
 import {s3Video} from './s3Video'
 import {videoAsset} from './videoAsset'
 
@@ -18,6 +19,7 @@ export const schemaTypes = [
   mainTimelineItem,
   newsletter,
   product,
+  richText,
   s3Video,
   videoAsset,
 ]
