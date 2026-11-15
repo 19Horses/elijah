@@ -83,12 +83,14 @@ describe('getBranchRoute', () => {
         spec = {
           fromDir: 'vertical',
           toDir: 'horizontal',
-          fromNode: rand() < 0.9
-            ? { centre: fromCentre, halfSpan: mainHalfSpan, axis: 'x' }
-            : undefined,
-          toNode: rand() < 0.9
-            ? { centre: toCentre, halfSpan: itemHalfSpan, axis: 'y' }
-            : undefined,
+          fromNode:
+            rand() < 0.9
+              ? { centre: fromCentre, halfSpan: mainHalfSpan, axis: 'x' }
+              : undefined,
+          toNode:
+            rand() < 0.9
+              ? { centre: toCentre, halfSpan: itemHalfSpan, axis: 'y' }
+              : undefined,
           corridorY:
             rand() < 0.4 ? toCentre.y - below * range(0, 200) : undefined,
         };
@@ -105,12 +107,14 @@ describe('getBranchRoute', () => {
         spec = {
           fromDir: 'horizontal',
           toDir: 'horizontal',
-          fromNode: rand() < 0.9
-            ? { centre: fromCentre, halfSpan: otherHalfSpan, axis: 'y' }
-            : undefined,
-          toNode: rand() < 0.9
-            ? { centre: toCentre, halfSpan: itemHalfSpan, axis: 'y' }
-            : undefined,
+          fromNode:
+            rand() < 0.9
+              ? { centre: fromCentre, halfSpan: otherHalfSpan, axis: 'y' }
+              : undefined,
+          toNode:
+            rand() < 0.9
+              ? { centre: toCentre, halfSpan: itemHalfSpan, axis: 'y' }
+              : undefined,
         };
       }
       const route = getBranchRoute(from, to, spec);

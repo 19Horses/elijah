@@ -214,10 +214,7 @@ function TimelineDetailOverlay({
   // Galleries, music, videos and events put all their info in a column beside
   // the picture (leaving the top free for "Back to world map").
   const infoBeside =
-    detail.isAudio ||
-    detail.isEvent ||
-    isGallery ||
-    detail.videoUrl !== null;
+    detail.isAudio || detail.isEvent || isGallery || detail.videoUrl !== null;
 
   // The way back out to the whole map: heading the title when that sits
   // above the picture, or heading the photo gallery's info column; else on
