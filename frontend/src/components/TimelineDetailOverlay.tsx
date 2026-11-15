@@ -133,6 +133,9 @@ export type TimelineDetailView = {
   // Music tracks show all their info (title, date, description) beside the
   // artwork.
   isAudio: boolean;
+  // Events use the same beside-the-image layout as music, so the top of the
+  // picture stays clear for "Back to world map".
+  isEvent: boolean;
   // A photo item's pictures, cover first (empty for anything else). Several
   // make a gallery: a vertically scrolling column in the image's place, with
   // all the info beside it like a music track's. Any can be clicked to view
@@ -208,9 +211,13 @@ function TimelineDetailOverlay({
   );
 
   const isGallery = detail.imageUrls.length > 1;
-  // Galleries, music tracks and videos put all their info in a column beside
-  // the picture.
-  const infoBeside = detail.isAudio || isGallery || detail.videoUrl !== null;
+  // Galleries, music, videos and events put all their info in a column beside
+  // the picture (leaving the top free for "Back to world map").
+  const infoBeside =
+    detail.isAudio ||
+    detail.isEvent ||
+    isGallery ||
+    detail.videoUrl !== null;
 
   // The way back out to the whole map: heading the title when that sits
   // above the picture, or heading the photo gallery's info column; else on
@@ -302,7 +309,9 @@ function TimelineDetailOverlay({
         : null}
       {infoBeside ? (
         <div
-          className="timeline-detail__side timeline-detail__side--audio"
+          className={`timeline-detail__side timeline-detail__side--audio${
+            detail.isEvent ? ' timeline-detail__side--event' : ''
+          }`}
           // Spans the full window height, scrolling as one when the
           // description runs long, while short info stays level with the
           // picture (padded in by its top).

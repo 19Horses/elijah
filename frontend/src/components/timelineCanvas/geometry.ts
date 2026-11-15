@@ -157,3 +157,25 @@ export function itemZoomScale(zoom: number, fitZoomLevel: number): number {
     zoomOutGrowth(zoom, fitZoomLevel, ITEM_ZOOM_OUT_GROWTH_POWER)
   );
 }
+
+// Frame duration the existing LERP constants were tuned against (~60fps).
+export const LERP_FRAME_MS = 1000 / 60;
+
+// Turns a per-frame lerp factor into one for this frame's duration, so ease
+// speed stays the same when the browser drops below 60fps (e.g. on battery).
+export function frameLerp(factor: number, deltaTimeMs: number): number {
+  const dt = Math.min(Math.max(deltaTimeMs, 0), 100);
+  if (factor >= 1) {
+    return 1;
+  }
+  if (factor <= 0 || dt === 0) {
+    return 0;
+  }
+  return 1 - Math.pow(1 - factor, dt / LERP_FRAME_MS);
+}
+
+// Linear per-frame step scaled by elapsed time (for additive advances).
+export function frameStep(step: number, deltaTimeMs: number): number {
+  const dt = Math.min(Math.max(deltaTimeMs, 0), 100);
+  return step * (dt / LERP_FRAME_MS);
+}

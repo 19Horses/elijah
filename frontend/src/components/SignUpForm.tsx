@@ -17,6 +17,8 @@ type SignUpFormProps = {
 function SignUpForm({ visible, color, onClose, onSuccess }: SignUpFormProps) {
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
+  // Opted in by default; only asked on new accounts.
+  const [mailingList, setMailingList] = useState(true);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   // Set once we've looked up the entered email and found a matching account, so
@@ -69,7 +71,12 @@ function SignUpForm({ visible, color, onClose, onSuccess }: SignUpFormProps) {
         return;
       }
 
-      const result = await createUser({ email, username, colour: color });
+      const result = await createUser({
+        email,
+        username,
+        colour: color,
+        mailingList,
+      });
 
       if (!result.ok) {
         setError(result.error);
@@ -120,20 +127,32 @@ function SignUpForm({ visible, color, onClose, onSuccess }: SignUpFormProps) {
           Welcome back, {existingUser.username}.
         </p>
       ) : (
-        <label className="signup-form__field">
-          <span className="signup-form__label">Username</span>
-          <input
-            type="text"
-            name="username"
-            value={username}
-            onChange={(event) => {
-              setUsername(event.target.value);
-              setError('');
-            }}
-            required
-            tabIndex={visible ? 0 : -1}
-          />
-        </label>
+        <>
+          <label className="signup-form__field">
+            <span className="signup-form__label">Username</span>
+            <input
+              type="text"
+              name="username"
+              value={username}
+              onChange={(event) => {
+                setUsername(event.target.value);
+                setError('');
+              }}
+              required
+              tabIndex={visible ? 0 : -1}
+            />
+          </label>
+          <label className="signup-form__check">
+            <input
+              type="checkbox"
+              name="mailingList"
+              checked={mailingList}
+              onChange={(event) => setMailingList(event.target.checked)}
+              tabIndex={visible ? 0 : -1}
+            />
+            <span>Join the mailing list</span>
+          </label>
+        </>
       )}
 
       <input type="hidden" name="color" value={color} />

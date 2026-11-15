@@ -485,6 +485,9 @@ export type BranchRouteSpec = {
   fromNode?: BranchNodeGroup;
   toNode?: BranchNodeGroup;
   corridorY?: number;
+  // The ends' places with no line thickened by a hover (default: the ends).
+  restFrom?: ConnectorPoint;
+  restTo?: ConnectorPoint;
 };
 
 // The polyline a branch segment draws along. Ends sharing a node are routed
@@ -493,7 +496,15 @@ export type BranchRouteSpec = {
 export function getBranchRoute(
   from: ConnectorPoint,
   to: ConnectorPoint,
-  { fromDir, toDir, fromNode, toNode, corridorY }: BranchRouteSpec,
+  {
+    fromDir,
+    toDir,
+    fromNode,
+    toNode,
+    corridorY,
+    restFrom,
+    restTo,
+  }: BranchRouteSpec,
   fromStubExtra = 0,
   toStubExtra = 0
 ): ConnectorPoint[] {
@@ -524,8 +535,61 @@ export function getBranchRoute(
   );
   // A straight base (e.g. a chain link between neighbouring items) can't be
   // offset into differently spaced ends while keeping to 0/45/90°, so it routes
-  // directly between its own ends instead.
-  return offsetRoute(base, from, to, fromNode?.axis, toNode?.axis) ?? direct();
+  // directly between its own ends instead. So does a line whose items sit too
+  // close for its offset to fit: a straight shorter than the sideways shift
+  // across it comes out running backwards, which draws as a hook or a loop.
+  // That's judged on the ends' resting places, so a hover thickening a line
+  // (and nudging its neighbours aside) never switches a line between the two.
+  const bundled = (lineFrom: ConnectorPoint, lineTo: ConnectorPoint) =>
+    offsetRoute(base, lineFrom, lineTo, fromNode?.axis, toNode?.axis);
+  const hasRest =
+    (restFrom !== undefined && !samePoint(restFrom, from)) ||
+    (restTo !== undefined && !samePoint(restTo, to));
+  const live = bundled(from, to);
+  const resting = hasRest ? bundled(restFrom ?? from, restTo ?? to) : live;
+  return live && resting && !foldsBack(resting) ? live : direct();
+}
+
+const samePoint = (a: ConnectorPoint, b: ConnectorPoint) =>
+  Math.abs(a.x - b.x) < 1e-9 && Math.abs(a.y - b.y) < 1e-9;
+
+// Whether a polyline doubles back on itself: a bend sharper than a right angle
+// (routes only ever turn by 45° or 90°), or two of its straights crossing.
+function foldsBack(points: ConnectorPoint[]): boolean {
+  const pts = points.filter(
+    (pt, i) =>
+      i === 0 ||
+      Math.hypot(pt.x - points[i - 1].x, pt.y - points[i - 1].y) > 1e-6
+  );
+  const cross = (a: ConnectorPoint, b: ConnectorPoint, c: ConnectorPoint) =>
+    (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  for (let i = 1; i < pts.length - 1; i++) {
+    const inX = pts[i].x - pts[i - 1].x;
+    const inY = pts[i].y - pts[i - 1].y;
+    const outX = pts[i + 1].x - pts[i].x;
+    const outY = pts[i + 1].y - pts[i].y;
+    const cos =
+      (inX * outX + inY * outY) /
+      (Math.hypot(inX, inY) * Math.hypot(outX, outY));
+    if (cos < -1e-6) {
+      return true;
+    }
+  }
+  for (let i = 0; i < pts.length - 1; i++) {
+    for (let j = i + 2; j < pts.length - 1; j++) {
+      if (
+        cross(pts[i], pts[i + 1], pts[j]) *
+          cross(pts[i], pts[i + 1], pts[j + 1]) <
+          -1e-6 &&
+        cross(pts[j], pts[j + 1], pts[i]) *
+          cross(pts[j], pts[j + 1], pts[i + 1]) <
+          -1e-6
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 // How far along a polyline (arc length from its start) its closest point to

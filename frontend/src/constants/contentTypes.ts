@@ -32,6 +32,8 @@ export function getContentTypeKicker(type: ContentType): string | undefined {
       return 'PHOTOS';
     case 'audioAsset':
       return 'MUSIC';
+    case 'videoAsset':
+      return 'VIDEO';
     case 'newsletter':
       return 'LETTER';
     case 'event':

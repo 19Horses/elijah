@@ -71,6 +71,7 @@ import {
   polylineLength,
 } from '../connectors';
 import {
+  frameLerp,
   screenToWorld,
   timelineWeight,
   zoomMergeProgress,
@@ -317,11 +318,12 @@ export function createDrawFrameHandler(
     stepLayoutChange(deps, p.millis());
     view.refitHomeForPanel();
     view.followFocusedItem();
-    view.animateView();
-    view.animatePan();
-    view.animateZoom();
-    animateDetailReveal(runtime);
-    updateHighlightFade(runtime, deps);
+    const dt = p.deltaTime;
+    view.animateView(dt);
+    view.animatePan(dt);
+    view.animateZoom(dt);
+    animateDetailReveal(runtime, dt);
+    updateHighlightFade(runtime, deps, dt);
     syncInteractionLock(deps);
 
     const highlightedType = runtime.activeHighlightType;
@@ -884,7 +886,7 @@ export function createDrawFrameHandler(
         : null
     );
     // Advance the strip's slide animation.
-    gallery.animate();
+    gallery.animate(dt);
 
     // Cleared each frame; focused items re-set them while drawing.
     deps.audio.setButtonRegion(null);
@@ -1046,7 +1048,7 @@ export function createDrawFrameHandler(
     }
     runtime.branchDimStrength +=
       ((activeBranchRow !== null ? 1 : 0) - runtime.branchDimStrength) *
-      BRANCH_DIM_LERP;
+      frameLerp(BRANCH_DIM_LERP, dt);
     if (runtime.branchDimStrength < HIGHLIGHT_FADE_SNAP) {
       runtime.branchDimStrength = 0;
       runtime.branchDimRow = null;
@@ -1058,7 +1060,7 @@ export function createDrawFrameHandler(
     // interaction lock) only once the fade-out has completed.
     runtime.branchIsolate +=
       ((runtime.branchIsolateActive ? 1 : 0) - runtime.branchIsolate) *
-      BRANCH_DIM_LERP;
+      frameLerp(BRANCH_DIM_LERP, dt);
     if (runtime.branchIsolate < HIGHLIGHT_FADE_SNAP) {
       runtime.branchIsolate = 0;
       if (!runtime.branchIsolateActive && runtime.branchIsolateRow !== null) {
@@ -1070,7 +1072,7 @@ export function createDrawFrameHandler(
     }
     runtime.branchSolo +=
       ((runtime.branchSoloActive ? 1 : 0) - runtime.branchSolo) *
-      BRANCH_DIM_LERP;
+      frameLerp(BRANCH_DIM_LERP, dt);
     if (runtime.branchSolo < HIGHLIGHT_FADE_SNAP) {
       runtime.branchSolo = 0;
       if (!runtime.branchSoloActive) {
@@ -1207,7 +1209,8 @@ export function createDrawFrameHandler(
               side: blob?.side ?? 1,
             });
           } else {
-            blob.distance += (target - blob.distance) * LINE_BLOB_FOLLOW_LERP;
+            blob.distance +=
+              (target - blob.distance) * frameLerp(LINE_BLOB_FOLLOW_LERP, dt);
             blob.colour = colour;
             blob.name = name;
           }
@@ -1215,7 +1218,8 @@ export function createDrawFrameHandler(
       }
       runtime.lineBlobs.forEach((blob, key) => {
         blob.scale +=
-          ((key === hoveredKey ? 1 : 0) - blob.scale) * NODE_GROW_LERP;
+          ((key === hoveredKey ? 1 : 0) - blob.scale) *
+          frameLerp(NODE_GROW_LERP, dt);
         if (key !== hoveredKey && blob.scale <= LOAD_ALPHA_SNAP) {
           runtime.lineBlobs.delete(key);
           return;
@@ -1450,7 +1454,8 @@ export function createDrawFrameHandler(
         const targetProgress = isHighlighted ? 1 : 0;
         const prevProgress = previewHighlightProgress.get(item.contentId) ?? 0;
         let progress =
-          prevProgress + (targetProgress - prevProgress) * BRANCH_DIM_LERP;
+          prevProgress +
+          (targetProgress - prevProgress) * frameLerp(BRANCH_DIM_LERP, dt);
         if (Math.abs(targetProgress - progress) < HIGHLIGHT_FADE_SNAP) {
           progress = targetProgress;
         }
@@ -1781,7 +1786,7 @@ export function createDrawFrameHandler(
             label.measureKey,
             previous === undefined
               ? measured
-              : previous + (measured - previous) * 0.2
+              : previous + (measured - previous) * frameLerp(0.2, dt)
           );
         }
         let { x, y } = label;
@@ -2148,8 +2153,8 @@ export function createDrawFrameHandler(
         runtime.hoverNodeDotless = hoveredNode.dotless ?? false;
       }
       runtime.hoverNodeScale +=
-        ((hoveredNode ? 1 : 0) - runtime.hoverNodeScale) * NODE_GROW_LERP;
-      runtime.hoverEdgeNodeKey = hoveredNode?.edgeKey ?? null;
+        ((hoveredNode ? 1 : 0) - runtime.hoverNodeScale) *
+        frameLerp(NODE_GROW_LERP, dt);
 
       // Redraw the node larger, eased by the grow. At scale 0 it matches the
       // normal dot underneath (or, at an end with no dot, vanishes), so the
@@ -2175,15 +2180,12 @@ export function createDrawFrameHandler(
       // The hovered node opens into a card naming the item at the far end of
       // its line and who collected it. Every card eases open or closed on its
       // own, so moving from node to node closes the old card as the new one
-      // opens; each follows its node as it moves. The hovered card's size
-      // along the viewport edge lets the edge layout push the neighbouring
-      // nodes clear of it.
+      // opens; each follows its node as it moves.
       const hoveredKey = hoveredNode ? nodeRegionKey(hoveredNode) : null;
       if (hoveredNode && hoveredKey && !runtime.nodeCards.has(hoveredKey)) {
         runtime.nodeCards.set(hoveredKey, {
           region: hoveredNode,
           grow: 0,
-          extent: 0,
         });
       }
       const liveRegions = new Map(
@@ -2200,13 +2202,14 @@ export function createDrawFrameHandler(
         }
         card.region = liveRegions.get(key) ?? card.region;
         card.grow +=
-          ((key === hoveredKey ? 1 : 0) - card.grow) * NODE_GROW_LERP;
+          ((key === hoveredKey ? 1 : 0) - card.grow) *
+          frameLerp(NODE_GROW_LERP, dt);
         if (key !== hoveredKey && card.grow < LOAD_ALPHA_SNAP) {
           runtime.nodeCards.delete(key);
           return;
         }
         const { region } = card;
-        const size = drawNodeCard(
+        drawNodeCard(
           cards,
           region,
           (region.x - runtime.cameraX) * runtime.zoom,
@@ -2219,17 +2222,9 @@ export function createDrawFrameHandler(
             ? loadedCollectedImages[region.target.index]
             : loadedPreviewImages[region.target.index]
         );
-        card.extent =
-          region.side === 'left' || region.side === 'right'
-            ? size.height
-            : size.width;
       });
-      runtime.hoverCardExtent = hoveredKey
-        ? runtime.nodeCards.get(hoveredKey)?.extent ?? 0
-        : 0;
     } else {
       runtime.hoverNodeScale = 0;
-      runtime.hoverEdgeNodeKey = null;
       runtime.nodeCards.clear();
     }
 

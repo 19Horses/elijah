@@ -7,6 +7,7 @@ import {
   HIGHLIGHT_FADE_OUT_LERP,
   HIGHLIGHT_FADE_SNAP,
 } from './constants';
+import { frameLerp, frameStep } from './geometry';
 import type {
   FocusTarget,
   ProcessedCollected,
@@ -93,9 +94,6 @@ export function createTimelineRuntime(): TimelineRuntime {
     hoverNodeHoleRatio: 0.5,
     hoverNodeDotless: false,
     lineBlobs: new Map(),
-    hoverEdgeNodeKey: null,
-    hoverCardExtent: 0,
-    edgeNodePush: new Map(),
     nodeCards: new Map(),
     edgeNodes: 0,
     edgeNodesLinear: 0,
@@ -144,12 +142,18 @@ export function startDetailReveal(
   deps.refs.onDetailLayoutStartRef.current?.();
 }
 
-export function animateDetailReveal(runtime: TimelineRuntime): void {
+export function animateDetailReveal(
+  runtime: TimelineRuntime,
+  deltaTimeMs: number
+): void {
   if (runtime.detailPhase !== 'layout') {
     return;
   }
 
-  runtime.detailLayout = Math.min(1, runtime.detailLayout + DETAIL_LAYOUT_LERP);
+  runtime.detailLayout = Math.min(
+    1,
+    runtime.detailLayout + frameStep(DETAIL_LAYOUT_LERP, deltaTimeMs)
+  );
   if (runtime.detailLayout >= 1 - HIGHLIGHT_FADE_SNAP) {
     runtime.detailLayout = 1;
     runtime.detailPhase = 'complete';
@@ -162,7 +166,8 @@ export function notifyFocusFade(deps: TimelineSketchDeps): void {
 
 export function updateHighlightFade(
   runtime: TimelineRuntime,
-  deps: TimelineSketchDeps
+  deps: TimelineSketchDeps,
+  deltaTimeMs: number
 ): void {
   const targetType = deps.refs.highlightedTypeRef.current;
   if (targetType) {
@@ -178,7 +183,8 @@ export function updateHighlightFade(
   }
 
   runtime.highlightStrength +=
-    (0 - runtime.highlightStrength) * HIGHLIGHT_FADE_OUT_LERP;
+    (0 - runtime.highlightStrength) *
+    frameLerp(HIGHLIGHT_FADE_OUT_LERP, deltaTimeMs);
 }
 
 export function isViewInteractionLocked(runtime: TimelineRuntime): boolean {

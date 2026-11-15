@@ -81,6 +81,10 @@ export type BranchSegment = {
   // ends without one get their own dot.
   fromNode?: BranchNodeGroup;
   toNode?: BranchNodeGroup;
+  // Where the ends sit with no line thickened by a hover. The route's shape
+  // is chosen from these, so hovering a line never re-routes it.
+  restFrom?: ConnectorPoint;
+  restTo?: ConnectorPoint;
 };
 
 // A collector's timeline as its separate stretches, each with how far along
@@ -226,6 +230,9 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       return centre;
     });
   };
+  // The same bundle with every line at its resting (unhovered) width.
+  const packRestingLines = (count: number): number[] =>
+    packLines(new Array<number>(count).fill(timelineWeight(runtime)));
   const halfSpanOf = (offsets: number[]) =>
     Math.max(0, ...offsets.map((offset) => Math.abs(offset)));
 
@@ -288,12 +295,11 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
 
   const slotCenterX = (index: number) => slotLeft(index) + ITEM_WIDTH / 2;
 
-  // Gaps that contain a chain of collected items are widened by the chain's
-  // length so the chained items have room to sit side by side between two
-  // main-timeline items. Indexed by the gap's left main index. A chain dated
+  // Gaps between main-timeline items are widened when collected content needs
+  // to sit in them. Indexed by the gap's left main index. A chain dated
   // before the very first main item gets analogous treatment via
   // `extraBeforeFirst`, pushed further left of that item's own position
-  // instead of overlapping it (see timeToWorldX) — unlike a chain after the
+  // instead of overlapping it (see timeToWorldX) — unlike content after the
   // last main item, which has nothing later to collide with and so is left
   // alone.
   let gapExtraSlotsCache: {
@@ -312,7 +318,9 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       return gapExtraSlotsCache;
     }
     const extra = new Array<number>(Math.max(items.length, 1)).fill(0);
+    const gapCounts = new Array<number>(Math.max(items.length, 1)).fill(0);
     let extraBeforeFirst = 0;
+    let beforeFirstCount = 0;
     const beforeFirst = new Set<number>();
     const depthCache = new Map<number, number>();
     const depthOf = (index: number): number => {
@@ -325,31 +333,34 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       depthCache.set(index, depth);
       return depth;
     };
+    // Main items are drawn larger than the free space in a slot, so collected
+    // items in a gap need extra room or they sit on (and can push past) the
+    // next main item — e.g. mid-2026 collects past a 2027 event. Chains need
+    // one slot per link; unchained piles get a slot each minus two that the
+    // usual gap can absorb, so the timeline doesn't stretch more than it must.
+    const roomFor = (count: number, chainDepth: number) =>
+      Math.max(count > 0 ? Math.max(1, count - 2) : 0, chainDepth);
     processedCollected.forEach((item, index) => {
       const gap = getPreviousMainIndex(item.anchorTime);
       if (gap === -1) {
         if (getChainPredecessorIndex(index) < 0) {
           beforeFirst.add(item.anchorTime);
         }
+        beforeFirstCount += 1;
         const depth = depthOf(index);
-        if (depth > 1 && depth > extraBeforeFirst) {
-          extraBeforeFirst = depth;
-        }
+        extraBeforeFirst = Math.max(
+          extraBeforeFirst,
+          roomFor(beforeFirstCount, depth)
+        );
         return;
       }
       // Only widen gaps that sit between two main items.
       if (gap >= items.length - 1) {
         return;
       }
+      gapCounts[gap] += 1;
       const depth = depthOf(index);
-      // Single (unchained) items already fit; widen only for real chains, by
-      // the chain's length so the side-by-side items clear the next main item.
-      if (depth < 2) {
-        return;
-      }
-      if (depth > extra[gap]) {
-        extra[gap] = depth;
-      }
+      extra[gap] = Math.max(extra[gap], roomFor(gapCounts[gap], depth));
     });
     gapExtraSlotsCache = {
       extra,
@@ -411,7 +422,12 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     }
     const bounds = getAllBounds();
     const gapStart = bounds[prev].right;
-    const gapEnd = bounds[firstFuture].left;
+    // A gap widened for a chain keeps that extra width for the chain, which
+    // grows rightward from its first item: dates map onto the gap's usual
+    // width at its left, so the chain's last item still ends up before the
+    // next main item rather than level with (or past) it.
+    const chainRoom = step * (getGapExtraSlots().extra[prev] ?? 0);
+    const gapEnd = Math.max(gapStart, bounds[firstFuture].left - chainRoom);
     return gapStart + frac * (gapEnd - gapStart);
   };
 
@@ -430,6 +446,23 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       }
     }
     return prevIndex;
+  };
+
+  // Where a collected chain's tail would rejoin the main line: the next main
+  // item after its gap. Skips items still in the future — user timelines
+  // branch from past main content, they shouldn't jump forward onto upcoming
+  // events (e.g. mid-2026 collects into a 2027 show).
+  const rejoinMainIndex = (gapIndex: number): number => {
+    const next = gapIndex + 1;
+    if (next < 0 || next >= items.length) {
+      return -1;
+    }
+    const date = items[next]?.date;
+    const time = date ? new Date(date).getTime() : Number.NaN;
+    if (Number.isNaN(time) || time > Date.now()) {
+      return -1;
+    }
+    return next;
   };
 
   // A line from the main timeline into a collected item's side normally runs
@@ -615,11 +648,9 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     );
     if (chainFrom) {
       // Tail rejoin into the next main item (only if this is the chain's tail).
-      if (
-        mainBounds[gapIndex + 1] &&
-        !hasChainSuccessor(index, source.rowIndex)
-      ) {
-        return gapIndex + 1;
+      const rejoinAt = rejoinMainIndex(gapIndex);
+      if (rejoinAt >= 0 && !hasChainSuccessor(index, source.rowIndex)) {
+        return rejoinAt;
       }
       return -1;
     }
@@ -632,12 +663,14 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
   // Every branch that meets a main item's underside gets an evenly spaced line
   // end across that item's width, ordered left-to-right by the branch's target,
   // so the lines run side by side. Keyed by `${index}:${sourceIndex}`;
-  // `halfSpans` holds each main item's bundle half-width. Cached per frame by
-  // the bounds array references it was built from.
+  // `restMap` holds the same ends with no line thickened by a hover, and
+  // `halfSpans` each main item's resting bundle half-width. Cached per frame
+  // by the bounds array references it was built from.
   let branchNodeXCache: {
     main: ContentBounds[];
     collected: ContentBounds[];
     map: Map<string, number>;
+    restMap: Map<string, number>;
     halfSpans: Map<number, number>;
   } | null = null;
   const getBranchNodeXMap = (
@@ -683,6 +716,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     });
 
     const map = new Map<string, number>();
+    const restMap = new Map<string, number>();
     const halfSpans = new Map<number, number>();
     perMain.forEach((list, mainIndex) => {
       const mb = mainBounds[mainIndex];
@@ -699,19 +733,29 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       const offsets = packLines(
         list.map((entry) => lineWeightForKey(entry.key))
       );
+      const restOffsets = packRestingLines(list.length);
       list.forEach((entry, k) => {
         map.set(entry.key, center + offsets[k]);
+        restMap.set(entry.key, center + restOffsets[k]);
       });
-      halfSpans.set(mainIndex, halfSpanOf(offsets));
+      halfSpans.set(mainIndex, halfSpanOf(restOffsets));
     });
 
     branchNodeXCache = {
       main: mainBounds,
       collected: collectedBounds,
       map,
+      restMap,
       halfSpans,
     };
     return map;
+  };
+  const getBranchRestNodeXMap = (
+    mainBounds: ContentBounds[],
+    collectedBounds: ContentBounds[]
+  ): Map<string, number> => {
+    getBranchNodeXMap(mainBounds, collectedBounds);
+    return branchNodeXCache?.restMap ?? new Map<string, number>();
   };
 
   // The bundle branches form on a main item's top or underside (at `y`).
@@ -756,15 +800,22 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
   // grouped by (item, side), so the lines into/out of one item stay visible
   // side by side. `node` describes the bundle they're part of. Keyed `${role}:${index}:${sourceIndex}`,
   // value is the resolved {x, y}. Cached per frame by the bounds references.
+  // `restY` is the end's y with no line thickened by a hover.
+  type ItemAttach = {
+    x: number;
+    y: number;
+    restY: number;
+    node: BranchNodeGroup;
+  };
   let itemAttachCache: {
     main: ContentBounds[];
     collected: ContentBounds[];
-    map: Map<string, { x: number; y: number; node: BranchNodeGroup }>;
+    map: Map<string, ItemAttach>;
   } | null = null;
   const getItemAttachMap = (
     mainBounds: ContentBounds[],
     collectedBounds: ContentBounds[]
-  ): Map<string, { x: number; y: number; node: BranchNodeGroup }> => {
+  ): Map<string, ItemAttach> => {
     if (
       itemAttachCache &&
       itemAttachCache.main === mainBounds &&
@@ -773,7 +824,9 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       return itemAttachCache.map;
     }
 
-    const nodeXMap = getBranchNodeXMap(mainBounds, collectedBounds);
+    // Resting positions pick each end's side and order, so a hover (which
+    // nudges the ends apart) can't flip a line to the item's other side.
+    const nodeXMap = getBranchRestNodeXMap(mainBounds, collectedBounds);
     // group key `${itemIndex}:${side}` -> attachments, each with an order key
     // (the y it arrives from, so lines stack in arrival order) and edge x.
     const groups = new Map<
@@ -821,9 +874,13 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
             itemBounds.centerY
           );
           add(index, 'left', `chainTo:${index}:${sourceIndex}`, pb.centerY);
-          // Tail rejoin up to the next main item.
-          const nextMain = mainBounds[gapIndex + 1];
-          if (nextMain && !hasChainSuccessor(index, source.rowIndex)) {
+          // Tail rejoin up to the next main item (not a future one).
+          const rejoinAt = rejoinMainIndex(gapIndex);
+          if (
+            rejoinAt >= 0 &&
+            mainBounds[rejoinAt] &&
+            !hasChainSuccessor(index, source.rowIndex)
+          ) {
             const nodeX =
               nodeXMap.get(`${index}:${sourceIndex}`) ??
               (itemBounds.left + itemBounds.right) / 2;
@@ -851,10 +908,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       });
     });
 
-    const map = new Map<
-      string,
-      { x: number; y: number; node: BranchNodeGroup }
-    >();
+    const map = new Map<string, ItemAttach>();
     groups.forEach((list, groupKey) => {
       const itemIndex = Number(groupKey.slice(0, groupKey.indexOf(':')));
       const centerY = collectedBounds[itemIndex].centerY;
@@ -862,11 +916,13 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       const offsets = packLines(
         list.map((entry) => lineWeightForKey(entry.key))
       );
-      const halfSpan = halfSpanOf(offsets);
+      const restOffsets = packRestingLines(list.length);
+      const halfSpan = halfSpanOf(restOffsets);
       list.forEach((entry, k) => {
         map.set(entry.key, {
           x: entry.x,
           y: centerY + offsets[k],
+          restY: centerY + restOffsets[k],
           node: {
             centre: { x: entry.x, y: centerY },
             halfSpan,
@@ -898,6 +954,10 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     const nodeX = getBranchNodeXMap(mainBounds, collectedBounds).get(
       `${index}:${sourceIndex}`
     );
+    const restNodeX =
+      getBranchRestNodeXMap(mainBounds, collectedBounds).get(
+        `${index}:${sourceIndex}`
+      ) ?? nodeX;
     const attach = getItemAttachMap(mainBounds, collectedBounds);
 
     // The `to` end of every segment sits on this collected item; label its
@@ -933,14 +993,21 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
         toItemTarget: thisTarget,
         fromNode: chainFromAttach?.node,
         toNode: chainToAttach?.node,
+        restFrom: chainFromAttach && {
+          x: chainFromAttach.x,
+          y: chainFromAttach.restY,
+        },
+        restTo: chainToAttach && { x: chainToAttach.x, y: chainToAttach.restY },
       });
 
-      // The tail of the chain rejoins the main timeline at the next item.
+      // The tail of the chain rejoins the main timeline at the next item,
+      // unless that item is still in the future.
       const gapIndex = getPreviousMainIndex(item.anchorTime);
-      const nextMain = mainBounds[gapIndex + 1];
+      const rejoinAt = rejoinMainIndex(gapIndex);
+      const nextMain = rejoinAt >= 0 ? mainBounds[rejoinAt] : null;
       if (nextMain && !hasChainSuccessor(index, source.rowIndex)) {
-        const rejoinTitle = processed[gapIndex + 1]?.title;
-        const rejoinTarget: FocusTarget = { lane: 'main', index: gapIndex + 1 };
+        const rejoinTitle = processed[rejoinAt]?.title;
+        const rejoinTarget: FocusTarget = { lane: 'main', index: rejoinAt };
         const rejoinTo = attach.get(`rejoinTo:${index}:${sourceIndex}`);
         if (nodeX !== undefined && rejoinTo) {
           const rejoinFrom = {
@@ -958,12 +1025,14 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
             fromItemTarget: rejoinTarget,
             toItemTarget: thisTarget,
             fromNode: mainNodeGroup(
-              gapIndex + 1,
+              rejoinAt,
               rejoinFrom.y,
               mainBounds,
               collectedBounds
             ),
             toNode: rejoinTo.node,
+            restFrom: { x: restNodeX ?? nodeX, y: rejoinFrom.y },
+            restTo: { x: rejoinTo.x, y: rejoinTo.restY },
           });
         } else {
           const spread = applySpread(
@@ -1011,6 +1080,8 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
             collectedBounds
           ),
           toNode: branchTo.node,
+          restFrom: { x: restNodeX ?? nodeX, y: branchFrom.y },
+          restTo: { x: branchTo.x, y: branchTo.restY },
         });
       } else {
         const spread = applySpread(
@@ -1211,9 +1282,9 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     const travel = new Set<number>();
     for (let k = 0; k < gaps.length - 1; k++) {
       const gap = gaps[k];
-      const rejoins =
-        (picksPerGap.get(gap) ?? 0) >= 2 && gap + 1 < processed.length;
-      const resumeAt = rejoins ? gap + 1 : Math.max(0, gap);
+      const rejoinAt = rejoinMainIndex(gap);
+      const rejoins = (picksPerGap.get(gap) ?? 0) >= 2 && rejoinAt >= 0;
+      const resumeAt = rejoins ? rejoinAt : Math.max(0, gap);
       for (let index = resumeAt; index < gaps[k + 1]; index++) {
         travel.add(index);
       }

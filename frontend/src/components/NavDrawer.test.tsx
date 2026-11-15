@@ -41,7 +41,7 @@ describe('NavDrawer', () => {
     renderMenu();
     expect(screen.getByRole('menuitem', { name: 'Shop' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: 'Login' })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: 'Mailing List' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Events' })).toBeTruthy();
   });
 
   test('clicking the e keeps the menu open', () => {

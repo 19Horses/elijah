@@ -6,9 +6,7 @@ import {
   EDGE_NODE_HIT_PAD_PX,
   EDGE_NODE_HOLE_RATIO,
   EDGE_NODE_INSET_PX,
-  EDGE_NODE_CARD_CLEARANCE_PX,
   EDGE_NODE_RADIUS_PX,
-  NODE_GROW_LERP,
 } from '../constants';
 import type {
   ConnectorPoint,
@@ -110,7 +108,6 @@ export function buildEdgeNodeLayout(
   const { runtime } = deps;
   const target = runtime.edgeNodesTarget;
   if (!target || runtime.edgeNodes <= 0) {
-    runtime.edgeNodePush.clear();
     return null;
   }
   const itemBounds =
@@ -234,31 +231,8 @@ export function buildEdgeNodeLayout(
     const slots = horizontal
       ? spreadAlongEdge(list.length, centreX, p.width)
       : spreadAlongEdge(list.length, centreY, p.height);
-    // Nodes either side of the hovered one move apart to clear its card. Each
-    // node eases to its push, so they glide aside and back as the hover moves
-    // from node to node (this eased state carries over between frames).
-    const hovered = list.findIndex(
-      (entry) => entry.key === runtime.hoverEdgeNodeKey
-    );
-    const gap = list.length > 1 ? Math.abs(slots[1] - slots[0]) : 0;
-    const push =
-      hovered >= 0
-        ? Math.max(
-            0,
-            runtime.hoverCardExtent / 2 +
-              EDGE_NODE_RADIUS_PX +
-              EDGE_NODE_CARD_CLEARANCE_PX -
-              gap
-          )
-        : 0;
-    list.forEach((entry, k) => {
-      const target =
-        k < hovered ? -push : hovered >= 0 && k > hovered ? push : 0;
-      const current = runtime.edgeNodePush.get(entry.key) ?? 0;
-      const eased = current + (target - current) * NODE_GROW_LERP;
-      runtime.edgeNodePush.set(entry.key, eased);
-      slots[k] += eased;
-    });
+    // Nodes keep these slots whichever is hovered. The card opens clear of
+    // the row (see drawNodeCard) rather than pushing neighbours aside.
     list.forEach((entry, k) => {
       const world =
         side === 'top'

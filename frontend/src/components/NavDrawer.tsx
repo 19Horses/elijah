@@ -267,14 +267,6 @@ function NavDrawer({
           >
             Events
           </Link>
-          <button
-            type="button"
-            role="menuitem"
-            className="e-menu__item e-menu__item--mailing"
-            tabIndex={listOpen ? 0 : -1}
-          >
-            Mailing List
-          </button>
         </div>
       </div>
       <div

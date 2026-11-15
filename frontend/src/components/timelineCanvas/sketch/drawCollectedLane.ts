@@ -279,7 +279,20 @@ export function drawCollectedLaneConnectors(
         const fullRoute = getBranchRoute(
           start.pt,
           end.pt,
-          { ...segment, fromNode: start.node, toNode: end.node },
+          {
+            ...segment,
+            fromNode: start.node,
+            toNode: end.node,
+            // The resting ends ride out with the moved ends.
+            restFrom: segment.restFrom && {
+              x: segment.restFrom.x + start.pt.x - segment.from.x,
+              y: segment.restFrom.y + start.pt.y - segment.from.y,
+            },
+            restTo: segment.restTo && {
+              x: segment.restTo.x + end.pt.x - segment.to.x,
+              y: segment.restTo.y + end.pt.y - segment.to.y,
+            },
+          },
           start.stubExtra,
           end.stubExtra
         );
