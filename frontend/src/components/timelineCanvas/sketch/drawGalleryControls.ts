@@ -33,12 +33,14 @@ function getPixelatedGraphics(p: p5, img: p5.Image): p5.Graphics | null {
  * Draws an image fitted inside a box (contain), preserving aspect ratio so
  * gallery images of differing shapes aren't stretched. `distortion` renders a
  * blurred or pixelated version instead, for content the viewer can't see.
+ * `blurAmount` (0-1) scales the blur so it can ease out after login.
  */
 export function drawContainedImage(
   p: p5,
   img: p5.Image,
   box: Rect,
-  distortion?: ImageDistortion
+  distortion?: ImageDistortion,
+  blurAmount = 1
 ): void {
   if (img.width <= 0 || img.height <= 0) {
     p.image(img, box.left, box.top, box.width, box.height);
@@ -63,8 +65,13 @@ export function drawContainedImage(
 
   const ctx = p.drawingContext as CanvasRenderingContext2D;
   if (distortion === 'blur') {
+    const px = PRIVATE_BLUR_PX * Math.min(1, Math.max(0, blurAmount));
+    if (px < 0.15) {
+      p.image(img, dx, dy, drawW, drawH);
+      return;
+    }
     ctx.save();
-    ctx.filter = `blur(${PRIVATE_BLUR_PX}px)`;
+    ctx.filter = `blur(${px}px)`;
     p.image(img, dx, dy, drawW, drawH);
     ctx.restore();
     return;

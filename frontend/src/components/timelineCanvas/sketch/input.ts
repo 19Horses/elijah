@@ -104,6 +104,17 @@ export function createInputHandlers(
         return;
       }
 
+      const videoPlay = runtime.videoPlayButton;
+      if (
+        videoPlay &&
+        Math.hypot(world.x - videoPlay.cx, world.y - videoPlay.cy) <=
+          videoPlay.r
+      ) {
+        deps.refs.onVideoPlayRef.current?.();
+        runtime.dragLane = null;
+        return;
+      }
+
       const navHit = gallery
         .getNavRegions()
         .find(
@@ -151,33 +162,43 @@ export function createInputHandlers(
       // item at the far end of that line. Matches the hover hit zones: touching
       // bands along the screen edges, else the hover-label hit radius.
       if (runtime.focusTarget && runtime.nodeRegions.length > 0) {
+        const screenRegions = runtime.nodeRegions.map((region) => ({
+          region,
+          x: (region.x - runtime.cameraX) * runtime.zoom,
+          y: (region.y - runtime.cameraY) * runtime.zoom,
+          side: region.side,
+        }));
         const edgeHit = findEdgeNodeHit(
-          runtime.nodeRegions.map((region) => ({
-            target: region.target,
-            x: (region.x - runtime.cameraX) * runtime.zoom,
-            y: (region.y - runtime.cameraY) * runtime.zoom,
-            side: region.side,
-          })),
+          screenRegions,
           p.mouseX,
           p.mouseY,
           p.width,
           p.height
         );
-        let hitTarget: FocusTarget | null = edgeHit?.target ?? null;
+        let hitRegion = edgeHit?.region ?? null;
         const growth = zoomOutGrowth(
           runtime.zoom,
           runtime.fitZoomLevel,
           ZOOM_OUT_GROWTH_POWER
         );
         let bestDist = DOT_RADIUS * growth + 8 / runtime.zoom;
-        for (const region of hitTarget ? [] : runtime.nodeRegions) {
-          const dist = Math.hypot(world.x - region.x, world.y - region.y);
-          if (!region.side && dist <= bestDist) {
-            bestDist = dist;
-            hitTarget = region.target;
+        if (!hitRegion) {
+          for (const region of runtime.nodeRegions) {
+            const dist = Math.hypot(world.x - region.x, world.y - region.y);
+            if (!region.side && dist <= bestDist) {
+              bestDist = dist;
+              hitRegion = region;
+            }
           }
         }
-        if (hitTarget) {
+        if (hitRegion) {
+          // Guest node cards on user branches open login instead of the item.
+          if (!deps.currentUsername && !hitRegion.timeline) {
+            deps.refs.onGuestLockedClickRef.current?.();
+            runtime.dragLane = null;
+            return;
+          }
+          const hitTarget = hitRegion.target;
           const isSameFocus =
             runtime.focusTarget.lane === hitTarget.lane &&
             runtime.focusTarget.index === hitTarget.index;

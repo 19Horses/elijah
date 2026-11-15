@@ -265,8 +265,14 @@ export const MAIN_GLOW_COLOUR = '#ffffff';
 // into, end to end, this often.
 export const MAIN_GLOW_TRAVEL_MS = 3500;
 // Colour the other collectors' branches fade to while one is hovered: the
-// same grey as the item labels.
+// same grey as the item labels. Also used for every branch while signed out.
 export const BRANCH_DIM_COLOUR = DATE_LABEL_COLOUR;
+// Beside the mouse over a locked branch, matching the collection CTA wording.
+export const GUEST_LOCKED_CURSOR_LABEL = 'Create an account/log in to view';
+// Matches .nav-drawer__panel close transition before colour/blur reveal.
+export const NAV_DRAWER_MS = 350;
+// How quickly locked branches colourise and blur lifts after login.
+export const GUEST_UNLOCK_LERP = 0.06;
 export const BRANCH_DIM_LERP = 0.16;
 // Opacity items not in the hovered branch's timeline fade to while it's hovered.
 export const BRANCH_DIM_ITEM_ALPHA = 0.3;

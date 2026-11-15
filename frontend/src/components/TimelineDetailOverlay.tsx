@@ -187,56 +187,63 @@ function TimelineDetailOverlay({
         : null}
       <div
         className="timeline-detail__side"
-        // Spans the full window height, scrolling as one when the copy runs
-        // long, while short info stays level with the picture top.
+        // Spans the full window height. Header stays put; body/link scroll
+        // in the space below so copy disappears into the header and can
+        // continue past the bottom of the page.
         style={{
           left: `calc(100% + ${sideGap}px)`,
           width: `${sideWidth}px`,
           top: `${-imageRect.top}px`,
           height: `${window.innerHeight}px`,
+          // Top inset matches the image; no bottom padding so the letter
+          // scroll area runs all the way to the bottom of the screen.
           paddingTop: `${imageRect.top}px`,
-          paddingBottom: `${imageRect.top}px`,
+          paddingBottom: 0,
         }}
       >
-        {onBack ? (
-          <button
-            type="button"
-            className="timeline-detail__back"
-            onClick={onBack}
-          >
-            <span aria-hidden="true">&larr;</span> Back to world map
-          </button>
-        ) : null}
-        <div className="timeline-detail__heading">
-          {detail.unseen ? (
-            <p className="timeline-detail__unseen timeline-detail__unseen--end">
-              New
-              <span
-                className="timeline-detail__unseen-square"
-                aria-hidden="true"
-              />
-            </p>
+        <div className="timeline-detail__side-header">
+          {onBack ? (
+            <button
+              type="button"
+              className="timeline-detail__back"
+              onClick={onBack}
+            >
+              <span aria-hidden="true">&larr;</span> Back to world map
+            </button>
           ) : null}
-          <h2 className="timeline-detail__title">{detail.title}</h2>
-        </div>
-        {detail.dateLabel ? (
-          <p className="timeline-detail__date">{detail.dateLabel}</p>
-        ) : null}
-        {hasRichText(bodyContent) ? (
-          <div className="timeline-detail__body">
-            <RichText value={bodyContent} />
+          <div className="timeline-detail__heading">
+            {detail.unseen ? (
+              <p className="timeline-detail__unseen timeline-detail__unseen--end">
+                New
+                <span
+                  className="timeline-detail__unseen-square"
+                  aria-hidden="true"
+                />
+              </p>
+            ) : null}
+            <h2 className="timeline-detail__title">{detail.title}</h2>
           </div>
-        ) : null}
-        {detail.link ? (
-          <a
-            className="timeline-detail__link"
-            href={detail.link}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            {detail.link}
-          </a>
-        ) : null}
+          {detail.dateLabel ? (
+            <p className="timeline-detail__date">{detail.dateLabel}</p>
+          ) : null}
+        </div>
+        <div className="timeline-detail__side-scroll">
+          {hasRichText(bodyContent) ? (
+            <div className="timeline-detail__body">
+              <RichText value={bodyContent} />
+            </div>
+          ) : null}
+          {detail.link ? (
+            <a
+              className="timeline-detail__link"
+              href={detail.link}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              {detail.link}
+            </a>
+          ) : null}
+        </div>
       </div>
     </aside>
   );

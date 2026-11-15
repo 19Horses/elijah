@@ -30,12 +30,7 @@ function Login() {
   }
 
   return (
-    <SignUpForm
-      visible
-      color={color}
-      onClose={() => navigate('/home')}
-      onSuccess={() => navigate('/home')}
-    />
+    <SignUpForm visible color={color} onSuccess={() => navigate('/home')} />
   );
 }
 

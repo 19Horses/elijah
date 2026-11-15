@@ -94,6 +94,8 @@ type HomeProps = {
   resetViewControlRef?: MutableRefObject<(() => void) | undefined>;
   soloTimelineControlRef?: MutableRefObject<(() => void) | undefined>;
   onSoloTimelineChange?: (active: boolean) => void;
+  // After the timeline and e-menu have entered — reveals collection countdowns.
+  revealCountdowns?: boolean;
 };
 
 // How long a collection box's list takes to slide open or shut (matches
@@ -107,6 +109,7 @@ function Home({
   resetViewControlRef,
   soloTimelineControlRef,
   onSoloTimelineChange,
+  revealCountdowns = false,
 }: HomeProps) {
   const { pathname } = useLocation();
   const isCollectionOpen = pathname === '/collection';
@@ -170,6 +173,8 @@ function Home({
   const audioStopControlRef = useRef<(() => void) | undefined>(undefined);
   const [audioState, setAudioState] = useState<AudioPlayerState | null>(null);
   const [videoState, setVideoState] = useState<VideoPlayerState | null>(null);
+  // Mini player / zoomed popup only after the user has actually hit play.
+  const [videoEverPlayed, setVideoEverPlayed] = useState(false);
 
   const { data: contentDetail } = useContentDetail(focusSlug, timeline?.items);
 
@@ -180,7 +185,8 @@ function Home({
     isVideoFocused && detailReady && detailImageRect !== null
   );
 
-  const showMiniVideo = videoState !== null && !isVideoFocused;
+  const showMiniVideo =
+    videoState !== null && !isVideoFocused && videoEverPlayed;
   const hasAudioPlayer = audioState !== null && audioState !== undefined;
   // Whether the video's small player came in before the audio player, and so
   // sits above it; settled whenever only one of them is showing.
@@ -215,11 +221,19 @@ function Home({
   }, [audioState?.playing]);
 
   const handleVideoPlay = useCallback(() => {
+    setVideoEverPlayed(true);
     setVideoState((prev) => (prev ? { ...prev, playing: true } : null));
     if (audioState?.playing) {
       audioControlRef.current?.(audioState.src);
     }
   }, [audioState?.playing]);
+
+  // Keep ever-played in sync when play starts from the overlay toggle too.
+  useEffect(() => {
+    if (videoState?.playing) {
+      setVideoEverPlayed(true);
+    }
+  }, [videoState?.playing]);
 
   const handleVideoPause = useCallback(() => {
     setVideoState((prev) => (prev ? { ...prev, playing: false } : null));
@@ -243,6 +257,7 @@ function Home({
     }
     fadeOutTimerRef.current = window.setTimeout(() => {
       setVideoState(null);
+      setVideoEverPlayed(false);
       setVideoFadingOut(false);
       fadeOutTimerRef.current = null;
     }, 450);
@@ -253,6 +268,7 @@ function Home({
       window.clearTimeout(fadeOutTimerRef.current);
     }
     setVideoFadingOut(false);
+    setVideoEverPlayed(false);
     setVideoState(null);
   }, []);
 
@@ -302,6 +318,7 @@ function Home({
     }
     setVideoFadingOut(false);
 
+    let isNewVideo = false;
     setVideoState((prev) => {
       if (prev?.slug === focusSlug && prev.url === videoUrl) {
         return {
@@ -311,7 +328,8 @@ function Home({
           focusTarget: focusTarget ?? prev.focusTarget,
         };
       }
-      // Mirror audio: start paused with the poster until the user hits play.
+      // New video focus — popup waits until play; canvas shows the poster.
+      isNewVideo = true;
       return {
         url: videoUrl,
         title,
@@ -321,7 +339,20 @@ function Home({
         playing: false,
       };
     });
+    if (isNewVideo) {
+      setVideoEverPlayed(false);
+    }
   }, [focusSlug, contentDetail, timeline?.items]);
+
+  // Zoomed out without ever playing — drop the pending video, no mini player.
+  useEffect(() => {
+    if (focusSlug) {
+      return;
+    }
+    if (!videoEverPlayed) {
+      setVideoState(null);
+    }
+  }, [focusSlug, videoEverPlayed]);
 
   // Whether this open is the first look at an unseen main-timeline item, so
   // the zoomed-in detail can keep showing New for the duration of the view.
@@ -428,7 +459,7 @@ function Home({
   // ones its owner collected and the main timeline ones it passes through
   // (those shown as smaller cards).
   const viewedTimelineItems = useMemo(() => {
-    if (!branchFocus) {
+    if (!branchFocus || branchFocus.empty) {
       return null;
     }
     const mainItems = timeline?.items ?? [];
@@ -832,6 +863,7 @@ function Home({
           hasCollectionPanel={(collections ?? []).some(
             (collection) => collectedStatus[collection._id] === false
           )}
+          menuOpen={drawerOpen}
           focusContentIdControlRef={focusContentIdControlRef}
           resetViewControlRef={resetViewControlRef}
           soloTimelineControlRef={soloTimelineControlRef}
@@ -857,6 +889,8 @@ function Home({
           onBranchIsolationExit={handleBranchIsolationExit}
           activeVideoSlug={videoState?.playing ? videoState.slug : null}
           onDismissVideo={handleDismissVideo}
+          onGuestLockedClick={() => navigate('/login')}
+          onVideoPlay={handleVideoPlay}
         />
         <TimelineDetailOverlay
           detail={timelineDetail}
@@ -910,18 +944,24 @@ function Home({
           {branchFocus && (
             <div className="branch-focus-card">
               <span className="branch-focus-card__label">
-                You are viewing{' '}
-                <span
-                  className="branch-focus-card__name"
-                  style={
-                    {
-                      '--branch-colour': branchFocus.colour,
-                    } as React.CSSProperties
-                  }
-                >
-                  {branchFocus.username}
-                </span>
-                &rsquo;s timeline&hellip;
+                {branchFocus.empty ? (
+                  'Your timeline is empty'
+                ) : (
+                  <>
+                    You are viewing{' '}
+                    <span
+                      className="branch-focus-card__name"
+                      style={
+                        {
+                          '--branch-colour': branchFocus.colour,
+                        } as React.CSSProperties
+                      }
+                    >
+                      {branchFocus.username}
+                    </span>
+                    &rsquo;s timeline&hellip;
+                  </>
+                )}
               </span>
               <button
                 type="button"
@@ -936,7 +976,9 @@ function Home({
               hidden while an item is being viewed. */}
           <div
             className={`collection-card-list${
-              focusSlug !== null ? ' collection-card-list--hidden' : ''
+              focusSlug !== null || branchFocus?.empty
+                ? ' collection-card-list--hidden'
+                : ''
             }`}
           >
             {/* A timeline being viewed lists its items, in place of the
@@ -957,7 +999,7 @@ function Home({
                     .filter(
                       (collection) => collectedStatus[collection._id] === false
                     )
-                    .map((collection) => (
+                    .map((collection, collectionIndex) => (
                       <div
                         data-collection-id={collection._id}
                         className={`collection-card-stack${
@@ -966,9 +1008,17 @@ function Home({
                             : ''
                         }`}
                         key={collection._id}
+                        style={
+                          {
+                            '--countdown-stack-delay': `${
+                              collectionIndex * 120
+                            }ms`,
+                          } as React.CSSProperties
+                        }
                       >
                         <CollectionCountdown
                           collection={collection}
+                          reveal={revealCountdowns}
                           open={openPanelId === collection._id}
                           // Signed out, a collection can't be opened: the
                           // label says so, and a click goes to log in.
@@ -1100,10 +1150,6 @@ function Home({
                                         </span>
                                       )}
                                     </span>
-                                    {/* Under the picture and those lines, the
-                                    row's full width: what a click does, then
-                                    the description (one already collected
-                                    shows neither). */}
                                     {!isCollected && (
                                       <span className="collection-card-title__kind collection-card-title__kind--add">
                                         + ADD TO YOUR TIMELINE
@@ -1148,7 +1194,7 @@ function Home({
               ))}
           </div>
         </div>
-        {videoState && isVideoZoomedIn && (
+        {videoState && isVideoZoomedIn && videoState.playing && (
           <VideoOverlayPlayer
             state={videoState}
             isZoomedIn={true}

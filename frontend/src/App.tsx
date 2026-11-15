@@ -17,15 +17,30 @@ import { initSelectionColour } from './services/userColor';
 const queryClient = new QueryClient();
 
 const TIMELINE_PATHS = ['/home', '/shop', '/events', '/login', '/collection'];
+// Matches .e-menu--visible fade-in before collection countdowns appear.
+const E_MENU_ENTER_MS = 800;
 
 const AppRoutes = () => {
   const { pathname } = useLocation();
   const isTimelineRoute = TIMELINE_PATHS.includes(pathname);
   const showHeader = !isTimelineRoute;
   const [timelineReady, setTimelineReady] = useState(false);
+  // Countdowns wait until the e-menu has finished fading in.
+  const [revealCountdowns, setRevealCountdowns] = useState(false);
   const handleEntranceComplete = useCallback(() => {
     setTimelineReady(true);
   }, []);
+  useEffect(() => {
+    if (!timelineReady || !isTimelineRoute) {
+      setRevealCountdowns(false);
+      return undefined;
+    }
+    const id = window.setTimeout(
+      () => setRevealCountdowns(true),
+      E_MENU_ENTER_MS
+    );
+    return () => window.clearTimeout(id);
+  }, [timelineReady, isTimelineRoute]);
   const [hoveredCollectedContentId, setHoveredCollectedContentId] = useState<
     string | null
   >(null);
@@ -56,6 +71,7 @@ const AppRoutes = () => {
             focusContentIdControlRef={focusContentIdControlRef}
             resetViewControlRef={resetViewControlRef}
             soloTimelineControlRef={soloTimelineControlRef}
+            revealCountdowns={revealCountdowns}
           />
         )}
       </main>

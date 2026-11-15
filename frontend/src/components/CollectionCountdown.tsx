@@ -21,6 +21,8 @@ type CollectionCountdownProps = {
   // Shown beside the mouse over the box when it can't be opened yet (to
   // someone signed out), saying what to do first.
   cursorLabel?: string | null;
+  // After the timeline and e-menu have entered — starts the staggered reveal.
+  reveal?: boolean;
 };
 
 function formatCountdown(ms: number): string {
@@ -66,6 +68,7 @@ function CollectionCountdown({
   open = false,
   children,
   cursorLabel = null,
+  reveal = false,
 }: CollectionCountdownProps) {
   // Where the mouse is over the box, for the label that follows it.
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
@@ -102,9 +105,13 @@ function CollectionCountdown({
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
+    if (!reveal) {
+      setIsVisible(false);
+      return undefined;
+    }
     const id = window.setTimeout(() => setIsVisible(true), 0);
     return () => window.clearTimeout(id);
-  }, [collection._id]);
+  }, [collection._id, reveal]);
 
   useEffect(() => {
     const tick = () => {
@@ -119,6 +126,9 @@ function CollectionCountdown({
     // animation so the box visibly pops up again.
     const onDebugChange = () => {
       tick();
+      if (!reveal) {
+        return;
+      }
       setIsVisible(false);
       requestAnimationFrame(() =>
         requestAnimationFrame(() => setIsVisible(true))
@@ -132,7 +142,7 @@ function CollectionCountdown({
       window.clearInterval(id);
       window.removeEventListener(DEBUG_TIMERS_EVENT, onDebugChange);
     };
-  }, [collection]);
+  }, [collection, reveal]);
 
   if (remaining <= 0) return null;
 

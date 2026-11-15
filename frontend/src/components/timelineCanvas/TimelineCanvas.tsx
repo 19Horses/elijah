@@ -1,9 +1,10 @@
 import p5 from 'p5';
 import type { ItemViewer } from '../../services/presence';
 import { memo, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { CollectedUserRow } from '../../queries/collectedContent';
 import type { CollectionContent, ContentType } from '../../types/content';
-import { PREVIEW_SWITCH_FADE_MS } from './constants';
+import { GUEST_LOCKED_CURSOR_LABEL, PREVIEW_SWITCH_FADE_MS } from './constants';
 import { createTimelineSketch } from './createTimelineSketch';
 import {
   createAudioController,
@@ -22,6 +23,7 @@ import type {
   FocusTarget,
   ProcessedCollected,
   TimelineCanvasProps,
+  TimelineSketchDeps,
 } from './types';
 
 // Stable empty-array fallbacks for the destructuring defaults below — a
@@ -47,6 +49,7 @@ function TimelineCanvas({
   highlightedMainContentId = null,
   hoveredItemContentId = null,
   hasCollectionPanel = false,
+  menuOpen = false,
   viewersBySlug = EMPTY_VIEWERS,
   seenTimelineIds = null,
   focusContentIdControlRef,
@@ -73,10 +76,14 @@ function TimelineCanvas({
   onBranchIsolationExit,
   activeVideoSlug = null,
   onDismissVideo,
+  onGuestLockedClick,
+  onVideoPlay,
 }: TimelineCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const interactionLockedRef = useRef(false);
   const p5InstanceRef = useRef<p5 | null>(null);
+  // Kept mutable so login doesn't remount the sketch — colour/blur can ease in.
+  const sketchDepsRef = useRef<TimelineSketchDeps | null>(null);
   const highlightedTypeRef = useRef<ContentType | null>(highlightedType);
   const hoverOwnBranchRef = useRef(hoverOwnBranch);
   const onFocusFadeChangeRef = useRef(onFocusFadeChange);
@@ -126,6 +133,27 @@ function TimelineCanvas({
   );
   const centerOnPreviewIdRef = useRef<string | null>(centerOnPreviewContentId);
   const onPreviewHoverRef = useRef(onPreviewItemHover);
+  // Guest hovering a locked user-branch connector — drives the cursor label.
+  const [guestLockedHover, setGuestLockedHover] = useState(false);
+  const guestLockedHoverActiveRef = useRef(false);
+  const [guestCursor, setGuestCursor] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  // Sketch reports every frame while hovering; only push React state when
+  // active flips (seed position once), then follow via pointermove below.
+  const onGuestLockedHoverRef = useRef<
+    (pos: { x: number; y: number } | null) => void
+  >((pos) => {
+    const active = pos !== null;
+    if (guestLockedHoverActiveRef.current === active) {
+      return;
+    }
+    guestLockedHoverActiveRef.current = active;
+    setGuestLockedHover(active);
+    setGuestCursor(pos);
+  });
+  const onGuestLockedClickRef = useRef(onGuestLockedClick);
   const onPreviewCollectStartRef = useRef(onPreviewCollectStart);
   const onPreviewCollectRef = useRef(onPreviewCollect);
   const localCancelPreviewCollectRef = useRef<(() => void) | undefined>(
@@ -155,6 +183,7 @@ function TimelineCanvas({
   >(undefined);
   const activeVideoSlugRef = useRef<string | null>(activeVideoSlug);
   const onDismissVideoRef = useRef(onDismissVideo);
+  const onVideoPlayRef = useRef(onVideoPlay);
 
   useEffect(() => {
     activeVideoSlugRef.current = activeVideoSlug;
@@ -163,6 +192,10 @@ function TimelineCanvas({
   useEffect(() => {
     onDismissVideoRef.current = onDismissVideo;
   }, [onDismissVideo]);
+
+  useEffect(() => {
+    onVideoPlayRef.current = onVideoPlay;
+  }, [onVideoPlay]);
   const beginPreviewFadeOutRef = useRef<(() => void) | undefined>(undefined);
   const prevPreviewItemsRef = useRef<CollectionContent[]>(EMPTY_PREVIEW_ITEMS);
 
@@ -219,6 +252,51 @@ function TimelineCanvas({
   }, [onPreviewItemHover]);
 
   useEffect(() => {
+    onGuestLockedClickRef.current = onGuestLockedClick;
+  }, [onGuestLockedClick]);
+
+  useEffect(() => {
+    if (sketchDepsRef.current) {
+      sketchDepsRef.current.currentUsername = currentUsername;
+    }
+  }, [currentUsername]);
+
+  // Login restores the account colour — keep the sketch alive and just swap it.
+  useEffect(() => {
+    if (sketchDepsRef.current) {
+      sketchDepsRef.current.previewColour = previewColour;
+    }
+  }, [previewColour]);
+
+  useEffect(() => {
+    if (sketchDepsRef.current) {
+      sketchDepsRef.current.backgroundColour = colour || null;
+    }
+  }, [colour]);
+
+  // Follow the pointer while the guest locked-branch CTA is active.
+  useEffect(() => {
+    if (!guestLockedHover) {
+      setGuestCursor(null);
+      return undefined;
+    }
+    const onMove = (event: PointerEvent) => {
+      setGuestCursor({ x: event.clientX, y: event.clientY });
+    };
+    const onLeave = () => {
+      guestLockedHoverActiveRef.current = false;
+      setGuestLockedHover(false);
+      setGuestCursor(null);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('blur', onLeave);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('blur', onLeave);
+    };
+  }, [guestLockedHover]);
+
+  useEffect(() => {
     onPreviewCollectStartRef.current = onPreviewCollectStart;
   }, [onPreviewCollectStart]);
 
@@ -248,6 +326,10 @@ function TimelineCanvas({
   useEffect(() => {
     hasCollectionPanelRef.current = hasCollectionPanel;
   }, [hasCollectionPanel]);
+  const menuOpenRef = useRef(menuOpen);
+  useEffect(() => {
+    menuOpenRef.current = menuOpen;
+  }, [menuOpen]);
 
   const hoveredItemContentIdRef = useRef<string | null>(hoveredItemContentId);
   useEffect(() => {
@@ -322,13 +404,13 @@ function TimelineCanvas({
           event.stopImmediatePropagation();
           return;
         }
-        // Nudge every text container; only the one that overflows actually
-        // moves, so we don't need to know which is the scroll element.
-        overlay.querySelectorAll('.timeline-detail__side').forEach((el) => {
-          if (el instanceof HTMLElement) {
-            el.scrollTop += event.deltaY * step;
-          }
-        });
+        // Scroll the body region under the static back/title/date header.
+        const scrollRoot =
+          overlay.querySelector('.timeline-detail__side-scroll') ??
+          overlay.querySelector('.timeline-detail__side');
+        if (scrollRoot instanceof HTMLElement) {
+          scrollRoot.scrollTop += event.deltaY * step;
+        }
         event.preventDefault();
         event.stopImmediatePropagation();
         return;
@@ -373,6 +455,9 @@ function TimelineCanvas({
     const itemOffsets = processed.map(() => ({ dx: 0, dy: 0 }));
     const collectedOffsets = processedCollected.map(() => ({ dx: 0, dy: 0 }));
     const runtime = createTimelineRuntime();
+    // Already signed in on mount: show unlocked colours/blur immediately.
+    runtime.guestUnlock = currentUsername ? 1 : 0;
+    runtime.prevUsername = currentUsername;
     const audio = createAudioController();
     audioRef.current = audio;
     audioToggleRef.current = (src) => audioRef.current?.toggle(src);
@@ -381,7 +466,7 @@ function TimelineCanvas({
     }
     onAudioStateChangeRef.current?.(null);
 
-    const sketch = createTimelineSketch({
+    const deps = {
       runtime,
       items,
       processed,
@@ -413,6 +498,8 @@ function TimelineCanvas({
         highlightedPreviewIdRef,
         centerOnPreviewIdRef,
         onPreviewHoverRef,
+        onGuestLockedHoverRef,
+        onGuestLockedClickRef,
         reloadPreviewRef,
         beginPreviewFadeOutRef,
         onPreviewCollectStartRef,
@@ -423,6 +510,7 @@ function TimelineCanvas({
         highlightedMainContentIdRef,
         hoveredItemContentIdRef,
         hasCollectionPanelRef,
+        menuOpenRef,
         viewersRef,
         seenTimelineIdsRef,
         collectorsRef,
@@ -430,8 +518,11 @@ function TimelineCanvas({
         setCollectionViewActiveRef,
         activeVideoSlugRef,
         onDismissVideoRef,
+        onVideoPlayRef,
       },
-    });
+    };
+    sketchDepsRef.current = deps;
+    const sketch = createTimelineSketch(deps);
 
     // p5's setup runs async after construction, so an immediate remove() (as in
     // a StrictMode double-mount or an HMR remount) can fire before the canvas
@@ -459,7 +550,11 @@ function TimelineCanvas({
       cancelled = true;
       cancelAnimationFrame(rafId);
       reloadCollectedRef.current = undefined;
+      sketchDepsRef.current = null;
       interactionLockedRef.current = false;
+      guestLockedHoverActiveRef.current = false;
+      setGuestLockedHover(false);
+      setGuestCursor(null);
       audio.dispose();
       audioRef.current = null;
       onAudioStateChangeRef.current?.(null);
@@ -467,15 +562,28 @@ function TimelineCanvas({
       p5InstanceRef.current = null;
       container.replaceChildren();
     };
-    // previewItems is deliberately not a dependency here — its initial value is
-    // read once below for the sketch's first mount, but subsequent changes are
-    // hot-swapped via reloadPreviewRef (above) instead of remounting the whole
-    // canvas.
-  }, [items, previewColour, colour, currentUsername]);
+    // previewItems / currentUsername / previewColour / colour are deliberately
+    // not dependencies — they mutate deps (or hot-swap via refs) so login can
+    // ease colour/blur without remounting the sketch.
+  }, [items]);
 
   return (
     <div className="timeline-canvas-wrap">
       <P5CanvasHost containerRef={containerRef} />
+      {guestLockedHover && guestCursor
+        ? createPortal(
+            <span
+              className="cursor-label"
+              style={{
+                left: `${guestCursor.x}px`,
+                top: `${guestCursor.y}px`,
+              }}
+            >
+              {GUEST_LOCKED_CURSOR_LABEL}
+            </span>,
+            document.body
+          )
+        : null}
     </div>
   );
 }

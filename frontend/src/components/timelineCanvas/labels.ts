@@ -137,14 +137,15 @@ export function wrapText(p: p5, text: string, maxWidth: number): string[] {
   return lines;
 }
 
-// p5's LEFT and TOP, for layers that don't carry the constants themselves.
+// p5's LEFT/CENTER and TOP, for layers that don't carry the constants themselves.
 const TEXT_ALIGN_LEFT = 'left' as p5['LEFT'];
+const TEXT_ALIGN_CENTER = 'center' as p5['CENTER'];
 const TEXT_ALIGN_TOP = 'top' as p5['TOP'];
 
 const NODE_CARD_MAX_TEXT_WIDTH = 220;
 const NODE_CARD_PAD_X = 12;
 const NODE_CARD_PAD_Y = 8;
-const NODE_CARD_RADIUS = 6;
+const NODE_CARD_RADIUS = 0;
 const NODE_CARD_TITLE_SIZE = 15;
 const NODE_CARD_TITLE_LEADING = 18;
 const NODE_CARD_SUBTITLE_SIZE = 12;
@@ -175,15 +176,19 @@ function drawNodeCardText(
   const titleLines = wrapText(p, node.title, NODE_CARD_MAX_TEXT_WIDTH);
   const titleWidth = Math.max(...titleLines.map((line) => p.textWidth(line)));
   const others = node.others ?? 0;
-  const subtitle = `Owned by ${node.timeline.toUpperCase()}${
-    others > 0 ? ` and ${others} other${others === 1 ? '' : 's'}` : ''
-  }`;
+  // Empty timeline = locked/guest card: just the CTA title, no owner line.
+  const subtitle = node.timeline
+    ? `Owned by ${node.timeline.toUpperCase()}${
+        others > 0 ? ` and ${others} other${others === 1 ? '' : 's'}` : ''
+      }`
+    : '';
   p.textStyle(p.NORMAL);
   p.textSize(NODE_CARD_SUBTITLE_SIZE);
-  const subtitleWidth = p.textWidth(subtitle);
+  const subtitleWidth = subtitle ? p.textWidth(subtitle) : 0;
 
   const textHeight =
-    titleLines.length * NODE_CARD_TITLE_LEADING + NODE_CARD_SUBTITLE_LEADING;
+    titleLines.length * NODE_CARD_TITLE_LEADING +
+    (subtitle ? NODE_CARD_SUBTITLE_LEADING : 0);
   // The linked item's artwork sits left of the text, as tall as it, fitted
   // (not stretched) into a box between portrait and landscape proportions.
   const thumb =
@@ -261,23 +266,29 @@ function drawNodeCardText(
   // By value: the card is drawn on a p5.Graphics layer, which doesn't carry
   // p5's LEFT/TOP constants, so those were undefined and text rode up out of
   // the card.
-  p.textAlign(TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP);
+  // Guest CTA cards (no owner line / artwork) centre the message in the card.
+  const centreText = !subtitle && !thumb;
+  p.textAlign(centreText ? TEXT_ALIGN_CENTER : TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP);
   p.textSize(NODE_CARD_TITLE_SIZE);
   p.textLeading(NODE_CARD_TITLE_LEADING);
+  const textX = centreText
+    ? left + width / 2
+    : left + NODE_CARD_PAD_X + textLeft;
+  const textY = centreText
+    ? top + (height - textHeight) / 2
+    : top + NODE_CARD_PAD_Y;
   titleLines.forEach((line, index) => {
-    p.text(
-      line,
-      left + NODE_CARD_PAD_X + textLeft,
-      top + NODE_CARD_PAD_Y + index * NODE_CARD_TITLE_LEADING
-    );
+    p.text(line, textX, textY + index * NODE_CARD_TITLE_LEADING);
   });
-  p.textStyle(p.NORMAL);
-  p.textSize(NODE_CARD_SUBTITLE_SIZE);
-  p.text(
-    subtitle,
-    left + NODE_CARD_PAD_X + textLeft,
-    top + NODE_CARD_PAD_Y + titleLines.length * NODE_CARD_TITLE_LEADING
-  );
+  if (subtitle) {
+    p.textStyle(p.NORMAL);
+    p.textSize(NODE_CARD_SUBTITLE_SIZE);
+    p.text(
+      subtitle,
+      textX,
+      textY + titleLines.length * NODE_CARD_TITLE_LEADING
+    );
+  }
   p.pop();
   return { width, height };
 }

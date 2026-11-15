@@ -338,6 +338,14 @@ main.main--home {
   width: 100%;
 }
 
+.timeline-item-card--private .timeline-item-card__image {
+  filter: blur(8px);
+}
+
+.timeline-item-card__description--private {
+  color: rgba(0, 0, 0, 0.45);
+}
+
 .timeline-item-card__body {
   display: flex;
   flex-direction: column;
@@ -546,9 +554,9 @@ main.main--home {
   cursor: pointer;
   flex-shrink: 0;
   font-family: inherit;
-  font-size: 1.2rem;
-  font-weight: 600;
-  line-height: 1.1;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.2;
   margin: 0;
   padding: 0;
   pointer-events: auto;
@@ -558,19 +566,44 @@ main.main--home {
   text-underline-offset: 0.15em;
 }
 
-/* Right-hand column: back, title/date, then body/links — always top-aligned. */
+/* Right-hand column: static header at the top; body/link scroll below it
+   so long copy disappears into the header and can run past the bottom. */
 .timeline-detail__side {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   justify-content: flex-start;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  min-height: 0;
+  overflow: hidden;
   pointer-events: auto;
   position: absolute;
-  /* Still scrolls, just without a visible scrollbar. */
+}
+
+.timeline-detail__side-header {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.timeline-detail__side-scroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Space after the last line so it doesn't sit flush on the screen edge. */
+  padding-bottom: 2rem;
   scrollbar-width: none;
+}
+
+.timeline-detail__side-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 /* A photo gallery's pictures, stacked in a full-height column that scrolls
@@ -658,13 +691,9 @@ main.main--home {
   width: 100%;
 }
 
-.timeline-detail__side::-webkit-scrollbar {
-  display: none;
-}
-
 .timeline-detail__heading {
   display: flex;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 0.35rem;
   min-width: 0;
@@ -706,8 +735,8 @@ main.main--home {
 
 .timeline-detail__title {
   flex: 0 1 auto;
-  font-size: 1.2rem;
-  line-height: 1.1;
+  font-size: 1.5rem;
+  line-height: 1.15;
   margin: 0;
   min-width: 0;
   font-weight: 600;
@@ -715,21 +744,17 @@ main.main--home {
 
 .timeline-detail__date {
   flex-shrink: 0;
-  font-size: 0.875rem;
+  font-size: 1rem;
   margin: 0;
   white-space: nowrap;
 }
 
 .timeline-detail__body {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   font-size: 18px;
   line-height: 25px;
   font-weight: 100;
   margin: 0;
-  min-height: 0;
-  overflow: visible;
-  overflow-y: auto;
-  overscroll-behavior: contain;
   white-space: pre-wrap;
 }
 
@@ -962,7 +987,7 @@ main.main--home {
   flex-direction: column;
   font-family: 'EB Garamond', 'Times New Roman', Times, serif;
   padding: 0.5rem 0.75rem 0.625rem;
-  pointer-events: auto;
+  pointer-events: none;
   opacity: 0;
   text-align: left;
   transform: translateY(8px);
@@ -1005,7 +1030,8 @@ main.main--home {
 
 .collection-countdown--visible {
   animation: collection-countdown-enter 500ms cubic-bezier(0.4, 0, 0.2, 1)
-    forwards;
+    var(--countdown-stack-delay, 0ms) both;
+  pointer-events: auto;
 }
 
 @keyframes collection-countdown-enter {
@@ -1016,6 +1042,45 @@ main.main--home {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* Stagger the pieces inside each countdown (opacity only — transforms were
+   clipping inside the scroll column). */
+.collection-countdown--visible .collection-countdown__header,
+.collection-countdown--visible .collection-countdown__label,
+.collection-countdown--visible .collection-countdown__image,
+.collection-countdown--visible .collection-countdown__description,
+.collection-countdown--visible .collection-countdown__contents {
+  animation: collection-countdown-part-enter 400ms ease both;
+}
+
+.collection-countdown--visible .collection-countdown__header {
+  animation-delay: calc(var(--countdown-stack-delay, 0ms) + 60ms);
+}
+
+.collection-countdown--visible .collection-countdown__label {
+  animation-delay: calc(var(--countdown-stack-delay, 0ms) + 120ms);
+}
+
+.collection-countdown--visible .collection-countdown__image {
+  animation-delay: calc(var(--countdown-stack-delay, 0ms) + 180ms);
+}
+
+.collection-countdown--visible .collection-countdown__description {
+  animation-delay: calc(var(--countdown-stack-delay, 0ms) + 240ms);
+}
+
+.collection-countdown--visible .collection-countdown__contents {
+  animation-delay: calc(var(--countdown-stack-delay, 0ms) + 300ms);
+}
+
+@keyframes collection-countdown-part-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 
@@ -1749,12 +1814,20 @@ main.main--home {
 }
 
 .signup-form__check input {
-  accent-color: var(--selection-color);
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  border: 1px solid #ffffff;
+  border-radius: 0;
   cursor: pointer;
   flex-shrink: 0;
   height: 0.9rem;
   margin: 0;
   width: 0.9rem;
+}
+
+.signup-form__check input:checked {
+  background: var(--selection-color);
 }
 
 .media-player {
@@ -1848,7 +1921,7 @@ main.main--home {
 
 .signup-form__actions {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   width: 100%;
 }
 
@@ -1881,6 +1954,8 @@ main.main--home {
      screen, so the collections scroll within what's left. */
   left: 2.25rem;
   max-height: calc(100vh - var(--top-right-stack-top));
+  max-height: calc(100dvh - var(--top-right-stack-top));
+  overflow: visible;
   /* The column itself lets the mouse through to whatever's under it (an
      open item's picture); its boxes and list take it back. */
   pointer-events: none;
@@ -1946,6 +2021,7 @@ main.main--home {
   flex-direction: column;
   gap: 5px;
   min-height: 0;
+  overflow-x: visible;
   overflow-y: auto;
   overscroll-behavior: contain;
   /* An opened box scrolled into view keeps the edges' spacing. */
@@ -2231,6 +2307,7 @@ main.main--home {
 .e-menu {
   top: 2.25rem;
   left: 2.25rem;
+  overflow: visible;
   position: fixed;
   z-index: 12;
   opacity: 0;
