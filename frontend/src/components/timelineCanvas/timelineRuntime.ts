@@ -104,6 +104,7 @@ export function createTimelineRuntime(): TimelineRuntime {
     edgeNodesTarget: null,
     nodeRegions: [],
     isolatedRegions: [],
+    videoPlayButton: null,
   };
 }
 

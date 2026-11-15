@@ -170,6 +170,8 @@ function Home({
   const audioStopControlRef = useRef<(() => void) | undefined>(undefined);
   const [audioState, setAudioState] = useState<AudioPlayerState | null>(null);
   const [videoState, setVideoState] = useState<VideoPlayerState | null>(null);
+  // Mini player / zoomed popup only after the user has actually hit play.
+  const [videoEverPlayed, setVideoEverPlayed] = useState(false);
 
   const { data: contentDetail } = useContentDetail(focusSlug, timeline?.items);
 
@@ -180,7 +182,8 @@ function Home({
     isVideoFocused && detailReady && detailImageRect !== null
   );
 
-  const showMiniVideo = videoState !== null && !isVideoFocused;
+  const showMiniVideo =
+    videoState !== null && !isVideoFocused && videoEverPlayed;
   const hasAudioPlayer = audioState !== null && audioState !== undefined;
   // Whether the video's small player came in before the audio player, and so
   // sits above it; settled whenever only one of them is showing.
@@ -215,11 +218,19 @@ function Home({
   }, [audioState?.playing]);
 
   const handleVideoPlay = useCallback(() => {
+    setVideoEverPlayed(true);
     setVideoState((prev) => (prev ? { ...prev, playing: true } : null));
     if (audioState?.playing) {
       audioControlRef.current?.(audioState.src);
     }
   }, [audioState?.playing]);
+
+  // Keep ever-played in sync when play starts from the overlay toggle too.
+  useEffect(() => {
+    if (videoState?.playing) {
+      setVideoEverPlayed(true);
+    }
+  }, [videoState?.playing]);
 
   const handleVideoPause = useCallback(() => {
     setVideoState((prev) => (prev ? { ...prev, playing: false } : null));
@@ -243,6 +254,7 @@ function Home({
     }
     fadeOutTimerRef.current = window.setTimeout(() => {
       setVideoState(null);
+      setVideoEverPlayed(false);
       setVideoFadingOut(false);
       fadeOutTimerRef.current = null;
     }, 450);
@@ -253,6 +265,7 @@ function Home({
       window.clearTimeout(fadeOutTimerRef.current);
     }
     setVideoFadingOut(false);
+    setVideoEverPlayed(false);
     setVideoState(null);
   }, []);
 
@@ -302,6 +315,7 @@ function Home({
     }
     setVideoFadingOut(false);
 
+    let isNewVideo = false;
     setVideoState((prev) => {
       if (prev?.slug === focusSlug && prev.url === videoUrl) {
         return {
@@ -311,7 +325,8 @@ function Home({
           focusTarget: focusTarget ?? prev.focusTarget,
         };
       }
-      // Mirror audio: start paused with the poster until the user hits play.
+      // New video focus — popup waits until play; canvas shows the poster.
+      isNewVideo = true;
       return {
         url: videoUrl,
         title,
@@ -321,7 +336,20 @@ function Home({
         playing: false,
       };
     });
+    if (isNewVideo) {
+      setVideoEverPlayed(false);
+    }
   }, [focusSlug, contentDetail, timeline?.items]);
+
+  // Zoomed out without ever playing — drop the pending video, no mini player.
+  useEffect(() => {
+    if (focusSlug) {
+      return;
+    }
+    if (!videoEverPlayed) {
+      setVideoState(null);
+    }
+  }, [focusSlug, videoEverPlayed]);
 
   // Whether this open is the first look at an unseen main-timeline item, so
   // the zoomed-in detail can keep showing New for the duration of the view.
@@ -832,6 +860,7 @@ function Home({
           hasCollectionPanel={(collections ?? []).some(
             (collection) => collectedStatus[collection._id] === false
           )}
+          menuOpen={drawerOpen}
           focusContentIdControlRef={focusContentIdControlRef}
           resetViewControlRef={resetViewControlRef}
           soloTimelineControlRef={soloTimelineControlRef}
@@ -858,6 +887,7 @@ function Home({
           activeVideoSlug={videoState?.playing ? videoState.slug : null}
           onDismissVideo={handleDismissVideo}
           onGuestLockedClick={() => navigate('/login')}
+          onVideoPlay={handleVideoPlay}
         />
         <TimelineDetailOverlay
           detail={timelineDetail}
@@ -1149,7 +1179,7 @@ function Home({
               ))}
           </div>
         </div>
-        {videoState && isVideoZoomedIn && (
+        {videoState && isVideoZoomedIn && videoState.playing && (
           <VideoOverlayPlayer
             state={videoState}
             isZoomedIn={true}

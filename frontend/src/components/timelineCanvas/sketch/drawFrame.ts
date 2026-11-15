@@ -678,9 +678,12 @@ export function createDrawFrameHandler(
       runtime.zoom
     );
 
-    // Hover effects are suppressed while focused or isolating.
+    // Hover effects are suppressed while focused, isolating, or the menu is open.
     const hoverSuppressed =
-      isFocusActive || isolateActive || returnIndex !== -1;
+      isFocusActive ||
+      isolateActive ||
+      returnIndex !== -1 ||
+      deps.refs.menuOpenRef.current === true;
     const mainHover = computeMainLaneHover(
       deps,
       bounds,
@@ -908,6 +911,7 @@ export function createDrawFrameHandler(
 
     // Cleared each frame; focused items re-set them while drawing.
     deps.audio.setButtonRegion(null);
+    runtime.videoPlayButton = null;
     gallery.setNavRegions([]);
 
     if (runtime.focusTarget && runtime.detailLayout > 0) {
@@ -2424,7 +2428,12 @@ export function createDrawFrameHandler(
         !deps.processed[mainHover.hoveredMain]?.isPrivate) ||
       hoveringCollected ||
       lastHoveredPreviewId !== null;
-    if (overAudioButton || overGalleryArrow) {
+    const videoPlay = runtime.videoPlayButton;
+    const overVideoPlay = videoPlay
+      ? Math.hypot(mouseWorld.x - videoPlay.cx, mouseWorld.y - videoPlay.cy) <=
+        videoPlay.r
+      : false;
+    if (overAudioButton || overGalleryArrow || overVideoPlay) {
       p.cursor('pointer');
     } else if (view.isViewInteractionLocked()) {
       p.cursor(hoveringContent ? 'pointer' : 'default');

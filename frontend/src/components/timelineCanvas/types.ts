@@ -28,6 +28,8 @@ export type TimelineCanvasProps = {
   // Whether the left column has collection boxes to show on the world view,
   // so the map can leave room for them before they render.
   hasCollectionPanel?: boolean;
+  // When true (nav drawer / menu open), timeline hover highlights stay off.
+  menuOpen?: boolean;
   // Who's currently viewing each item, by slug.
   viewersBySlug?: Map<string, ItemViewer[]>;
   // Main-timeline content ids the signed-in viewer has opened. Null when
@@ -93,6 +95,8 @@ export type TimelineCanvasProps = {
   onDismissVideo?: () => void;
   // Guest clicked a locked user-branch connector, node, or collected item.
   onGuestLockedClick?: () => void;
+  // Canvas play control on a focused video that isn't playing yet.
+  onVideoPlay?: () => void;
 };
 
 export type DetailImageRect = {
@@ -429,6 +433,9 @@ export type TimelineRuntime = {
   // click while isolating can focus the item under the cursor (or exit if the
   // click missed them all).
   isolatedRegions: IsolatedItemRegion[];
+  // World-space play button on a focused video while its overlay isn't up yet
+  // (paused / not started) — click starts the video popup.
+  videoPlayButton: { cx: number; cy: number; r: number } | null;
 };
 
 export type TimelineSketchRefs = {
@@ -470,6 +477,7 @@ export type TimelineSketchRefs = {
   highlightedMainContentIdRef: RefObject<string | null>;
   hoveredItemContentIdRef: RefObject<string | null>;
   hasCollectionPanelRef: RefObject<boolean>;
+  menuOpenRef: RefObject<boolean>;
   viewersRef: RefObject<Map<string, ItemViewer[]>>;
   // Main-timeline content ids the signed-in viewer has opened (null: guest).
   seenTimelineIdsRef: RefObject<Set<string> | null>;
@@ -513,6 +521,8 @@ export type TimelineSketchRefs = {
   >;
   activeVideoSlugRef: RefObject<string | null>;
   onDismissVideoRef: RefObject<(() => void) | undefined>;
+  // Sketch → React: canvas play on a focused (not-yet-playing) video.
+  onVideoPlayRef: RefObject<(() => void) | undefined>;
 };
 
 export type TimelineSketchDeps = {

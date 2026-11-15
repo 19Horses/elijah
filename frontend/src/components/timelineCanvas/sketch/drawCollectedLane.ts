@@ -742,6 +742,27 @@ export function drawCollectedLaneItems(
         src: item.audioUrl,
       });
     }
+
+    // Focused video, not yet playing: same play control; click opens the popup.
+    if (isFocusedVideo && !videoPlayingHere) {
+      const buttonR = Math.min(width, height) * 0.13;
+      const buttonCx = imageLeft + width / 2;
+      const buttonCy = top + height / 2;
+      drawPlayPauseButton(
+        p,
+        collectedCtx,
+        buttonCx,
+        buttonCy,
+        buttonR,
+        false,
+        visibilityAlpha
+      );
+      deps.runtime.videoPlayButton = {
+        cx: buttonCx,
+        cy: buttonCy,
+        r: buttonR,
+      };
+    }
   });
 }
 

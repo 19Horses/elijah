@@ -104,6 +104,17 @@ export function createInputHandlers(
         return;
       }
 
+      const videoPlay = runtime.videoPlayButton;
+      if (
+        videoPlay &&
+        Math.hypot(world.x - videoPlay.cx, world.y - videoPlay.cy) <=
+          videoPlay.r
+      ) {
+        deps.refs.onVideoPlayRef.current?.();
+        runtime.dragLane = null;
+        return;
+      }
+
       const navHit = gallery
         .getNavRegions()
         .find(

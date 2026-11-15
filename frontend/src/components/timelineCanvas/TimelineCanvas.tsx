@@ -52,6 +52,7 @@ function TimelineCanvas({
   highlightedMainContentId = null,
   hoveredItemContentId = null,
   hasCollectionPanel = false,
+  menuOpen = false,
   viewersBySlug = EMPTY_VIEWERS,
   seenTimelineIds = null,
   focusContentIdControlRef,
@@ -79,6 +80,7 @@ function TimelineCanvas({
   activeVideoSlug = null,
   onDismissVideo,
   onGuestLockedClick,
+  onVideoPlay,
 }: TimelineCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const interactionLockedRef = useRef(false);
@@ -184,6 +186,7 @@ function TimelineCanvas({
   >(undefined);
   const activeVideoSlugRef = useRef<string | null>(activeVideoSlug);
   const onDismissVideoRef = useRef(onDismissVideo);
+  const onVideoPlayRef = useRef(onVideoPlay);
 
   useEffect(() => {
     activeVideoSlugRef.current = activeVideoSlug;
@@ -192,6 +195,10 @@ function TimelineCanvas({
   useEffect(() => {
     onDismissVideoRef.current = onDismissVideo;
   }, [onDismissVideo]);
+
+  useEffect(() => {
+    onVideoPlayRef.current = onVideoPlay;
+  }, [onVideoPlay]);
   const beginPreviewFadeOutRef = useRef<(() => void) | undefined>(undefined);
   const prevPreviewItemsRef = useRef<CollectionContent[]>(EMPTY_PREVIEW_ITEMS);
 
@@ -322,6 +329,10 @@ function TimelineCanvas({
   useEffect(() => {
     hasCollectionPanelRef.current = hasCollectionPanel;
   }, [hasCollectionPanel]);
+  const menuOpenRef = useRef(menuOpen);
+  useEffect(() => {
+    menuOpenRef.current = menuOpen;
+  }, [menuOpen]);
 
   const hoveredItemContentIdRef = useRef<string | null>(hoveredItemContentId);
   useEffect(() => {
@@ -502,6 +513,7 @@ function TimelineCanvas({
         highlightedMainContentIdRef,
         hoveredItemContentIdRef,
         hasCollectionPanelRef,
+        menuOpenRef,
         viewersRef,
         seenTimelineIdsRef,
         collectorsRef,
@@ -509,6 +521,7 @@ function TimelineCanvas({
         setCollectionViewActiveRef,
         activeVideoSlugRef,
         onDismissVideoRef,
+        onVideoPlayRef,
       },
     };
     sketchDepsRef.current = deps;
