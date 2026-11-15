@@ -546,9 +546,9 @@ main.main--home {
   cursor: pointer;
   flex-shrink: 0;
   font-family: inherit;
-  font-size: 1.2rem;
-  font-weight: 600;
-  line-height: 1.1;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.2;
   margin: 0;
   padding: 0;
   pointer-events: auto;
@@ -558,19 +558,44 @@ main.main--home {
   text-underline-offset: 0.15em;
 }
 
-/* Right-hand column: back, title/date, then body/links — always top-aligned. */
+/* Right-hand column: static header at the top; body/link scroll below it
+   so long copy disappears into the header and can run past the bottom. */
 .timeline-detail__side {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   justify-content: flex-start;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  min-height: 0;
+  overflow: hidden;
   pointer-events: auto;
   position: absolute;
-  /* Still scrolls, just without a visible scrollbar. */
+}
+
+.timeline-detail__side-header {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.timeline-detail__side-scroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Space after the last line so it doesn't sit flush on the screen edge. */
+  padding-bottom: 2rem;
   scrollbar-width: none;
+}
+
+.timeline-detail__side-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 /* A photo gallery's pictures, stacked in a full-height column that scrolls
@@ -658,13 +683,9 @@ main.main--home {
   width: 100%;
 }
 
-.timeline-detail__side::-webkit-scrollbar {
-  display: none;
-}
-
 .timeline-detail__heading {
   display: flex;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 0.35rem;
   min-width: 0;
@@ -706,8 +727,8 @@ main.main--home {
 
 .timeline-detail__title {
   flex: 0 1 auto;
-  font-size: 1.2rem;
-  line-height: 1.1;
+  font-size: 1.5rem;
+  line-height: 1.15;
   margin: 0;
   min-width: 0;
   font-weight: 600;
@@ -715,21 +736,17 @@ main.main--home {
 
 .timeline-detail__date {
   flex-shrink: 0;
-  font-size: 0.875rem;
+  font-size: 1rem;
   margin: 0;
   white-space: nowrap;
 }
 
 .timeline-detail__body {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   font-size: 18px;
   line-height: 25px;
   font-weight: 100;
   margin: 0;
-  min-height: 0;
-  overflow: visible;
-  overflow-y: auto;
-  overscroll-behavior: contain;
   white-space: pre-wrap;
 }
 
@@ -1749,12 +1766,20 @@ main.main--home {
 }
 
 .signup-form__check input {
-  accent-color: var(--selection-color);
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  border: 1px solid #ffffff;
+  border-radius: 0;
   cursor: pointer;
   flex-shrink: 0;
   height: 0.9rem;
   margin: 0;
   width: 0.9rem;
+}
+
+.signup-form__check input:checked {
+  background: var(--selection-color);
 }
 
 .media-player {
@@ -1848,7 +1873,7 @@ main.main--home {
 
 .signup-form__actions {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   width: 100%;
 }
 

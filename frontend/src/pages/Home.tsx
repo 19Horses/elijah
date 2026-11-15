@@ -857,6 +857,7 @@ function Home({
           onBranchIsolationExit={handleBranchIsolationExit}
           activeVideoSlug={videoState?.playing ? videoState.slug : null}
           onDismissVideo={handleDismissVideo}
+          onGuestLockedClick={() => navigate('/login')}
         />
         <TimelineDetailOverlay
           detail={timelineDetail}

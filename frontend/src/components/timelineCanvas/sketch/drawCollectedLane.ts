@@ -38,6 +38,7 @@ import {
   ALREADY_COLLECTED_WIDTH,
   ALREADY_COLLECTED_MAX_TILT_DEG,
   ALREADY_COLLECTED_MIN_TILT_DEG,
+  GUEST_LOCKED_CURSOR_LABEL,
   MAIN_LINE_Y,
 } from '../constants';
 import {
@@ -91,13 +92,23 @@ export type CollectedLaneDrawResult = {
 // Slide a branch endpoint out to the revealing CD's right edge when it sits on
 // the focused audio item's right edge; otherwise leave it untouched.
 // A source's branch colour, eased toward grey while another branch is hovered.
+// guestUnlock 0 = fully grey (signed out); 1 = full branch colour after login.
 function branchSourceColour(
   runtime: TimelineRuntime,
-  source: CollectedSource
+  source: CollectedSource,
+  guestUnlock: number
 ): string {
   const t =
     source.rowIndex === runtime.branchDimRow ? 0 : runtime.branchDimStrength;
-  return t > 0 ? mixHex(source.colour, BRANCH_DIM_COLOUR, t) : source.colour;
+  const coloured =
+    t > 0 ? mixHex(source.colour, BRANCH_DIM_COLOUR, t) : source.colour;
+  if (guestUnlock >= 1) {
+    return coloured;
+  }
+  if (guestUnlock <= 0) {
+    return BRANCH_DIM_COLOUR;
+  }
+  return mixHex(BRANCH_DIM_COLOUR, coloured, guestUnlock);
 }
 
 export function computeCollectedLaneHover(
@@ -200,10 +211,16 @@ export function drawCollectedLaneConnectors(
     const hoveringBranch =
       hover.hoveredUserRow !== null && !hover.hoveredCollectedIsImage;
 
+    const guestLocked = !deps.currentUsername;
+
     item.sources.forEach((source, sourceIndex) => {
       const isUserHovered =
         hoveringBranch && source.rowIndex === hover.hoveredUserRow;
-      const branchColour = branchSourceColour(deps.runtime, source);
+      const branchColour = branchSourceColour(
+        deps.runtime,
+        source,
+        deps.runtime.guestUnlock
+      );
       const segments = boundsCtx.getSourceBranchSegments(
         index,
         sourceIndex,
@@ -214,7 +231,7 @@ export function drawCollectedLaneConnectors(
       if (isUserHovered && !ctx.isFocusActive) {
         collectedCtx.shadowBlur = 16;
         collectedCtx.shadowColor = hexToRgba(
-          source.colour,
+          branchColour,
           0.55 * connectorLoadAlpha
         );
       }
@@ -499,12 +516,23 @@ export function drawCollectedLaneItems(
       } else if (img) {
         // Contain (not fill) so the full image shows without cropping when its
         // true aspect ratio differs from the slot's.
-        drawContainedImage(
-          p,
-          img,
-          { left: imageLeft, top, width, height },
-          item.isPrivate ? PRIVATE_IMAGE_EFFECT : undefined
-        );
+        {
+          const guestBlur = 1 - deps.runtime.guestUnlock;
+          const imageBox = { left: imageLeft, top, width, height };
+          if (item.isPrivate) {
+            drawContainedImage(p, img, imageBox, PRIVATE_IMAGE_EFFECT);
+          } else if (guestBlur > 0.01) {
+            drawContainedImage(
+              p,
+              img,
+              imageBox,
+              PRIVATE_IMAGE_EFFECT,
+              guestBlur
+            );
+          } else {
+            drawContainedImage(p, img, imageBox);
+          }
+        }
       } else {
         p.fill(245);
         p.stroke(220);
@@ -560,6 +588,7 @@ export function drawCollectedLaneItems(
       );
     }
 
+    // Private CMS items stay overlaid; guest lock fades out with guestUnlock.
     if (item.isPrivate) {
       drawPrivateOverlay(
         p,
@@ -569,6 +598,16 @@ export function drawCollectedLaneItems(
         width,
         height,
         visibilityAlpha
+      );
+    } else if (deps.runtime.guestUnlock < 0.99) {
+      drawPrivateOverlay(
+        p,
+        collectedCtx,
+        imageLeft,
+        top,
+        width,
+        height,
+        visibilityAlpha * (1 - deps.runtime.guestUnlock)
       );
     }
 
@@ -730,12 +769,18 @@ export function drawCollectedLaneConnectorDots(
       return;
     }
 
+    const guestLocked = !deps.currentUsername;
+
     item.sources.forEach((source, sourceIndex) => {
       const isUserHovered =
         hover.hoveredUserRow !== null &&
         !hover.hoveredCollectedIsImage &&
         source.rowIndex === hover.hoveredUserRow;
-      const branchColour = branchSourceColour(deps.runtime, source);
+      const branchColour = branchSourceColour(
+        deps.runtime,
+        source,
+        deps.runtime.guestUnlock
+      );
       const segments = boundsCtx.getSourceBranchSegments(
         index,
         sourceIndex,
@@ -745,7 +790,7 @@ export function drawCollectedLaneConnectorDots(
       if (isUserHovered && !ctx.isFocusActive) {
         collectedCtx.shadowBlur = 16;
         collectedCtx.shadowColor = hexToRgba(
-          source.colour,
+          branchColour,
           0.55 * connectorLoadAlpha
         );
       }
@@ -817,13 +862,15 @@ export function drawCollectedLaneConnectorDots(
           drawEdgeDot(dTo);
           if (ctx.isFocusActive) {
             // The `from` dot connects along the line to the item at `to`; the
-            // `to` dot connects back to the item at `from`.
+            // `to` dot connects back to the item at `from`. Guests get a grey
+            // card with the sign-in CTA instead of title/owner.
             if (toItemTitle && toItemTarget && !dFrom.hidden) {
               ctx.nodeRegions.push({
                 ...dFrom,
-                title: toItemTitle,
-                timeline: source.username,
-                colour: source.colour,
+                title: guestLocked ? GUEST_LOCKED_CURSOR_LABEL : toItemTitle,
+                timeline: guestLocked ? '' : source.username,
+                others: guestLocked ? undefined : dFrom.others,
+                colour: branchColour,
                 target: toItemTarget,
                 dotless: !dFrom.onEdge,
               });
@@ -831,9 +878,10 @@ export function drawCollectedLaneConnectorDots(
             if (fromItemTitle && fromItemTarget && !dTo.hidden) {
               ctx.nodeRegions.push({
                 ...dTo,
-                title: fromItemTitle,
-                timeline: source.username,
-                colour: source.colour,
+                title: guestLocked ? GUEST_LOCKED_CURSOR_LABEL : fromItemTitle,
+                timeline: guestLocked ? '' : source.username,
+                others: guestLocked ? undefined : dTo.others,
+                colour: branchColour,
                 target: fromItemTarget,
                 dotless: !dTo.onEdge,
               });

@@ -19,7 +19,10 @@ import {
   ITEM_LABEL_SCALE,
   ITEM_WIDTH,
   DATE_LABEL_SHADOW_BLUR_PX,
+  BRANCH_DIM_COLOUR,
   BRANCH_DIM_LERP,
+  GUEST_UNLOCK_LERP,
+  NAV_DRAWER_MS,
   DATE_FONT_MERGE_SHRINK,
   HIGHLIGHT_FADE_SNAP,
   LABEL_OUTLINE_PX,
@@ -878,9 +881,16 @@ export function createDrawFrameHandler(
         ) {
           return MAIN_LINE_COLOUR;
         }
-        const branchColour = deps.processedCollected
+        const sourceColour = deps.processedCollected
           .flatMap((item) => item.sources)
           .find((source) => source.rowIndex === row)?.colour;
+        const branchColour = sourceColour
+          ? runtime.guestUnlock >= 1
+            ? sourceColour
+            : runtime.guestUnlock <= 0
+            ? BRANCH_DIM_COLOUR
+            : mixHex(BRANCH_DIM_COLOUR, sourceColour, runtime.guestUnlock)
+          : undefined;
         return branchColour
           ? mixHex(MAIN_LINE_COLOUR, branchColour, runtime.branchDimStrength)
           : MAIN_LINE_COLOUR;
@@ -1064,6 +1074,35 @@ export function createDrawFrameHandler(
       runtime.branchDimStrength = 1;
     }
 
+    // After login: wait for the nav drawer to close, then ease colour + blur.
+    if (runtime.prevUsername !== deps.currentUsername) {
+      if (!runtime.prevUsername && deps.currentUsername) {
+        runtime.guestUnlockDelayUntil = performance.now() + NAV_DRAWER_MS;
+      } else if (!deps.currentUsername) {
+        runtime.guestUnlock = 0;
+        runtime.guestUnlockDelayUntil = null;
+      } else {
+        runtime.guestUnlock = 1;
+        runtime.guestUnlockDelayUntil = null;
+      }
+      runtime.prevUsername = deps.currentUsername;
+    }
+    const unlockReady =
+      Boolean(deps.currentUsername) &&
+      (runtime.guestUnlockDelayUntil === null ||
+        performance.now() >= runtime.guestUnlockDelayUntil);
+    if (unlockReady && runtime.guestUnlockDelayUntil !== null) {
+      runtime.guestUnlockDelayUntil = null;
+    }
+    runtime.guestUnlock +=
+      ((unlockReady ? 1 : 0) - runtime.guestUnlock) *
+      frameLerp(GUEST_UNLOCK_LERP, dt);
+    if (runtime.guestUnlock < HIGHLIGHT_FADE_SNAP) {
+      runtime.guestUnlock = unlockReady ? runtime.guestUnlock : 0;
+    } else if (runtime.guestUnlock > 1 - HIGHLIGHT_FADE_SNAP) {
+      runtime.guestUnlock = 1;
+    }
+
     // Ease the branch-isolation progress in/out, releasing the row (and the
     // interaction lock) only once the fade-out has completed.
     runtime.branchIsolate +=
@@ -1189,7 +1228,12 @@ export function createDrawFrameHandler(
       let name = MAIN_USERNAME;
       if (!isFocusActive) {
         const row = collectedHover.hoveredUserRow;
-        if (row !== null && !collectedHover.hoveredCollectedIsImage) {
+        // Guests get a React cursor-label CTA instead of the username tag.
+        if (
+          row !== null &&
+          !collectedHover.hoveredCollectedIsImage &&
+          deps.currentUsername
+        ) {
           hoveredKey = `row:${row}`;
           const source = deps.processedCollected
             .flatMap((item) => item.sources)
@@ -1241,6 +1285,26 @@ export function createDrawFrameHandler(
       });
     };
     updateLineTags();
+
+    // Signed-out: hovering a user-branch connector or locked collected item
+    // shows the sign-in CTA (same label as locked collections).
+    {
+      const guestLockedHover =
+        !deps.currentUsername &&
+        !isFocusActive &&
+        (collectedHover.hoveredCollectedIsImage ||
+          collectedHover.hoveredUserRow !== null);
+      if (guestLockedHover) {
+        const canvas = p.canvas as HTMLCanvasElement;
+        const rect = canvas.getBoundingClientRect();
+        deps.refs.onGuestLockedHoverRef.current?.({
+          x: rect.left + (p.mouseX / p.width) * rect.width,
+          y: rect.top + (p.mouseY / p.height) * rect.height,
+        });
+      } else {
+        deps.refs.onGuestLockedHoverRef.current?.(null);
+      }
+    }
 
     // The hovered item's picture grows a touch (not while one's being viewed),
     // easing in and back out.
@@ -2312,6 +2376,9 @@ export function createDrawFrameHandler(
           return;
         }
         const { region } = card;
+        // Guests don't get a clear thumbnail of locked collected content.
+        const showArtwork =
+          Boolean(deps.currentUsername) || region.target.lane === 'main';
         drawNodeCard(
           cards,
           region,
@@ -2319,11 +2386,13 @@ export function createDrawFrameHandler(
           (region.y - runtime.cameraY) * runtime.zoom,
           DOT_RADIUS * runtime.zoom * (region.scale ?? zoomGrowth),
           card.grow,
-          region.target.lane === 'main'
-            ? loadedImages[region.target.index]
-            : region.target.lane === 'collected'
-            ? loadedCollectedImages[region.target.index]
-            : loadedPreviewImages[region.target.index]
+          showArtwork
+            ? region.target.lane === 'main'
+              ? loadedImages[region.target.index]
+              : region.target.lane === 'collected'
+              ? loadedCollectedImages[region.target.index]
+              : loadedPreviewImages[region.target.index]
+            : null
         );
       });
     } else {
@@ -2346,11 +2415,14 @@ export function createDrawFrameHandler(
           region.r
       );
 
+    const hoveringCollected =
+      collectedHover.hoveredCollectedIsImage &&
+      Boolean(deps.currentUsername) &&
+      !deps.processedCollected[collectedHover.hoveredCollected]?.isPrivate;
     const hoveringContent =
       (mainHover.hoveredMain !== -1 &&
         !deps.processed[mainHover.hoveredMain]?.isPrivate) ||
-      (collectedHover.hoveredCollectedIsImage &&
-        !deps.processedCollected[collectedHover.hoveredCollected]?.isPrivate) ||
+      hoveringCollected ||
       lastHoveredPreviewId !== null;
     if (overAudioButton || overGalleryArrow) {
       p.cursor('pointer');

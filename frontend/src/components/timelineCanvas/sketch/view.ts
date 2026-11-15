@@ -33,7 +33,8 @@ import {
 import { frameLerp, hitTest } from '../geometry';
 import {
   getFocusedSlug,
-  isPrivateTarget,
+  isGuestLockedCollected,
+  isLockedTarget,
   isViewInteractionLocked,
   notifyFocusFade,
   resetCanvasFocus,
@@ -1252,6 +1253,11 @@ export function createViewContext(
   // Zoom/pan so the items collected on one branch (rowIndex) fill the screen.
   // This is a camera move only — no item focus / detail panel.
   const focusBranch = (rowIndex: number) => {
+    // Logged-out: collected branches stay locked — open the login slide.
+    if (isGuestLockedCollected(deps)) {
+      deps.refs.onGuestLockedClickRef.current?.();
+      return;
+    }
     const collectedBounds = bounds.getCollectedBounds();
     const mainBounds = bounds.getAllBounds();
     const branchItems = deps.processedCollected
@@ -1402,7 +1408,14 @@ export function createViewContext(
   };
 
   const focusItem = (target: FocusTarget) => {
-    if (isPrivateTarget(deps, target)) {
+    if (isLockedTarget(deps, target)) {
+      // Guest locked collected content → login; private while signed in → no-op.
+      if (
+        target.lane === 'collected' &&
+        isGuestLockedCollected(deps)
+      ) {
+        deps.refs.onGuestLockedClickRef.current?.();
+      }
       return;
     }
     // Opening an item from a timeline shown alone keeps it (and its grid)
@@ -1500,7 +1513,7 @@ export function createViewContext(
   };
 
   const previewFocusItem = (target: FocusTarget) => {
-    if (isViewInteractionLocked(runtime) || isPrivateTarget(deps, target)) {
+    if (isViewInteractionLocked(runtime) || isLockedTarget(deps, target)) {
       return;
     }
     panToFocusBounds(getFocusBounds(target));

@@ -91,6 +91,8 @@ export type TimelineCanvasProps = {
   onBranchIsolationExit?: () => void;
   activeVideoSlug?: string | null;
   onDismissVideo?: () => void;
+  // Guest clicked a locked user-branch connector, node, or collected item.
+  onGuestLockedClick?: () => void;
 };
 
 export type DetailImageRect = {
@@ -314,6 +316,13 @@ export type TimelineRuntime = {
   // at full colour while it fades.
   branchDimStrength: number;
   branchDimRow: number | null;
+  // 0 = guest-locked (grey branches + blurred collected), 1 = revealed after
+  // login. Lerps up after the nav drawer has closed.
+  guestUnlock: number;
+  // performance.now() deadline before guestUnlock may rise; null when idle.
+  guestUnlockDelayUntil: number | null;
+  // Last seen deps.currentUsername, to detect login/logout transitions.
+  prevUsername: string | null;
   // Showing one collector's timeline alone (from their name in the menu):
   // whether it's on, the row, and how far everything else has faded (0-1).
   branchSoloActive: boolean;
@@ -477,6 +486,13 @@ export type TimelineSketchRefs = {
   onPreviewHoverRef: RefObject<
     ((contentId: string | null) => void) | undefined
   >;
+  // Sketch → React: screen position while a guest hovers a locked user-branch
+  // connector or collected item (null when not), for the sign-in cursor label.
+  onGuestLockedHoverRef: RefObject<
+    ((pos: { x: number; y: number } | null) => void) | undefined
+  >;
+  // Sketch → React: guest clicked locked user content / connector / node.
+  onGuestLockedClickRef: RefObject<(() => void) | undefined>;
   // React → sketch: swaps in a new set of collectible items (and loads their
   // images) without remounting the whole canvas — switching which collection
   // is expanded must not tear down the running sketch's camera/isolate state.

@@ -57,6 +57,9 @@ export function createTimelineRuntime(): TimelineRuntime {
     activeHighlightType: null,
     highlightStrength: 0,
     branchDimStrength: 0,
+    guestUnlock: 0,
+    guestUnlockDelayUntil: null,
+    prevUsername: null,
     branchSoloActive: false,
     branchSoloRow: null,
     branchSolo: 0,
@@ -218,6 +221,22 @@ export function isPrivateTarget(
       ? deps.processed[target.index]
       : deps.processedCollected[target.index];
   return item?.isPrivate ?? false;
+}
+
+// Logged-out viewers can't open anyone's collected branch content — same
+// blur + no-click treatment as private items on those tiles.
+export function isGuestLockedCollected(deps: TimelineSketchDeps): boolean {
+  return !deps.currentUsername;
+}
+
+export function isLockedTarget(
+  deps: TimelineSketchDeps,
+  target: FocusTarget
+): boolean {
+  if (isPrivateTarget(deps, target)) {
+    return true;
+  }
+  return target.lane === 'collected' && isGuestLockedCollected(deps);
 }
 
 export function isFutureDatedItem(

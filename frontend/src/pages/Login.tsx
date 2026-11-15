@@ -33,7 +33,6 @@ function Login() {
     <SignUpForm
       visible
       color={color}
-      onClose={() => navigate('/home')}
       onSuccess={() => navigate('/home')}
     />
   );

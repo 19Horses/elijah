@@ -10,11 +10,10 @@ import { storeUser } from '../services/userStorage';
 type SignUpFormProps = {
   visible: boolean;
   color: string;
-  onClose: () => void;
   onSuccess: () => void;
 };
 
-function SignUpForm({ visible, color, onClose, onSuccess }: SignUpFormProps) {
+function SignUpForm({ visible, color, onSuccess }: SignUpFormProps) {
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   // Opted in by default; only asked on new accounts.
@@ -160,15 +159,6 @@ function SignUpForm({ visible, color, onClose, onSuccess }: SignUpFormProps) {
       {error && <p className="signup-form__error">{error}</p>}
 
       <div className="signup-form__actions">
-        <button
-          type="button"
-          className="signup-form__action"
-          onClick={onClose}
-          disabled={isSubmitting}
-          tabIndex={visible ? 0 : -1}
-        >
-          Close
-        </button>
         <button
           type="submit"
           className="signup-form__action"
