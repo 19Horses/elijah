@@ -814,9 +814,7 @@ export function drawMainLaneItems(
       }
       if (labelHide < 1) {
         const seenIds = deps.refs.seenTimelineIdsRef.current;
-        const unseen = Boolean(
-          seenIds && !seenIds.has(deps.items[index]._id)
-        );
+        const unseen = Boolean(seenIds && !seenIds.has(deps.items[index]._id));
         ctx.dateLabels.push({
           x: imageLeft + width / 2,
           y: top + height + 12,

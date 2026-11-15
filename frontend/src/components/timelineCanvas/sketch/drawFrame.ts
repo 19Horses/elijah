@@ -1763,9 +1763,7 @@ export function createDrawFrameHandler(
         ];
         // Zoomed quite far out: shorten titles so the map stays readable.
         const relativeZoom =
-          runtime.fitZoomLevel > 0
-            ? runtime.zoom / runtime.fitZoomLevel
-            : 1;
+          runtime.fitZoomLevel > 0 ? runtime.zoom / runtime.fitZoomLevel : 1;
         const titleText =
           relativeZoom <= TITLE_TRUNCATE_ZOOM_FACTOR
             ? truncateText(label.text, TITLE_TRUNCATE_MAX_CHARS)
@@ -1950,8 +1948,7 @@ export function createDrawFrameHandler(
         // Each line's step is its own height: a hung-below label steps down by
         // the lines above, a raised one up by the lines below. Prefix and
         // extras use the body size; title lines use the larger text size.
-        const step = (k: number) =>
-          isTextLine(k) ? textLeading : leading;
+        const step = (k: number) => (isTextLine(k) ? textLeading : leading);
         const lineY = (k: number) => {
           let offset = 0;
           if (below) {
@@ -2006,7 +2003,9 @@ export function createDrawFrameHandler(
           // the label is on the right, left of "New" when the label is on the
           // left (or centred below).
           const squareOnRight = hAlign === p.LEFT;
-          const textX = squareOnRight ? left : left + prefixDotR * 2 + prefixGap;
+          const textX = squareOnRight
+            ? left
+            : left + prefixDotR * 2 + prefixGap;
           const dotX = squareOnRight
             ? left + textW + prefixGap + prefixDotR
             : left + prefixDotR;

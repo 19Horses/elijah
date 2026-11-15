@@ -855,9 +855,7 @@ function Home({
           onDetailImageRect={handleDetailImageRect}
           onEntranceComplete={onEntranceComplete}
           onBranchIsolationExit={handleBranchIsolationExit}
-          activeVideoSlug={
-            videoState?.playing ? videoState.slug : null
-          }
+          activeVideoSlug={videoState?.playing ? videoState.slug : null}
           onDismissVideo={handleDismissVideo}
         />
         <TimelineDetailOverlay

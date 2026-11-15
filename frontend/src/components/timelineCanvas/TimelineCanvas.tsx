@@ -324,13 +324,11 @@ function TimelineCanvas({
         }
         // Nudge every text container; only the one that overflows actually
         // moves, so we don't need to know which is the scroll element.
-        overlay
-          .querySelectorAll('.timeline-detail__side')
-          .forEach((el) => {
-            if (el instanceof HTMLElement) {
-              el.scrollTop += event.deltaY * step;
-            }
-          });
+        overlay.querySelectorAll('.timeline-detail__side').forEach((el) => {
+          if (el instanceof HTMLElement) {
+            el.scrollTop += event.deltaY * step;
+          }
+        });
         event.preventDefault();
         event.stopImmediatePropagation();
         return;
