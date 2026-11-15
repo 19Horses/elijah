@@ -107,6 +107,16 @@ export function collectedByParts(
   ];
 }
 
+// Shortens a title for the zoomed-out map, keeping `maxChars` of the name
+// and appending "...".
+export function truncateText(text: string, maxChars: number): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= maxChars) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, maxChars).trimEnd()}...`;
+}
+
 // Splits `text` into lines no wider than `maxWidth` at the current text style
 // (a single word longer than that gets a line to itself).
 export function wrapText(p: p5, text: string, maxWidth: number): string[] {

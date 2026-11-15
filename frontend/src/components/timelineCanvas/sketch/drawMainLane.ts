@@ -190,6 +190,8 @@ export type DateLabel = {
   // different from `font`, and their size relative to those lines.
   textFont?: string;
   textScale?: number;
+  // When true, a live-style "New" line (pulsing red dot) sits above the name.
+  unseen?: boolean;
   // Who collected the item, on a fainter line after that.
   collectedBy?: CollectedBy;
   // How strongly the "owned by" line shows (fading as the view zooms out).
@@ -638,10 +640,16 @@ export function drawMainLaneItems(
       item.contentType === 'videoAsset' &&
       ctx.isFocusActive &&
       ctx.isFocusedTarget('main', index);
-    // Fade the poster out quickly on click so the playing video is all that's
-    // left by the time the zoom-in finishes (detailLayout hits 1 around 200ms;
-    // this reaches 0 by ~20% of that).
-    const videoPosterFade = isFocusedVideo
+    // Fade the poster only once the video is actually playing (paused zoom
+    // keeps the image up with the play control over it).
+    const videoPlayingHere =
+      isFocusedVideo &&
+      item.slug !== null &&
+      deps.refs.activeVideoSlugRef.current === item.slug;
+    // Fade the poster out quickly so the playing video is all that's left by
+    // the time the zoom-in finishes (detailLayout hits 1 around 200ms; this
+    // reaches 0 by ~20% of that).
+    const videoPosterFade = videoPlayingHere
       ? Math.max(0, 1 - deps.runtime.detailLayout * 5)
       : 1;
     // (A video playing on in its small player keeps its picture here.)
@@ -805,6 +813,10 @@ export function drawMainLaneItems(
         resetCanvasEffects(mainCtx);
       }
       if (labelHide < 1) {
+        const seenIds = deps.refs.seenTimelineIdsRef.current;
+        const unseen = Boolean(
+          seenIds && !seenIds.has(deps.items[index]._id)
+        );
         ctx.dateLabels.push({
           x: imageLeft + width / 2,
           y: top + height + 12,
@@ -816,6 +828,7 @@ export function drawMainLaneItems(
           letterSpacing: ITEM_LABEL_LETTER_SPACING,
           textFont: CANVAS_TITLE_FONT,
           textScale: ITEM_TITLE_SCALE,
+          unseen,
           collectedBy: collectedByFor(
             deps.refs.collectorsRef.current?.get(deps.items[index]._id)
           ),

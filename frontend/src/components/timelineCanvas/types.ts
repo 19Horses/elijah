@@ -30,6 +30,9 @@ export type TimelineCanvasProps = {
   hasCollectionPanel?: boolean;
   // Who's currently viewing each item, by slug.
   viewersBySlug?: Map<string, ItemViewer[]>;
+  // Main-timeline content ids the signed-in viewer has opened. Null when
+  // signed out (no unseen marks).
+  seenTimelineIds?: Set<string> | null;
   focusContentIdControlRef?: MutableRefObject<
     ((contentId: string) => void) | undefined
   >;
@@ -459,6 +462,8 @@ export type TimelineSketchRefs = {
   hoveredItemContentIdRef: RefObject<string | null>;
   hasCollectionPanelRef: RefObject<boolean>;
   viewersRef: RefObject<Map<string, ItemViewer[]>>;
+  // Main-timeline content ids the signed-in viewer has opened (null: guest).
+  seenTimelineIdsRef: RefObject<Set<string> | null>;
   // Who has collected each item, by content id, most recent first.
   collectorsRef: RefObject<Map<string, ItemCollector[]>>;
   focusContentIdRef: MutableRefObject<

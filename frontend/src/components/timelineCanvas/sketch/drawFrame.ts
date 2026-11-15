@@ -52,10 +52,17 @@ import {
   COLLECT_RETURN_IMAGE_WAIT_MS,
   SECONDARY_LABEL_ALPHA,
   SECONDARY_LABEL_GAP,
+  UNSEEN_DOT_COLOUR,
+  UNSEEN_DOT_GAP_PX,
+  UNSEEN_DOT_RADIUS_PX,
+  UNSEEN_LABEL_TEXT,
+  UNSEEN_PULSE_MS,
   SHEEN_STAGGER_MS,
   ZOOM_OUT_GROWTH_POWER,
   DATE_SHRINK_TRANSITION_FACTOR,
   DATE_SHRINK_ZOOM_FACTOR,
+  TITLE_TRUNCATE_MAX_CHARS,
+  TITLE_TRUNCATE_ZOOM_FACTOR,
   COLLECTION_OTHER_ITEM_ALPHA,
   SOLO_GRID_TEXT_LEADING,
   SOLO_GRID_TEXT_SIZE,
@@ -85,6 +92,7 @@ import {
   drawLineTag,
   type LabelRect,
   measureLineTag,
+  truncateText,
   wrapText,
 } from '../labels';
 import {
@@ -1747,14 +1755,31 @@ export function createDrawFrameHandler(
           label.secondary,
           ...collectedLines.map(joinRuns),
         ].filter((line): line is string => line !== undefined);
-        const withSecondary = (main: string[]) => [...main, ...extras];
+        const prefixCount = label.unseen ? 1 : 0;
+        const withSecondary = (main: string[]) => [
+          ...(label.unseen ? [UNSEEN_LABEL_TEXT] : []),
+          ...main,
+          ...extras,
+        ];
+        // Zoomed quite far out: shorten titles so the map stays readable.
+        const relativeZoom =
+          runtime.fitZoomLevel > 0
+            ? runtime.zoom / runtime.fitZoomLevel
+            : 1;
+        const titleText =
+          relativeZoom <= TITLE_TRUNCATE_ZOOM_FACTOR
+            ? truncateText(label.text, TITLE_TRUNCATE_MAX_CHARS)
+            : label.text;
         styleLine(true);
         let lines = withSecondary(
           label.maxWidth === undefined
-            ? [label.text]
-            : wrapText(p, label.text, label.maxWidth)
+            ? [titleText]
+            : wrapText(p, titleText, label.maxWidth)
         );
-        const isTextLine = (k: number) => k < lines.length - extras.length;
+        const firstTitle = prefixCount;
+        const firstExtra = lines.length - extras.length;
+        const isTextLine = (k: number) => k >= firstTitle && k < firstExtra;
+        const isPrefixLine = (k: number) => k < prefixCount;
         // (From the body size: measuring may have left the title's size set.)
         const leading = bodySize * (label.lineHeight ?? 1.2);
         // The text's own lines step by their own, larger size.
@@ -1763,8 +1788,11 @@ export function createDrawFrameHandler(
         // the text.
         const secondaryGap =
           extras.length === 0 ? 0 : bodySize * SECONDARY_LABEL_GAP;
+        const titleLineCount = (count: number) =>
+          count - extras.length - prefixCount;
         const blockHeight = (count: number) =>
-          (count - extras.length) * textLeading +
+          prefixCount * leading +
+          titleLineCount(count) * textLeading +
           extras.length * leading +
           secondaryGap;
         // (Not while an item opens or the view moves on its own, so the
@@ -1792,6 +1820,14 @@ export function createDrawFrameHandler(
         let { x, y } = label;
         let below = label.below ?? false;
         let hAlign = horizontalAlign;
+        const prefixDotR = UNSEEN_DOT_RADIUS_PX / runtime.zoom;
+        const prefixGap = UNSEEN_DOT_GAP_PX / runtime.zoom;
+        const prefixLineWidth = () => {
+          styleLine(false);
+          return prefixDotR * 2 + prefixGap + p.textWidth(UNSEEN_LABEL_TEXT);
+        };
+        const widthForLine = (line: string, k: number) =>
+          isPrefixLine(k) ? prefixLineWidth() : widthOf(line, isTextLine(k));
         // An item's label goes under it, unless the spot beside it on the
         // right (lined up with its bottom edge) sits on fewer lines and items.
         if (label.anchor) {
@@ -1799,7 +1835,7 @@ export function createDrawFrameHandler(
           const gap = 12;
           const pad = 4 / runtime.zoom;
           const underWidth = Math.max(
-            ...lines.map((line, k) => widthOf(line, isTextLine(k)))
+            ...lines.map((line, k) => widthForLine(line, k))
           );
           const underX = (anchor.left + anchor.right) / 2;
           const underTop = anchor.bottom + gap;
@@ -1809,9 +1845,9 @@ export function createDrawFrameHandler(
             top: underTop - pad,
             bottom: underTop + blockHeight(lines.length) + pad,
           };
-          const sideLines = withSecondary([label.text]);
+          const sideLines = withSecondary([titleText]);
           const sideWidth = Math.max(
-            ...sideLines.map((line, k) => widthOf(line, k === 0))
+            ...sideLines.map((line, k) => widthForLine(line, k))
           );
           const sideHeight = blockHeight(sideLines.length);
           const underHeight = blockHeight(lines.length);
@@ -1911,10 +1947,11 @@ export function createDrawFrameHandler(
         }
         p.textAlign(hAlign, below ? p.TOP : p.BOTTOM);
         const last = lines.length - 1;
-        const firstExtra = lines.length - extras.length;
         // Each line's step is its own height: a hung-below label steps down by
-        // the lines above, a raised one up by the lines below.
-        const step = (k: number) => (k < firstExtra ? textLeading : leading);
+        // the lines above, a raised one up by the lines below. Prefix and
+        // extras use the body size; title lines use the larger text size.
+        const step = (k: number) =>
+          isTextLine(k) ? textLeading : leading;
         const lineY = (k: number) => {
           let offset = 0;
           if (below) {
@@ -1938,7 +1975,7 @@ export function createDrawFrameHandler(
             : baseAlpha;
         {
           const textWidth = Math.max(
-            ...lines.map((line, k) => widthOf(line, k < firstExtra))
+            ...lines.map((line, k) => widthForLine(line, k))
           );
           const textHeight = blockHeight(lines.length);
           const left =
@@ -1955,6 +1992,66 @@ export function createDrawFrameHandler(
             bottom: top + textHeight,
           });
         }
+        const drawUnseenPrefix = (ly: number, outlined: boolean) => {
+          styleLine(false);
+          const textW = p.textWidth(UNSEEN_LABEL_TEXT);
+          const totalW = prefixDotR * 2 + prefixGap + textW;
+          const left =
+            hAlign === p.CENTER
+              ? x - totalW / 2
+              : hAlign === p.RIGHT
+              ? x - totalW
+              : x;
+          // Square sits on the outer side of the image: right of "New" when
+          // the label is on the right, left of "New" when the label is on the
+          // left (or centred below).
+          const squareOnRight = hAlign === p.LEFT;
+          const textX = squareOnRight ? left : left + prefixDotR * 2 + prefixGap;
+          const dotX = squareOnRight
+            ? left + textW + prefixGap + prefixDotR
+            : left + prefixDotR;
+          // Centre both the square and "New" on the same mid-line of this row.
+          const midY = below ? ly + bodySize / 2 : ly - bodySize / 2;
+          const pulse =
+            0.45 +
+            0.55 *
+              (0.5 +
+                0.5 * Math.sin((p.millis() / UNSEEN_PULSE_MS) * Math.PI * 2));
+          if (outlined) {
+            p.noFill();
+            p.stroke(
+              mixHex(
+                PAGE_BACKGROUND_TOP,
+                PAGE_BACKGROUND_BOTTOM,
+                Math.min(
+                  1,
+                  Math.max(
+                    0,
+                    ((ly - runtime.cameraY) * runtime.zoom) / p.height
+                  )
+                )
+              )
+            );
+            p.strokeWeight((LABEL_OUTLINE_PX * 2) / runtime.zoom);
+            p.rectMode(p.CENTER);
+            p.rect(dotX, midY, prefixDotR * 2, prefixDotR * 2);
+            p.rectMode(p.CORNER);
+            p.textAlign(p.LEFT, p.CENTER);
+            p.text(UNSEEN_LABEL_TEXT, textX, midY);
+            p.noStroke();
+          }
+          dateCtx.globalAlpha = baseAlpha * pulse;
+          p.noStroke();
+          p.fill(UNSEEN_DOT_COLOUR);
+          p.rectMode(p.CENTER);
+          p.rect(dotX, midY, prefixDotR * 2, prefixDotR * 2);
+          p.rectMode(p.CORNER);
+          dateCtx.globalAlpha = baseAlpha;
+          p.fill(label.colour);
+          p.textAlign(p.LEFT, p.CENTER);
+          p.text(UNSEEN_LABEL_TEXT, textX, midY);
+          p.textAlign(hAlign, below ? p.TOP : p.BOTTOM);
+        };
         if (label.outlined) {
           // An outline in the page background's colour where the label sits
           // on screen, drawn under the text so it masks the lines behind it
@@ -1970,7 +2067,10 @@ export function createDrawFrameHandler(
           p.strokeWeight((LABEL_OUTLINE_PX * 2) / runtime.zoom);
           p.strokeJoin(p.ROUND);
           lines.forEach((line, k) => {
-            styleLine(k < firstExtra);
+            if (isPrefixLine(k)) {
+              return;
+            }
+            styleLine(isTextLine(k));
 
             p.text(line, x, lineY(k));
           });
@@ -1978,8 +2078,12 @@ export function createDrawFrameHandler(
           p.fill(label.colour);
         }
         lines.forEach((line, k) => {
+          if (isPrefixLine(k)) {
+            drawUnseenPrefix(lineY(k), Boolean(label.outlined));
+            return;
+          }
           dateCtx.globalAlpha = lineAlpha(k);
-          styleLine(k < firstExtra);
+          styleLine(isTextLine(k));
           const runs =
             collectedLines[k - (lines.length - collectedLines.length)];
           if (runs) {

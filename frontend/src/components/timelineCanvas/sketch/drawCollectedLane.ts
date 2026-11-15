@@ -477,7 +477,11 @@ export function drawCollectedLaneItems(
       item.contentType === 'videoAsset' &&
       ctx.isFocusActive &&
       ctx.isFocusedTarget('collected', index);
-    const videoPosterFade = isFocusedVideo
+    const videoPlayingHere =
+      isFocusedVideo &&
+      item.slug !== null &&
+      deps.refs.activeVideoSlugRef.current === item.slug;
+    const videoPosterFade = videoPlayingHere
       ? Math.max(0, 1 - deps.runtime.detailLayout * 5)
       : 1;
     // (A video playing on in its small player keeps its picture here.)

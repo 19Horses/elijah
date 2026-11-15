@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   useCallback,
   useEffect,
@@ -70,6 +70,10 @@ import {
   VIEWING_HEARTBEAT_MS,
   type ItemViewer,
 } from '../services/presence';
+import {
+  getOrSeedSeenTimelineIds,
+  markTimelineSeen,
+} from '../services/seenTimeline';
 import { getDisplayColour } from '../services/userColor';
 import { getStoredUser, USER_CHANGED_EVENT } from '../services/userStorage';
 import type { CollectionContent, ContentType } from '../types/content';
@@ -305,35 +309,67 @@ function Home({
           title,
           posterUrl,
           focusTarget: focusTarget ?? prev.focusTarget,
-          playing: true,
         };
       }
+      // Mirror audio: start paused with the poster until the user hits play.
       return {
         url: videoUrl,
         title,
         posterUrl,
         slug: focusSlug,
         focusTarget,
-        playing: true,
+        playing: false,
       };
     });
+  }, [focusSlug, contentDetail, timeline?.items]);
 
-    if (audioState?.playing) {
-      audioControlRef.current?.(audioState.src);
-    }
-  }, [focusSlug, contentDetail, timeline?.items, audioState?.playing]);
+  // Whether this open is the first look at an unseen main-timeline item, so
+  // the zoomed-in detail can keep showing New for the duration of the view.
+  const [focusShowUnseen, setFocusShowUnseen] = useState(false);
 
-  const handleContentFocus = useCallback((slug: string) => {
-    setFocusSlug(slug);
-    setDetailReady(false);
-    setDetailImageRect(null);
-  }, []);
+  const handleContentFocus = useCallback(
+    (slug: string) => {
+      setFocusSlug(slug);
+      setDetailReady(false);
+      setDetailImageRect(null);
+
+      const user = getStoredUser();
+      const contentId = timeline?.items.find((item) => item.slug === slug)?._id;
+      const seenList = user
+        ? queryClient.getQueryData<string[]>(['seenTimelineIds', user.id])
+        : undefined;
+      const wasUnseen = Boolean(
+        user &&
+          contentId &&
+          Array.isArray(seenList) &&
+          !seenList.includes(contentId)
+      );
+      setFocusShowUnseen(wasUnseen);
+      if (!user || !contentId) {
+        return;
+      }
+      queryClient.setQueryData<string[]>(
+        ['seenTimelineIds', user.id],
+        (previous) => {
+          if (!previous) {
+            return [contentId];
+          }
+          return previous.includes(contentId)
+            ? previous
+            : [...previous, contentId];
+        }
+      );
+      void markTimelineSeen(contentId).catch(() => undefined);
+    },
+    [queryClient, timeline?.items]
+  );
 
   const handleContentUnfocus = useCallback(() => {
     setFocusSlug(null);
     setDetailReady(false);
     setDetailImageRect(null);
     setCollectingItemId(null);
+    setFocusShowUnseen(false);
   }, []);
 
   // Tell everyone which item this viewer is looking at, re-stamping it while
@@ -425,12 +461,35 @@ function Home({
   const [currentUsername, setCurrentUsername] = useState(
     () => getStoredUser()?.username ?? null
   );
+  const [currentUserId, setCurrentUserId] = useState(
+    () => getStoredUser()?.id ?? null
+  );
   useEffect(() => {
-    const sync = () => setCurrentUsername(getStoredUser()?.username ?? null);
+    const sync = () => {
+      const user = getStoredUser();
+      setCurrentUsername(user?.username ?? null);
+      setCurrentUserId(user?.id ?? null);
+    };
     window.addEventListener(USER_CHANGED_EVENT, sync);
     return () => window.removeEventListener(USER_CHANGED_EVENT, sync);
   }, []);
   const branchColour = getDisplayColour();
+
+  const mainTimelineContentIds = useMemo(
+    () => (timeline?.items ?? []).map((item) => item._id),
+    [timeline?.items]
+  );
+  const { data: seenTimelineIdList } = useQuery({
+    queryKey: ['seenTimelineIds', currentUserId],
+    queryFn: () => getOrSeedSeenTimelineIds(mainTimelineContentIds),
+    enabled: Boolean(currentUserId) && Boolean(timeline),
+  });
+  const seenTimelineIds = useMemo(() => {
+    if (!currentUserId || !seenTimelineIdList) {
+      return null;
+    }
+    return new Set(seenTimelineIdList);
+  }, [currentUserId, seenTimelineIdList]);
 
   const collectedRow =
     collectedRows?.find((row) => row.username === currentUsername) ?? null;
@@ -457,8 +516,9 @@ function Home({
       isAudio: contentDetail._type === 'audioAsset',
       isEvent: contentDetail._type === 'event',
       imageUrls: getContentDetailImageUrls(contentDetail),
+      unseen: focusShowUnseen,
     };
-  }, [contentDetail, detailReady, focusSlug]);
+  }, [contentDetail, detailReady, focusShowUnseen, focusSlug]);
 
   // The collection whose badge is currently expanded — its items are what
   // merge into the isolated timeline on canvas.
@@ -788,13 +848,16 @@ function Home({
           audioStopControlRef={audioStopControlRef}
           onAudioStateChange={handleAudioStateChange}
           viewersBySlug={viewersBySlug}
+          seenTimelineIds={seenTimelineIds}
           onContentFocus={handleContentFocus}
           onContentUnfocus={handleContentUnfocus}
           onDetailLayoutStart={handleDetailLayoutStart}
           onDetailImageRect={handleDetailImageRect}
           onEntranceComplete={onEntranceComplete}
           onBranchIsolationExit={handleBranchIsolationExit}
-          activeVideoSlug={videoState ? videoState.slug : null}
+          activeVideoSlug={
+            videoState?.playing ? videoState.slug : null
+          }
           onDismissVideo={handleDismissVideo}
         />
         <TimelineDetailOverlay

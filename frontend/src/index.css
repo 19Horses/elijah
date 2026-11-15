@@ -502,7 +502,7 @@ main.main--home {
 }
 
 /* Positioned (left/top/width/height set inline) to overlay the focused image
-   exactly; the meta sits just above it and the description just below. */
+   exactly; copy always lives in the right-hand column. */
 .timeline-detail {
   color: #ffffff;
   opacity: 0;
@@ -537,18 +537,19 @@ main.main--home {
   }
 }
 
-/* Above the picture, set like the title: back out to the whole map. */
+/* Back out to the whole map — always first in the right column. */
 .timeline-detail__back {
+  align-self: flex-start;
   background: none;
   border: none;
   color: inherit;
   cursor: pointer;
-  flex-basis: 100%;
+  flex-shrink: 0;
   font-family: inherit;
   font-size: 1.2rem;
   font-weight: 600;
   line-height: 1.1;
-  margin: 0 0 0.5rem;
+  margin: 0;
   padding: 0;
   pointer-events: auto;
   text-align: left;
@@ -557,71 +558,13 @@ main.main--home {
   text-underline-offset: 0.15em;
 }
 
-/* Heading a photo gallery's info column. */
-.timeline-detail__side .timeline-detail__back {
-  align-self: flex-start;
-  flex-basis: auto;
-  flex-shrink: 0;
-}
-
-.timeline-detail__back--alone {
-  bottom: calc(100% + 16px);
-  left: 0;
-  margin: 0;
-  position: absolute;
-}
-
-.timeline-detail__meta {
-  /* Bottom-align rather than baseline, so a wrapping multi-line title doesn't
-     leave the date sitting up at its first line instead of the block's foot. */
-  align-items: flex-end;
-  bottom: calc(100% + 16px);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 1.5rem;
-  justify-content: space-between;
-  left: 0;
-  overflow: hidden;
-  pointer-events: auto;
-  position: absolute;
-  right: 0;
-}
-
-.timeline-detail__below {
-  display: flex;
-  flex-direction: column;
-  left: 0;
-  pointer-events: auto;
-  position: absolute;
-  right: 0;
-  top: calc(100% + 16px);
-}
-
-/* Newsletters caption the image from below: title, then a small row holding
-   the collected count and date. */
-.timeline-detail--newsletter .timeline-detail__meta {
-  align-items: baseline;
-  bottom: auto;
-  gap: 0.25rem 1.5rem;
-  top: calc(100% + 0.6rem);
-}
-
-.timeline-detail--newsletter .timeline-detail__title {
-  flex-basis: 100%;
-}
-
-.timeline-detail--newsletter .timeline-detail__date {
-  font-size: 0.8125rem;
-  order: 2;
-  text-transform: uppercase;
-}
-
-/* Newsletter content beside the image, spanning the full window height (left
-   / top / height / padding set inline) and scrolling within it. */
+/* Right-hand column: back, title/date, then body/links — always top-aligned. */
 .timeline-detail__side {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  gap: 0.5rem;
+  justify-content: flex-start;
   overflow-y: auto;
   overscroll-behavior: contain;
   pointer-events: auto;
@@ -715,46 +658,54 @@ main.main--home {
   width: 100%;
 }
 
-/* A music track's (or photo gallery's) info, beside its pictures and
-   vertically centred on them. */
-.timeline-detail__side--audio {
-  gap: 0.5rem;
-  /* Centred beside the picture when it fits, else from the top. */
-  justify-content: safe center;
-}
-
-/* The whole description, the column scrolling rather than it. */
-.timeline-detail__description.timeline-detail__description--full {
-  flex: 0 0 auto;
-  overflow: visible;
-}
-
-.timeline-detail__side--audio .timeline-detail__title,
-.timeline-detail__side--audio .timeline-detail__description {
-  flex: 0 1 auto;
-}
-
-/* Events: keep the link in the normal column flow (same gap as title / date /
-   description) instead of pushing it to the foot with margin-top: auto, and
-   only hit the text — not the full column width. */
-.timeline-detail__side--event .timeline-detail__link {
-  align-self: flex-start;
-  display: inline-block;
-  margin-top: 0;
-}
-
 .timeline-detail__side::-webkit-scrollbar {
   display: none;
 }
 
-/* Let the side container do the scrolling; the body just flows inside it. */
-.timeline-detail__side .timeline-detail__body {
-  flex: 0 0 auto;
-  overflow: visible;
+.timeline-detail__heading {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.timeline-detail__unseen {
+  align-items: center;
+  display: inline-flex;
+  font-family: 'Akzidenz Grotesk Pro', Helvetica, Arial, sans-serif;
+  font-size: 0.75rem;
+  gap: 0.35rem;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  margin: 0;
+}
+
+.timeline-detail__unseen--end {
+  justify-content: flex-start;
+}
+
+.timeline-detail__unseen-square {
+  animation: timeline-detail-unseen-pulse 0.9s ease-in-out infinite;
+  background: #e01818;
+  display: block;
+  flex-shrink: 0;
+  height: 0.45rem;
+  width: 0.45rem;
+}
+
+@keyframes timeline-detail-unseen-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .timeline-detail__title {
-  flex: 1;
+  flex: 0 1 auto;
   font-size: 1.2rem;
   line-height: 1.1;
   margin: 0;
@@ -769,38 +720,29 @@ main.main--home {
   white-space: nowrap;
 }
 
-.timeline-detail__description {
-  flex: 1;
-  font-size: 0.9375rem;
-  line-height: 1.65;
-  margin: 0;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  white-space: pre-wrap;
-}
-
 .timeline-detail__body {
-  flex: 1;
+  flex: 0 1 auto;
   font-size: 18px;
   line-height: 25px;
   font-weight: 100;
   margin: 0;
   min-height: 0;
+  overflow: visible;
   overflow-y: auto;
   overscroll-behavior: contain;
   white-space: pre-wrap;
 }
 
 .timeline-detail__link {
+  align-self: flex-start;
   color: inherit;
-  display: block;
+  display: inline-block;
   flex-shrink: 0;
   font-size: 0.875rem;
   line-height: 1.5;
-  margin-top: auto;
+  margin: 0;
   overflow-wrap: anywhere;
-  padding-top: 1.25rem;
+  padding: 0;
   text-decoration: underline;
   text-underline-offset: 0.15em;
 }
@@ -2629,10 +2571,68 @@ main.main--home {
   background: #000;
 }
 
+.video-overlay-player--zoomed-in.video-overlay-player--poster {
+  background: transparent;
+}
+
 .video-overlay-player--zoomed-in .video-overlay-player__screen {
   position: absolute;
   inset: 0;
   background: #000;
+}
+
+.video-overlay-player--zoomed-in.video-overlay-player--poster
+  .video-overlay-player__screen {
+  background: transparent;
+}
+
+.video-overlay-player__poster {
+  display: block;
+  height: 100%;
+  inset: 0;
+  object-fit: contain;
+  pointer-events: none;
+  position: absolute;
+  width: 100%;
+  z-index: 1;
+}
+
+.video-overlay-player__poster--empty {
+  background: #111111;
+}
+
+/* Centre play/pause over the zoomed video, mirroring the audio control. */
+.video-overlay-player__play-toggle {
+  align-items: center;
+  background: none;
+  border: none;
+  color: #ffffff;
+  cursor: pointer;
+  display: flex;
+  filter: drop-shadow(0 2px 14px rgba(0, 0, 0, 0.45));
+  height: 26%;
+  justify-content: center;
+  left: 50%;
+  padding: 0;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 26%;
+  z-index: 2;
+}
+
+.video-overlay-player__play-toggle svg {
+  fill: currentColor;
+  height: 100%;
+  width: 100%;
+}
+
+.video-overlay-player__play-toggle:hover {
+  transform: translate(-50%, -50%) scale(1.06);
+}
+
+.video-overlay-player__play-toggle--hidden {
+  opacity: 0;
 }
 
 .video-overlay-player--zoomed-in .video-overlay-player__screen > div {
