@@ -68,6 +68,9 @@ export type TimelineCanvasProps = {
   // Populated by the canvas with a play/pause toggle (by track src), so an
   // outside control (the mini player) can invoke it.
   audioControlRef?: MutableRefObject<((src: string) => void) | undefined>;
+  // Populated by the canvas with a way to stop and unload the current track
+  // (the mini player's close button).
+  audioStopControlRef?: MutableRefObject<(() => void) | undefined>;
   // Reports the mini-player state (or null to hide it) so the caller can
   // render it alongside its own UI (e.g. stacked under the user card).
   onAudioStateChange?: (state: AudioPlayerState | null) => void;
@@ -201,7 +204,8 @@ export type RouteDir = 'horizontal' | 'vertical';
 // sharing a route stay evenly spaced through every bend.
 export type BranchNodeGroup = {
   centre: ConnectorPoint;
-  // Distance from the centre to the outermost line end.
+  // Distance from the centre to the outermost line end, with no line
+  // thickened by a hover.
   halfSpan: number;
   // The direction the line ends are spread along (across a main item's
   // underside, or down a collected item's edge).
@@ -396,19 +400,9 @@ export type TimelineRuntime = {
       side: number;
     }
   >;
-  // The hovered edge node and its card's size along its viewport edge, so
-  // the edge layout can push the neighbouring nodes clear of it.
-  hoverEdgeNodeKey: string | null;
-  hoverCardExtent: number;
-  // Each edge node's eased push along its edge (screen px), so nodes glide
-  // aside and back as the hover moves from node to node.
-  edgeNodePush: Map<string, number>;
-  // Hover cards open or closing, keyed by node: the node they belong to, how
-  // far open they are (0-1) and their size along the node's edge.
-  nodeCards: Map<
-    string,
-    { region: NodeHoverRegion; grow: number; extent: number }
-  >;
+  // Hover cards open or closing, keyed by node: the node they belong to and
+  // how far open they are (0-1).
+  nodeCards: Map<string, { region: NodeHoverRegion; grow: number }>;
   // Eased 0-1 slide of the focused item's branch nodes out to the viewport
   // edges (vertically and, the same, horizontally), the linear progress it's
   // eased from, and the item they belong to (kept while they ease back).

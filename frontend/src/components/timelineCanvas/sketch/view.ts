@@ -30,7 +30,7 @@ import {
   ZOOM_LERP,
   ZOOM_SETTLE_THRESHOLD,
 } from '../constants';
-import { hitTest } from '../geometry';
+import { frameLerp, hitTest } from '../geometry';
 import {
   getFocusedSlug,
   isPrivateTarget,
@@ -78,9 +78,9 @@ export type ViewContext = {
   animateToFitView: () => void;
   startPreviewCollect: (previewIndex: number) => boolean;
   collectFocusedPreviewContentId: (contentId: string) => void;
-  animateView: () => void;
-  animatePan: () => void;
-  animateZoom: () => void;
+  animateView: (deltaTimeMs: number) => void;
+  animatePan: (deltaTimeMs: number) => void;
+  animateZoom: (deltaTimeMs: number) => void;
   findClickedItem: (worldX: number, worldY: number) => FocusTarget | null;
   findClickedBranch: (worldX: number, worldY: number) => number | null;
   focusItem: (target: FocusTarget) => void;
@@ -814,15 +814,16 @@ export function createViewContext(
     resetCanvasFocus(runtime);
   };
 
-  const animatePan = () => {
+  const animatePan = (deltaTimeMs: number) => {
     if (!runtime.panning) {
       return;
     }
 
+    const panT = frameLerp(PAN_LERP, deltaTimeMs);
     const nextX =
-      runtime.cameraX + (runtime.panTargetCameraX - runtime.cameraX) * PAN_LERP;
+      runtime.cameraX + (runtime.panTargetCameraX - runtime.cameraX) * panT;
     const nextY =
-      runtime.cameraY + (runtime.panTargetCameraY - runtime.cameraY) * PAN_LERP;
+      runtime.cameraY + (runtime.panTargetCameraY - runtime.cameraY) * panT;
 
     const settled =
       Math.abs(runtime.panTargetCameraX - nextX) * runtime.zoom <
@@ -883,13 +884,15 @@ export function createViewContext(
     runtime.zooming = true;
   };
 
-  const animateZoom = () => {
+  const animateZoom = (deltaTimeMs: number) => {
     if (!runtime.zooming) {
       return;
     }
 
     const nextZoom =
-      runtime.zoom + (runtime.zoomTargetZoom - runtime.zoom) * ZOOM_LERP;
+      runtime.zoom +
+      (runtime.zoomTargetZoom - runtime.zoom) *
+        frameLerp(ZOOM_LERP, deltaTimeMs);
     const settled =
       Math.abs(runtime.zoomTargetZoom - nextZoom) < ZOOM_SETTLE_THRESHOLD;
     const appliedZoom = settled ? runtime.zoomTargetZoom : nextZoom;
@@ -1061,7 +1064,7 @@ export function createViewContext(
     runtime.viewUnfocusing = false;
   };
 
-  const animateView = () => {
+  const animateView = (deltaTimeMs: number) => {
     if (!runtime.viewAnimating) {
       if (runtime.focusTarget && !runtime.viewUnfocusing) {
         runtime.focusContentFade = 1;
@@ -1074,11 +1077,14 @@ export function createViewContext(
       return;
     }
 
-    const lerpFactor = runtime.slowViewAnimation
-      ? COLLECT_RETURN_ZOOM_LERP
-      : runtime.viewUnfocusing
-      ? VIEW_UNFOCUS_ANIMATION_LERP
-      : VIEW_ANIMATION_LERP;
+    const lerpFactor = frameLerp(
+      runtime.slowViewAnimation
+        ? COLLECT_RETURN_ZOOM_LERP
+        : runtime.viewUnfocusing
+        ? VIEW_UNFOCUS_ANIMATION_LERP
+        : VIEW_ANIMATION_LERP,
+      deltaTimeMs
+    );
     const lerp = (current: number, target: number) =>
       current + (target - current) * lerpFactor;
 

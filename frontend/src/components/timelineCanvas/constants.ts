@@ -79,9 +79,11 @@ export const NODE_FLARE_REACH = 1.6;
 // Hovering a connector node grows its dot: extra diameter as a fraction of the
 // base (1.5 = up to 2.5× size), eased in/out at this rate.
 export const NODE_HOVER_GROW = 0.3;
+// LERP factors below are tuned for ~60fps and scaled each frame via
+// frameLerp / frameStep so wall-clock speed holds when the frame rate drops.
 export const NODE_GROW_LERP = 0.25;
-// The per-frame ease a hovered timeline's name tag follows the cursor along
-// the line with.
+// The ease a hovered timeline's name tag follows the cursor along the line
+// with.
 export const LINE_BLOB_FOLLOW_LERP = 0.2;
 // The gap (screen px) the tag keeps from the cursor's point on the line.
 export const LINE_TAG_LIFT_PX = 14;
@@ -142,7 +144,8 @@ export const VIEWER_FLASH_LAYER_ALPHA = 0.3;
 // How much less a route along someone else's timeline is favoured than one
 // along the viewer's own or the main one.
 export const VIEWER_FLASH_OTHER_TIMELINE_COST = 3;
-// Space kept between a hovered edge node's open card and the nodes beside it.
+// Space kept between an edge node and its open card, and between that card
+// and the other edge nodes.
 export const EDGE_NODE_CARD_CLEARANCE_PX = 8;
 // How far past an edge node's dot its hover band reaches.
 export const EDGE_NODE_HIT_PAD_PX = 8;

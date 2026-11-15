@@ -1,6 +1,9 @@
 import type p5 from 'p5';
 import {
   CANVAS_LABEL_FONT,
+  EDGE_NODE_CARD_CLEARANCE_PX,
+  EDGE_NODE_INSET_PX,
+  EDGE_NODE_RADIUS_PX,
   OTHERS_LABEL_ALPHA,
   LINE_TAG_DETAIL_ALPHA,
   LINE_TAG_RADIUS_PX,
@@ -124,6 +127,10 @@ export function wrapText(p: p5, text: string, maxWidth: number): string[] {
   return lines;
 }
 
+// p5's LEFT and TOP, for layers that don't carry the constants themselves.
+const TEXT_ALIGN_LEFT = 'left' as p5['LEFT'];
+const TEXT_ALIGN_TOP = 'top' as p5['TOP'];
+
 const NODE_CARD_MAX_TEXT_WIDTH = 220;
 const NODE_CARD_PAD_X = 12;
 const NODE_CARD_PAD_Y = 8;
@@ -134,12 +141,14 @@ const NODE_CARD_SUBTITLE_SIZE = 12;
 const NODE_CARD_SUBTITLE_LEADING = 16;
 
 // A hovered node opens into a card in its line's colour: the linked item's
-// title over who collected it. A node out at a viewport edge anchors the card
-// there, so it opens inward from that edge over the node (centred on it along
-// the edge); any other node gets the card above it. `artwork`, when loaded,
-// is the linked item's image, shown beside the text. `x`/`y` are the node's
-// screen position, `nodeRadius` its on-screen radius, and `grow` (0-1) eases
-// the card open from the node. Returns the card's full (unscaled) size.
+// title over who collected it. A node out at a viewport edge opens its card
+// inward from that edge, beyond the node (centred on it along the edge) and
+// kept out of the strips the edge nodes sit in, so it never covers a node and
+// the nodes can stay put; any other node gets the card above it. `artwork`,
+// when loaded, is the linked item's image, shown beside the text. `x`/`y` are
+// the node's screen position, `nodeRadius` its on-screen radius, and `grow`
+// (0-1) eases the card open from the node. Returns the card's full (unscaled)
+// size.
 function drawNodeCardText(
   p: p5,
   node: Pick<
@@ -185,27 +194,31 @@ function drawNodeCardText(
   }
 
   // The card's anchor (the point on it that sits on the node), as a fraction
-  // of its width and height.
+  // of its width and height. Edge nodes leave a gap so the card sits past the
+  // node rather than over neighbouring dots in the same strip.
+  const clear = nodeRadius + EDGE_NODE_CARD_CLEARANCE_PX;
   const anchor =
     node.side === 'left'
-      ? { u: 0, v: 0.5, x: x - nodeRadius, y }
+      ? { u: 0, v: 0.5, x: x + clear, y }
       : node.side === 'right'
-      ? { u: 1, v: 0.5, x: x + nodeRadius, y }
+      ? { u: 1, v: 0.5, x: x - clear, y }
       : node.side === 'top'
-      ? { u: 0.5, v: 0, x, y: y - nodeRadius }
+      ? { u: 0.5, v: 0, x, y: y + clear }
       : node.side === 'bottom'
-      ? { u: 0.5, v: 1, x, y: y + nodeRadius }
+      ? { u: 0.5, v: 1, x, y: y - clear }
       : { u: 0.5, v: 1, x, y: y - nodeRadius - 6 };
+  // An edge node's card also stays clear of the strips on every edge, so it
+  // doesn't cover nodes near a corner.
+  const margin = node.side
+    ? EDGE_NODE_INSET_PX + EDGE_NODE_RADIUS_PX + EDGE_NODE_CARD_CLEARANCE_PX
+    : LABEL_EDGE_MARGIN;
   const left = Math.max(
-    LABEL_EDGE_MARGIN,
-    Math.min(anchor.x - anchor.u * width, p.width - width - LABEL_EDGE_MARGIN)
+    margin,
+    Math.min(anchor.x - anchor.u * width, p.width - width - margin)
   );
   const top = Math.max(
-    LABEL_EDGE_MARGIN,
-    Math.min(
-      anchor.y - anchor.v * height,
-      p.height - height - LABEL_EDGE_MARGIN
-    )
+    margin,
+    Math.min(anchor.y - anchor.v * height, p.height - height - margin)
   );
   const originX = left + anchor.u * width;
   const originY = top + anchor.v * height;
@@ -235,7 +248,10 @@ function drawNodeCardText(
   }
 
   p.fill(255);
-  p.textAlign(p.LEFT, p.TOP);
+  // By value: the card is drawn on a p5.Graphics layer, which doesn't carry
+  // p5's LEFT/TOP constants, so those were undefined and text rode up out of
+  // the card.
+  p.textAlign(TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP);
   p.textSize(NODE_CARD_TITLE_SIZE);
   p.textLeading(NODE_CARD_TITLE_LEADING);
   titleLines.forEach((line, index) => {

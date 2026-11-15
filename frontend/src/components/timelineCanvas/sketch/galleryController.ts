@@ -1,4 +1,5 @@
 import type p5 from 'p5';
+import { frameLerp } from '../geometry';
 
 export type GalleryNavRegion = {
   cx: number;
@@ -15,12 +16,13 @@ export type GalleryController = {
   // modulo, so displayIndex can ease past either end for a seamless loop.
   getDisplayIndex: () => number;
   step: (delta: number) => void;
-  animate: () => void;
+  animate: (deltaTimeMs: number) => void;
   setNavRegions: (regions: GalleryNavRegion[]) => void;
   getNavRegions: () => GalleryNavRegion[];
 };
 
-// How quickly the strip eases toward the active image when an arrow is pressed.
+// How quickly the strip eases toward the active image when an arrow is pressed
+// (tuned for ~60fps; scaled via frameLerp).
 const SLIDE_LERP = 0.18;
 const SLIDE_SNAP = 0.001;
 
@@ -67,8 +69,9 @@ export function createGalleryController(p: p5): GalleryController {
       // stopping — drawGalleryStrip wraps it back into range for looping.
       activeIndex += delta;
     },
-    animate: () => {
-      displayIndex += (activeIndex - displayIndex) * SLIDE_LERP;
+    animate: (deltaTimeMs) => {
+      displayIndex +=
+        (activeIndex - displayIndex) * frameLerp(SLIDE_LERP, deltaTimeMs);
       if (Math.abs(activeIndex - displayIndex) < SLIDE_SNAP) {
         displayIndex = activeIndex;
       }

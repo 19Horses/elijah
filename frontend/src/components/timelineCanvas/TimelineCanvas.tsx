@@ -59,6 +59,7 @@ function TimelineCanvas({
   isolateControlRef,
   focusItemControlRef,
   audioControlRef,
+  audioStopControlRef,
   onAudioStateChange,
   onFocusFadeChange,
   onContentFocus,
@@ -373,6 +374,9 @@ function TimelineCanvas({
     const audio = createAudioController();
     audioRef.current = audio;
     audioToggleRef.current = (src) => audioRef.current?.toggle(src);
+    if (audioStopControlRef) {
+      audioStopControlRef.current = () => audioRef.current?.stop();
+    }
     onAudioStateChangeRef.current?.(null);
 
     const sketch = createTimelineSketch({

@@ -4,10 +4,8 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type PointerEvent as ReactPointerEvent,
 } from 'react';
 import ReactPlayer from 'react-player';
-import ContentTypeIcon from './ContentTypeIcon';
 import type { DetailImageRect, FocusTarget } from './timelineCanvas/types';
 
 export type VideoPlayerState = {
@@ -32,10 +30,6 @@ type VideoOverlayPlayerProps = {
   onJumpToItem: () => void;
 };
 
-type Position = { x: number; y: number };
-
-const MARGIN_PX = 24;
-
 function VideoOverlayPlayer({
   state,
   isZoomedIn,
@@ -49,17 +43,7 @@ function VideoOverlayPlayer({
   onJumpToItem,
 }: VideoOverlayPlayerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [miniPos, setMiniPos] = useState<Position | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-
-  const dragRef = useRef<{
-    startX: number;
-    startY: number;
-    initialX: number;
-    initialY: number;
-    moved: boolean;
-  } | null>(null);
 
   // Sync fullscreen state
   useEffect(() => {
@@ -81,101 +65,6 @@ function VideoOverlayPlayer({
     }
   }, []);
 
-  // Clamping and snapping to nearest screen edge (left vs right, top vs bottom)
-  const snapToEdges = useCallback((x: number, y: number) => {
-    const el = containerRef.current;
-    const width = el?.offsetWidth ?? 240;
-    const height = el?.offsetHeight ?? 180;
-    const windowWidth = window.innerWidth;
-    const windowHeight = window.innerHeight;
-
-    // Snap horizontally to left or right margin
-    const distLeft = Math.abs(x - MARGIN_PX);
-    const distRight = Math.abs(windowWidth - MARGIN_PX - width - x);
-    const snappedX =
-      distLeft < distRight ? MARGIN_PX : windowWidth - MARGIN_PX - width;
-
-    // Clamp vertically, snapping to top or bottom margin if within reasonable range
-    const maxTop = Math.max(MARGIN_PX, windowHeight - MARGIN_PX - height);
-    let snappedY = Math.min(Math.max(MARGIN_PX, y), maxTop);
-    const distTop = Math.abs(snappedY - MARGIN_PX);
-    const distBottom = Math.abs(maxTop - snappedY);
-    if (distTop < 60) {
-      snappedY = MARGIN_PX;
-    } else if (distBottom < 60) {
-      snappedY = maxTop;
-    }
-
-    return { x: snappedX, y: snappedY };
-  }, []);
-
-  // Recalculate snap on window resize
-  useEffect(() => {
-    const handleResize = () => {
-      setMiniPos((prev) => {
-        if (!prev) return null;
-        return snapToEdges(prev.x, prev.y);
-      });
-    };
-    window.addEventListener('resize', handleResize);
-    return () => {
-      window.removeEventListener('resize', handleResize);
-    };
-  }, [snapToEdges]);
-
-  const handlePointerDown = (e: ReactPointerEvent) => {
-    if (isZoomedIn || isFullscreen) return;
-    // Don't start drag on buttons or interactive elements
-    const target = e.target as HTMLElement;
-    if (target.closest('button')) return;
-
-    e.preventDefault();
-    const el = containerRef.current;
-    const currentRect = el?.getBoundingClientRect();
-    const initialX = currentRect
-      ? currentRect.left
-      : window.innerWidth - 240 - MARGIN_PX;
-    const initialY = currentRect ? currentRect.top : MARGIN_PX;
-
-    dragRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      initialX,
-      initialY,
-      moved: false,
-    };
-    setIsDragging(true);
-
-    const onPointerMove = (moveEvt: PointerEvent) => {
-      if (!dragRef.current) return;
-      const dx = moveEvt.clientX - dragRef.current.startX;
-      const dy = moveEvt.clientY - dragRef.current.startY;
-      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-        dragRef.current.moved = true;
-      }
-      const rawX = dragRef.current.initialX + dx;
-      const rawY = dragRef.current.initialY + dy;
-      setMiniPos({ x: rawX, y: rawY });
-    };
-
-    const onPointerUp = () => {
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-      setIsDragging(false);
-
-      if (dragRef.current) {
-        setMiniPos((prev) => {
-          if (!prev) return null;
-          return snapToEdges(prev.x, prev.y);
-        });
-        dragRef.current = null;
-      }
-    };
-
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
-  };
-
   const containerStyle: CSSProperties = isFullscreen
     ? {
         position: 'fixed',
@@ -193,27 +82,8 @@ function VideoOverlayPlayer({
         height: `${imageRect.height}px`,
         zIndex: 10,
       }
-    : !isZoomedIn && miniPos
-    ? {
-        position: 'fixed',
-        left: `${miniPos.x}px`,
-        top: `${miniPos.y}px`,
-        width: 'var(--top-right-card-width, 240px)',
-        zIndex: 22,
-        transition: isDragging
-          ? 'none'
-          : 'left 0.25s cubic-bezier(0.2, 0.9, 0.3, 1), top 0.25s cubic-bezier(0.2, 0.9, 0.3, 1)',
-      }
-    : !isZoomedIn
-    ? {
-        // In the right-hand column, as far in as the "e" button.
-        position: 'fixed',
-        right: '2.25rem',
-        top: '2.25rem',
-        width: 'var(--top-right-card-width, 240px)',
-        zIndex: 22,
-      }
-    : {};
+    : // The small player sits inline in the right-hand column.
+      {};
 
   return (
     <div
@@ -224,9 +94,8 @@ function VideoOverlayPlayer({
           : 'video-overlay-player--mini'
       }${isFullscreen ? ' video-overlay-player--fullscreen' : ''}${
         fading ? ' video-overlay-player--fading' : ''
-      }${isDragging ? ' video-overlay-player--dragging' : ''}`}
+      }`}
       style={containerStyle}
-      onPointerDown={handlePointerDown}
     >
       <div className="video-overlay-player__screen">
         <ReactPlayer
@@ -261,20 +130,6 @@ function VideoOverlayPlayer({
             </svg>
           )}
         </button>
-
-        {!isZoomedIn && !isFullscreen && (
-          <button
-            type="button"
-            className="video-player__action-btn video-mini-player__close"
-            onClick={onClose}
-            aria-label="Close video"
-            title="Close video"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-            </svg>
-          </button>
-        )}
       </div>
 
       {!isZoomedIn && !isFullscreen && (
@@ -285,10 +140,15 @@ function VideoOverlayPlayer({
             onClick={onJumpToItem}
             aria-label={`Jump to ${state.title}`}
           >
-            <ContentTypeIcon
-              type="videoAsset"
-              className="video-mini-player__icon"
-            />
+            {state.posterUrl ? (
+              <img
+                className="video-mini-player__art"
+                src={state.posterUrl}
+                alt=""
+              />
+            ) : (
+              <div className="video-mini-player__art video-mini-player__art--empty" />
+            )}
             <span className="video-mini-player__title">{state.title}</span>
           </button>
           <button
@@ -307,6 +167,17 @@ function VideoOverlayPlayer({
                 <path d="M8 5v14l11-7z" />
               </svg>
             )}
+          </button>
+          <button
+            type="button"
+            className="video-mini-player__close"
+            onClick={onClose}
+            aria-label="Close video"
+            title="Close video"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+            </svg>
           </button>
         </div>
       )}

@@ -163,6 +163,7 @@ function Home({
   const audioControlRef = useRef<((src: string) => void) | undefined>(
     undefined
   );
+  const audioStopControlRef = useRef<(() => void) | undefined>(undefined);
   const [audioState, setAudioState] = useState<AudioPlayerState | null>(null);
   const [videoState, setVideoState] = useState<VideoPlayerState | null>(null);
 
@@ -174,6 +175,17 @@ function Home({
   const isVideoZoomedIn = Boolean(
     isVideoFocused && detailReady && detailImageRect !== null
   );
+
+  const showMiniVideo = videoState !== null && !isVideoFocused;
+  const hasAudioPlayer = audioState !== null && audioState !== undefined;
+  // Whether the video's small player came in before the audio player, and so
+  // sits above it; settled whenever only one of them is showing.
+  const [videoPlayerFirst, setVideoPlayerFirst] = useState(false);
+  useEffect(() => {
+    if (showMiniVideo !== hasAudioPlayer) {
+      setVideoPlayerFirst(showMiniVideo);
+    }
+  }, [showMiniVideo, hasAudioPlayer]);
 
   const handleAudioStateChange = useCallback(
     (state: AudioPlayerState | null) => {
@@ -443,6 +455,7 @@ function Home({
       newsletterContent: getContentDetailNewsletterContent(contentDetail),
       presentAsNewsletter: getContentDetailIsSingleImage(contentDetail),
       isAudio: contentDetail._type === 'audioAsset',
+      isEvent: contentDetail._type === 'event',
       imageUrls: getContentDetailImageUrls(contentDetail),
     };
   }, [contentDetail, detailReady, focusSlug]);
@@ -772,6 +785,7 @@ function Home({
           isolateControlRef={isolateOwnBranchRef}
           focusItemControlRef={focusItemControlRef}
           audioControlRef={audioControlRef}
+          audioStopControlRef={audioStopControlRef}
           onAudioStateChange={handleAudioStateChange}
           viewersBySlug={viewersBySlug}
           onContentFocus={handleContentFocus}
@@ -790,20 +804,40 @@ function Home({
           onBack={() => resetViewControlRef?.current?.()}
         />
         {/* The right-hand column, as wide as the left: the audio player
-            while a track is loaded. */}
-        {audioState && (
+            while a track is loaded, and the video's small player while it
+            plays on out of its item (whose place the item keeps on the map,
+            outlined), stacked in the order they came in. */}
+        {(audioState || showMiniVideo) && (
           <div
             className={`right-stack${
+              showMiniVideo ? ' right-stack--with-video' : ''
+            }${videoPlayerFirst ? ' right-stack--video-first' : ''}${
               drawerOpen ? ' top-right-stack--drawer-open' : ''
             }`}
           >
-            <MediaPlayer
-              state={audioState}
-              onToggle={() => audioControlRef.current?.(audioState.src)}
-              onJumpToItem={() =>
-                focusItemControlRef.current?.(audioState.focusTarget)
-              }
-            />
+            {audioState && (
+              <MediaPlayer
+                state={audioState}
+                onToggle={() => audioControlRef.current?.(audioState.src)}
+                onJumpToItem={() =>
+                  focusItemControlRef.current?.(audioState.focusTarget)
+                }
+                onClose={() => audioStopControlRef.current?.()}
+              />
+            )}
+            {videoState && showMiniVideo && (
+              <VideoOverlayPlayer
+                state={videoState}
+                isZoomedIn={false}
+                fading={videoFadingOut}
+                onTogglePlay={handleToggleVideoPlay}
+                onPlay={handleVideoPlay}
+                onPause={handleVideoPause}
+                onEnded={handleVideoEnded}
+                onClose={handleCloseVideo}
+                onJumpToItem={handleJumpToVideoItem}
+              />
+            )}
           </div>
         )}
         <div
@@ -1053,21 +1087,6 @@ function Home({
               ))}
           </div>
         </div>
-        {/* Out of its item, the video carries on in a small player (whose
-            place the item keeps on the map, outlined). */}
-        {videoState && !isVideoFocused && (
-          <VideoOverlayPlayer
-            state={videoState}
-            isZoomedIn={false}
-            fading={videoFadingOut}
-            onTogglePlay={handleToggleVideoPlay}
-            onPlay={handleVideoPlay}
-            onPause={handleVideoPause}
-            onEnded={handleVideoEnded}
-            onClose={handleCloseVideo}
-            onJumpToItem={handleJumpToVideoItem}
-          />
-        )}
         {videoState && isVideoZoomedIn && (
           <VideoOverlayPlayer
             state={videoState}

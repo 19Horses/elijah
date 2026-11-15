@@ -1,6 +1,7 @@
 import type p5 from 'p5';
 import { pageBackgroundAt } from '../canvasEffects';
 import { extractSubPath, polylineLength } from '../connectors';
+import { frameLerp } from '../geometry';
 import {
   MAIN_USERNAME,
   VIEWER_DOT_FADE_MS,
@@ -257,7 +258,7 @@ export function createViewerDotAnimator() {
       state.y = target.y;
       state.hover +=
         ((target.userId === hoveredUserId ? 1 : 0) - state.hover) *
-        VIEWER_DOT_HOVER_LERP;
+        frameLerp(VIEWER_DOT_HOVER_LERP, elapsed);
 
       if (state.ghost) {
         state.ghost.alpha -= fadeStep;

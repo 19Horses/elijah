@@ -6,6 +6,8 @@ export type UserRecord = {
   email: string;
   username: string;
   colour: string;
+  // Whether they opted into the mailing list at sign-up.
+  mailingList: boolean;
   collectedItems: CollectedItem[];
 };
 
@@ -13,6 +15,7 @@ type CreateUserInput = {
   email: string;
   username: string;
   colour: string;
+  mailingList: boolean;
 };
 
 type CreateUserResult =
@@ -23,6 +26,7 @@ export async function createUser({
   email,
   username,
   colour,
+  mailingList,
 }: CreateUserInput): Promise<CreateUserResult> {
   const normalizedEmail = email.trim().toLowerCase();
   const normalizedUsername = username.trim();
@@ -46,6 +50,7 @@ export async function createUser({
     email: normalizedEmail,
     username: normalizedUsername,
     colour,
+    mailingList,
     collectedItems: [],
   } satisfies UserRecord);
 
