@@ -35,7 +35,10 @@ const AppRoutes = () => {
       setRevealCountdowns(false);
       return undefined;
     }
-    const id = window.setTimeout(() => setRevealCountdowns(true), E_MENU_ENTER_MS);
+    const id = window.setTimeout(
+      () => setRevealCountdowns(true),
+      E_MENU_ENTER_MS
+    );
     return () => window.clearTimeout(id);
   }, [timelineReady, isTimelineRoute]);
   const [hoveredCollectedContentId, setHoveredCollectedContentId] = useState<
