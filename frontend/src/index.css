@@ -338,6 +338,14 @@ main.main--home {
   width: 100%;
 }
 
+.timeline-item-card--private .timeline-item-card__image {
+  filter: blur(8px);
+}
+
+.timeline-item-card__description--private {
+  color: rgba(0, 0, 0, 0.45);
+}
+
 .timeline-item-card__body {
   display: flex;
   flex-direction: column;

@@ -57,6 +57,7 @@ export function createTimelineRuntime(): TimelineRuntime {
     activeHighlightType: null,
     highlightStrength: 0,
     branchDimStrength: 0,
+    emptyOwnTimeline: false,
     guestUnlock: 0,
     guestUnlockDelayUntil: null,
     prevUsername: null,

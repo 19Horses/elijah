@@ -459,7 +459,7 @@ function Home({
   // ones its owner collected and the main timeline ones it passes through
   // (those shown as smaller cards).
   const viewedTimelineItems = useMemo(() => {
-    if (!branchFocus) {
+    if (!branchFocus || branchFocus.empty) {
       return null;
     }
     const mainItems = timeline?.items ?? [];
@@ -944,18 +944,24 @@ function Home({
           {branchFocus && (
             <div className="branch-focus-card">
               <span className="branch-focus-card__label">
-                You are viewing{' '}
-                <span
-                  className="branch-focus-card__name"
-                  style={
-                    {
-                      '--branch-colour': branchFocus.colour,
-                    } as React.CSSProperties
-                  }
-                >
-                  {branchFocus.username}
-                </span>
-                &rsquo;s timeline&hellip;
+                {branchFocus.empty ? (
+                  'Your timeline is empty'
+                ) : (
+                  <>
+                    You are viewing{' '}
+                    <span
+                      className="branch-focus-card__name"
+                      style={
+                        {
+                          '--branch-colour': branchFocus.colour,
+                        } as React.CSSProperties
+                      }
+                    >
+                      {branchFocus.username}
+                    </span>
+                    &rsquo;s timeline&hellip;
+                  </>
+                )}
               </span>
               <button
                 type="button"
@@ -970,7 +976,9 @@ function Home({
               hidden while an item is being viewed. */}
           <div
             className={`collection-card-list${
-              focusSlug !== null ? ' collection-card-list--hidden' : ''
+              focusSlug !== null || branchFocus?.empty
+                ? ' collection-card-list--hidden'
+                : ''
             }`}
           >
             {/* A timeline being viewed lists its items, in place of the

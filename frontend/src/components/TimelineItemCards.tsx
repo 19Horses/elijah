@@ -43,6 +43,7 @@ function TimelineItemCards({
       {ordered.map(({ content, compact, collectedAt }, index) => {
         const imageUrl = getMainTimelineImageUrl(content);
         const kind = getContentTypeKicker(content._type);
+        const isPrivate = content.isPrivate;
         const collectedLabel =
           !compact && collectedAt
             ? formatFullDate(new Date(collectedAt).getTime())
@@ -53,7 +54,7 @@ function TimelineItemCards({
             type="button"
             className={`timeline-item-card${
               compact ? ' timeline-item-card--compact' : ''
-            }`}
+            }${isPrivate ? ' timeline-item-card--private' : ''}`}
             style={{ '--card-index': index } as React.CSSProperties}
             onClick={() => onOpen(content._id)}
             onMouseEnter={() => onHover(content._id)}
@@ -79,15 +80,20 @@ function TimelineItemCards({
                   {formatFullDate(timeOf(content))}
                 </span>
               )}
-              {/* Collected items carry their description; the main timeline's
-                  smaller cards don't. */}
-              {!compact &&
+              {/* Private items the viewer hasn't collected: no real copy. */}
+              {isPrivate ? (
+                <span className="timeline-item-card__description timeline-item-card__description--private">
+                  Private content
+                </span>
+              ) : (
+                !compact &&
                 'description' in content &&
                 hasRichText(content.description) && (
                   <span className="timeline-item-card__description">
                     <RichText value={content.description} />
                   </span>
-                )}
+                )
+              )}
             </span>
           </button>
         );

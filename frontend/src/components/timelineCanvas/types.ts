@@ -120,6 +120,8 @@ export type BranchFocusInfo = {
   own: boolean;
   // The main timeline items it branches off, rejoins or runs along.
   mainItemIds: string[];
+  // Own timeline with nothing collected yet — notice card, no map zoom.
+  empty?: boolean;
 };
 
 // The persistent mini-player state: the loaded audio track's metadata, shown
@@ -320,6 +322,8 @@ export type TimelineRuntime = {
   // at full colour while it fades.
   branchDimStrength: number;
   branchDimRow: number | null;
+  // "Your timeline" with nothing collected — notice card only, no branch zoom.
+  emptyOwnTimeline: boolean;
   // 0 = guest-locked (grey branches + blurred collected), 1 = revealed after
   // login. Lerps up after the nav drawer has closed.
   guestUnlock: number;

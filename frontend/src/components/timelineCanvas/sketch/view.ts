@@ -1231,6 +1231,10 @@ export function createViewContext(
   };
 
   const clearBranchFocus = () => {
+    if (runtime.emptyOwnTimeline) {
+      runtime.emptyOwnTimeline = false;
+      deps.refs.onBranchFocusRef.current?.(null);
+    }
     if (runtime.focusedBranchRow !== null) {
       setBranchFocus(null);
     }
@@ -1385,16 +1389,12 @@ export function createViewContext(
     };
   };
 
-  // The viewer's own timeline (from "Your items" in the menu), highlighted
-  // just as clicking it on the map would; back to the full map when they
-  // haven't collected anything.
+  // The viewer's own timeline (from "Your timeline" in the menu), highlighted
+  // just as clicking it on the map would; an empty notice when they haven't
+  // collected anything yet.
   const soloOwnBranch = () => {
     const username = deps.currentUsername;
-    const row = deps.processedCollected
-      .flatMap((item) => item.sources)
-      .find((source) => source.username === username)?.rowIndex;
-    if (row === undefined) {
-      showFullMap();
+    if (!username) {
       return;
     }
     // Leaving a collection that's open for it: the collection closes (its
@@ -1403,6 +1403,29 @@ export function createViewContext(
       runtime.branchIsolateActive = false;
       deps.refs.onBranchIsolationExitRef.current?.();
     }
+    const row = deps.processedCollected
+      .flatMap((item) => item.sources)
+      .find((source) => source.username === username)?.rowIndex;
+    if (row === undefined) {
+      resetCanvasFocus(runtime);
+      deps.refs.onContentUnfocusRef.current?.();
+      runtime.focusContentFade = 0;
+      notifyFocusFade(deps);
+      runtime.emptyOwnTimeline = true;
+      runtime.focusedBranchRow = null;
+      runtime.branchSoloActive = false;
+      deps.refs.onBranchFocusRef.current?.({
+        username,
+        colour: deps.previewColour,
+        own: true,
+        empty: true,
+        mainItemIds: [],
+      });
+      // Back to the default fit view so the notice isn't over a zoomed map.
+      animateToFitAll();
+      return;
+    }
+    runtime.emptyOwnTimeline = false;
     // Just as clicking their own line on the map would.
     focusBranch(row);
   };
