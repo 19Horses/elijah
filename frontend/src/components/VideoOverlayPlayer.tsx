@@ -44,6 +44,7 @@ function VideoOverlayPlayer({
 }: VideoOverlayPlayerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [screenHovered, setScreenHovered] = useState(false);
 
   // Sync fullscreen state
   useEffect(() => {
@@ -85,6 +86,10 @@ function VideoOverlayPlayer({
     : // The small player sits inline in the right-hand column.
       {};
 
+  const showZoomedPoster = isZoomedIn && !state.playing && !isFullscreen;
+  // Play stays visible while paused; pause glyph only appears on hover.
+  const pauseIconVisible = !state.playing || screenHovered;
+
   return (
     <div
       ref={containerRef}
@@ -94,10 +99,14 @@ function VideoOverlayPlayer({
           : 'video-overlay-player--mini'
       }${isFullscreen ? ' video-overlay-player--fullscreen' : ''}${
         fading ? ' video-overlay-player--fading' : ''
-      }`}
+      }${showZoomedPoster ? ' video-overlay-player--poster' : ''}`}
       style={containerStyle}
     >
-      <div className="video-overlay-player__screen">
+      <div
+        className="video-overlay-player__screen"
+        onPointerEnter={() => setScreenHovered(true)}
+        onPointerLeave={() => setScreenHovered(false)}
+      >
         <ReactPlayer
           url={state.url}
           width="100%"
@@ -112,24 +121,61 @@ function VideoOverlayPlayer({
           onEnded={onEnded}
         />
 
-        {/* Fullscreen toggle button */}
-        <button
-          type="button"
-          className="video-player__action-btn video-player__fullscreen"
-          onClick={handleToggleFullscreen}
-          aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-          title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-        >
-          {isFullscreen ? (
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z" />
-            </svg>
+        {showZoomedPoster ? (
+          state.posterUrl ? (
+            <img
+              className="video-overlay-player__poster"
+              src={state.posterUrl}
+              alt=""
+            />
           ) : (
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" />
-            </svg>
-          )}
-        </button>
+            <div className="video-overlay-player__poster video-overlay-player__poster--empty" />
+          )
+        ) : null}
+
+        {isZoomedIn || isFullscreen ? (
+          <button
+            type="button"
+            className={`video-overlay-player__play-toggle${
+              pauseIconVisible
+                ? ''
+                : ' video-overlay-player__play-toggle--hidden'
+            }`}
+            onClick={onTogglePlay}
+            aria-label={state.playing ? 'Pause' : 'Play'}
+          >
+            {state.playing ? (
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="6" y="5" width="4" height="14" rx="1" />
+                <rect x="14" y="5" width="4" height="14" rx="1" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
+          </button>
+        ) : null}
+
+        {state.playing || isFullscreen ? (
+          <button
+            type="button"
+            className="video-player__action-btn video-player__fullscreen"
+            onClick={handleToggleFullscreen}
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          >
+            {isFullscreen ? (
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" />
+              </svg>
+            )}
+          </button>
+        ) : null}
       </div>
 
       {!isZoomedIn && !isFullscreen && (

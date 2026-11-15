@@ -9,6 +9,9 @@ export type UserRecord = {
   // Whether they opted into the mailing list at sign-up.
   mailingList: boolean;
   collectedItems: CollectedItem[];
+  // Main-timeline content ids this user has opened. Omitted until first
+  // visit seeds a baseline; then grown via arrayUnion on click-into.
+  seenTimelineIds?: string[];
 };
 
 type CreateUserInput = {

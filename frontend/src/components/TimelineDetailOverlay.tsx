@@ -1,80 +1,8 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { DetailImageRect } from './timelineCanvas/types';
 import RichText from './RichText';
 import { hasRichText, type RichTextValue } from '../utils/richText';
-
-// Height (px) of the fade applied to an overflowing text block's edge.
-const SCROLL_FADE_PX = 42;
-
-// Builds a mask that fades the top and/or bottom edge to transparent, so
-// overflowing text dissolves into the background on whichever side has more
-// content to scroll to.
-function buildScrollFadeMask(
-  top: boolean,
-  bottom: boolean
-): string | undefined {
-  if (!top && !bottom) {
-    return undefined;
-  }
-  const topStop = top ? `transparent 0, #000 ${SCROLL_FADE_PX}px` : '#000 0';
-  const bottomStop = bottom
-    ? `#000 calc(100% - ${SCROLL_FADE_PX}px), transparent 100%`
-    : '#000 100%';
-  return `linear-gradient(to bottom, ${topStop}, ${bottomStop})`;
-}
-
-// A scrollable text block that fades its top/bottom edge only while there's
-// hidden content in that direction.
-function ScrollFadeText({
-  className,
-  children,
-}: {
-  className: string;
-  children: ReactNode;
-}) {
-  const ref = useRef<HTMLParagraphElement>(null);
-  const [fade, setFade] = useState({ top: false, bottom: false });
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) {
-      return;
-    }
-    const update = () => {
-      const top = el.scrollTop > 1;
-      const bottom = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
-      setFade((prev) =>
-        prev.top === top && prev.bottom === bottom ? prev : { top, bottom }
-      );
-    };
-    update();
-    el.addEventListener('scroll', update, { passive: true });
-    const observer = new ResizeObserver(update);
-    observer.observe(el);
-    return () => {
-      el.removeEventListener('scroll', update);
-      observer.disconnect();
-    };
-  }, [children]);
-
-  const mask = buildScrollFadeMask(fade.top, fade.bottom);
-  return (
-    <p
-      ref={ref}
-      className={className}
-      style={mask ? { maskImage: mask, WebkitMaskImage: mask } : undefined}
-    >
-      {children}
-    </p>
-  );
-}
 
 // A picture shown full screen over everything; a click anywhere or Escape
 // closes it.
@@ -141,6 +69,9 @@ export type TimelineDetailView = {
   // all the info beside it like a music track's. Any can be clicked to view
   // full screen.
   imageUrls: string[];
+  // First open of an unseen main-timeline item: show the live-style New mark
+  // above the title for this view.
+  unseen?: boolean;
 };
 
 type TimelineDetailOverlayProps = {
@@ -151,8 +82,6 @@ type TimelineDetailOverlayProps = {
   onBack?: () => void;
 };
 
-// Gap between the image and the text placed above/below it.
-const TEXT_GAP_PX = 16;
 // Gutter between the image and the side text column: a share of the viewport
 // width, clamped so it neither collapses nor sprawls.
 const SIDE_GAP_VW = 0.068;
@@ -176,23 +105,8 @@ function TimelineDetailOverlay({
     return null;
   }
 
-  // Space available above the image top and below the image bottom, so the
-  // text blocks stay within the viewport.
-  const aboveSpace = Math.max(0, imageRect.top - TEXT_GAP_PX * 2);
-  const belowSpace = Math.max(
-    0,
-    window.innerHeight - (imageRect.top + imageRect.height) - TEXT_GAP_PX * 2
-  );
-
-  // Newsletters (and solitary images) put their body text to the right of the
-  // image, ending as far from the right edge of the viewport as the image
-  // starts from the left, so the text sits as far from the right edge node as
-  // the image does from the left one; everything else stacks below.
-  const isNewsletter =
-    detail.presentAsNewsletter || hasRichText(detail.newsletterContent);
-  // Real newsletters carry their own content; a solitary image reuses its
-  // description as the side body.
-  const sideBody = hasRichText(detail.newsletterContent)
+  // Newsletter body when present; otherwise the regular description.
+  const bodyContent = hasRichText(detail.newsletterContent)
     ? detail.newsletterContent
     : detail.description;
   const sideGap = Math.min(
@@ -211,44 +125,12 @@ function TimelineDetailOverlay({
   );
 
   const isGallery = detail.imageUrls.length > 1;
-  // Galleries, music, videos and events put all their info in a column beside
-  // the picture (leaving the top free for "Back to world map").
-  const infoBeside =
-    detail.isAudio || detail.isEvent || isGallery || detail.videoUrl !== null;
-
-  // The way back out to the whole map: heading the title when that sits
-  // above the picture, or heading the photo gallery's info column; else on
-  // its own above the picture.
-  const metaAbove = !infoBeside && !isNewsletter;
-  const backHeadsTitle = metaAbove || isGallery;
-  const backNode = onBack ? (
-    <button
-      type="button"
-      className={`timeline-detail__back${
-        backHeadsTitle ? '' : ' timeline-detail__back--alone'
-      }`}
-      onClick={onBack}
-    >
-      <span aria-hidden="true">&larr;</span> Back to world map
-    </button>
-  ) : null;
-
-  const linkNode = detail.link ? (
-    <a
-      className="timeline-detail__link"
-      href={detail.link}
-      rel="noopener noreferrer"
-      target="_blank"
-    >
-      {detail.link}
-    </a>
-  ) : null;
 
   return (
     <aside
       className={`timeline-detail timeline-detail--visible${
-        isNewsletter ? ' timeline-detail--newsletter' : ''
-      }${fading ? ' timeline-detail--fading' : ''}`}
+        fading ? ' timeline-detail--fading' : ''
+      }`}
       aria-label={detail.title}
       style={{
         left: `${imageRect.left}px`,
@@ -257,7 +139,6 @@ function TimelineDetailOverlay({
         height: `${imageRect.height}px`,
       }}
     >
-      {backHeadsTitle ? null : backNode}
       {isGallery ? (
         <div
           className="timeline-detail__gallery"
@@ -304,81 +185,59 @@ function TimelineDetailOverlay({
             document.body
           )
         : null}
-      {infoBeside ? (
-        <div
-          className={`timeline-detail__side timeline-detail__side--audio${
-            detail.isEvent ? ' timeline-detail__side--event' : ''
-          }`}
-          // Spans the full window height, scrolling as one when the
-          // description runs long, while short info stays level with the
-          // picture (padded in by its top).
-          style={{
-            left: `calc(100% + ${sideGap}px)`,
-            width: `${sideWidth}px`,
-            top: `${-imageRect.top}px`,
-            height: `${window.innerHeight}px`,
-            paddingTop: `${imageRect.top}px`,
-            paddingBottom: `${imageRect.top}px`,
-          }}
-        >
-          {isGallery ? backNode : null}
-          <h2 className="timeline-detail__title">{detail.title}</h2>
-          {detail.dateLabel ? (
-            <p className="timeline-detail__date">{detail.dateLabel}</p>
-          ) : null}
-          {hasRichText(detail.description) ? (
-            <p className="timeline-detail__description timeline-detail__description--full">
-              <RichText value={detail.description} />
+      <div
+        className="timeline-detail__side"
+        // Spans the full window height, scrolling as one when the copy runs
+        // long, while short info stays level with the picture top.
+        style={{
+          left: `calc(100% + ${sideGap}px)`,
+          width: `${sideWidth}px`,
+          top: `${-imageRect.top}px`,
+          height: `${window.innerHeight}px`,
+          paddingTop: `${imageRect.top}px`,
+          paddingBottom: `${imageRect.top}px`,
+        }}
+      >
+        {onBack ? (
+          <button
+            type="button"
+            className="timeline-detail__back"
+            onClick={onBack}
+          >
+            <span aria-hidden="true">&larr;</span> Back to world map
+          </button>
+        ) : null}
+        <div className="timeline-detail__heading">
+          {detail.unseen ? (
+            <p className="timeline-detail__unseen timeline-detail__unseen--end">
+              New
+              <span
+                className="timeline-detail__unseen-square"
+                aria-hidden="true"
+              />
             </p>
           ) : null}
-          {linkNode}
-        </div>
-      ) : (
-        <div
-          className="timeline-detail__meta"
-          // Newsletters caption the image from below; everything else titles
-          // it from above.
-          style={{ maxHeight: `${isNewsletter ? belowSpace : aboveSpace}px` }}
-        >
-          {metaAbove ? backNode : null}
           <h2 className="timeline-detail__title">{detail.title}</h2>
-          {detail.dateLabel ? (
-            <p className="timeline-detail__date">{detail.dateLabel}</p>
-          ) : null}
         </div>
-      )}
-      {infoBeside ? null : isNewsletter ? (
-        <div
-          className="timeline-detail__side"
-          style={{
-            left: `calc(100% + ${sideGap}px)`,
-            width: `${sideWidth}px`,
-            // Span the full window height (so the text can scroll across it)
-            // while keeping the first line at the image's top via top padding.
-            top: `${-imageRect.top}px`,
-            height: `${window.innerHeight}px`,
-            paddingTop: `${imageRect.top}px`,
-            paddingBottom: `${imageRect.top}px`,
-          }}
-        >
+        {detail.dateLabel ? (
+          <p className="timeline-detail__date">{detail.dateLabel}</p>
+        ) : null}
+        {hasRichText(bodyContent) ? (
           <div className="timeline-detail__body">
-            <RichText value={sideBody} />
+            <RichText value={bodyContent} />
           </div>
-          {linkNode}
-        </div>
-      ) : (
-        <div
-          className="timeline-detail__below"
-          style={{ maxHeight: `${belowSpace}px` }}
-        >
-          {hasRichText(detail.description) ? (
-            <ScrollFadeText className="timeline-detail__description">
-              <RichText value={detail.description} />
-            </ScrollFadeText>
-          ) : null}
-          {linkNode}
-        </div>
-      )}
+        ) : null}
+        {detail.link ? (
+          <a
+            className="timeline-detail__link"
+            href={detail.link}
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            {detail.link}
+          </a>
+        ) : null}
+      </div>
     </aside>
   );
 }

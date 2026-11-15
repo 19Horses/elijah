@@ -48,6 +48,7 @@ function TimelineCanvas({
   hoveredItemContentId = null,
   hasCollectionPanel = false,
   viewersBySlug = EMPTY_VIEWERS,
+  seenTimelineIds = null,
   focusContentIdControlRef,
   resetViewControlRef,
   soloTimelineControlRef,
@@ -146,6 +147,7 @@ function TimelineCanvas({
     highlightedMainContentId
   );
   const viewersRef = useRef(viewersBySlug);
+  const seenTimelineIdsRef = useRef(seenTimelineIds);
   const collectorsRef = useRef(collectorsByContent(collectedRows));
   const reloadPreviewRef = useRef<
     | ((items: ReturnType<typeof buildProcessedCollectionPreview>) => void)
@@ -257,6 +259,10 @@ function TimelineCanvas({
   }, [viewersBySlug]);
 
   useEffect(() => {
+    seenTimelineIdsRef.current = seenTimelineIds;
+  }, [seenTimelineIds]);
+
+  useEffect(() => {
     setCollectionViewActiveRef.current?.(isCollectionView);
   }, [isCollectionView]);
 
@@ -318,15 +324,11 @@ function TimelineCanvas({
         }
         // Nudge every text container; only the one that overflows actually
         // moves, so we don't need to know which is the scroll element.
-        overlay
-          .querySelectorAll(
-            '.timeline-detail__side, .timeline-detail__below, .timeline-detail__body, .timeline-detail__description'
-          )
-          .forEach((el) => {
-            if (el instanceof HTMLElement) {
-              el.scrollTop += event.deltaY * step;
-            }
-          });
+        overlay.querySelectorAll('.timeline-detail__side').forEach((el) => {
+          if (el instanceof HTMLElement) {
+            el.scrollTop += event.deltaY * step;
+          }
+        });
         event.preventDefault();
         event.stopImmediatePropagation();
         return;
@@ -422,6 +424,7 @@ function TimelineCanvas({
         hoveredItemContentIdRef,
         hasCollectionPanelRef,
         viewersRef,
+        seenTimelineIdsRef,
         collectorsRef,
         focusContentIdRef,
         setCollectionViewActiveRef,

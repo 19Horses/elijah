@@ -113,6 +113,12 @@ export const KIND_TAG_PAD_X_PX = 4;
 export const KIND_TAG_PAD_Y_PX = 3;
 export const KIND_TAG_FONT_PX = 9;
 export const KIND_TAG_BACKGROUND = '#606060';
+// Unseen main-timeline label above the item name: live-radio style red pulse.
+export const UNSEEN_LABEL_TEXT = 'New';
+export const UNSEEN_DOT_COLOUR = '#e01818';
+export const UNSEEN_DOT_RADIUS_PX = 3.5;
+export const UNSEEN_DOT_GAP_PX = 5;
+export const UNSEEN_PULSE_MS = 900;
 // Over a collection's items the viewer already has, while it's viewed.
 export const ALREADY_COLLECTED_TEXT = 'ALREADY\nCOLLECTED';
 // …this share of the picture's width, whatever its size.
@@ -160,6 +166,11 @@ export const BRANCH_LINE_GAP_PX = 2;
 // threshold, so it eases smoothly rather than popping at a hard cutoff.
 export const DATE_SHRINK_ZOOM_FACTOR = 0.8;
 export const DATE_SHRINK_TRANSITION_FACTOR = 0.25;
+// At or below this zoom (as a fraction of fit) item titles truncate with an
+// ellipsis, e.g. "Content na...". Set at fit so the overview shortens names;
+// zooming in past fit restores the full title.
+export const TITLE_TRUNCATE_ZOOM_FACTOR = 1;
+export const TITLE_TRUNCATE_MAX_CHARS = 10;
 // How much the date label's font size shrinks once fully zoomed out past the
 // threshold above (0 = no change, 0.2 = 20% smaller).
 export const DATE_FONT_MERGE_SHRINK = 0.2;
