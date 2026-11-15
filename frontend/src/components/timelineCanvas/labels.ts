@@ -268,10 +268,7 @@ function drawNodeCardText(
   // the card.
   // Guest CTA cards (no owner line / artwork) centre the message in the card.
   const centreText = !subtitle && !thumb;
-  p.textAlign(
-    centreText ? TEXT_ALIGN_CENTER : TEXT_ALIGN_LEFT,
-    TEXT_ALIGN_TOP
-  );
+  p.textAlign(centreText ? TEXT_ALIGN_CENTER : TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP);
   p.textSize(NODE_CARD_TITLE_SIZE);
   p.textLeading(NODE_CARD_TITLE_LEADING);
   const textX = centreText

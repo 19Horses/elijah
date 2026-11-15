@@ -94,6 +94,8 @@ type HomeProps = {
   resetViewControlRef?: MutableRefObject<(() => void) | undefined>;
   soloTimelineControlRef?: MutableRefObject<(() => void) | undefined>;
   onSoloTimelineChange?: (active: boolean) => void;
+  // After the timeline and e-menu have entered — reveals collection countdowns.
+  revealCountdowns?: boolean;
 };
 
 // How long a collection box's list takes to slide open or shut (matches
@@ -107,6 +109,7 @@ function Home({
   resetViewControlRef,
   soloTimelineControlRef,
   onSoloTimelineChange,
+  revealCountdowns = false,
 }: HomeProps) {
   const { pathname } = useLocation();
   const isCollectionOpen = pathname === '/collection';
@@ -988,7 +991,7 @@ function Home({
                     .filter(
                       (collection) => collectedStatus[collection._id] === false
                     )
-                    .map((collection) => (
+                    .map((collection, collectionIndex) => (
                       <div
                         data-collection-id={collection._id}
                         className={`collection-card-stack${
@@ -997,9 +1000,17 @@ function Home({
                             : ''
                         }`}
                         key={collection._id}
+                        style={
+                          {
+                            '--countdown-stack-delay': `${
+                              collectionIndex * 120
+                            }ms`,
+                          } as React.CSSProperties
+                        }
                       >
                         <CollectionCountdown
                           collection={collection}
+                          reveal={revealCountdowns}
                           open={openPanelId === collection._id}
                           // Signed out, a collection can't be opened: the
                           // label says so, and a click goes to log in.
@@ -1131,10 +1142,6 @@ function Home({
                                         </span>
                                       )}
                                     </span>
-                                    {/* Under the picture and those lines, the
-                                    row's full width: what a click does, then
-                                    the description (one already collected
-                                    shows neither). */}
                                     {!isCollected && (
                                       <span className="collection-card-title__kind collection-card-title__kind--add">
                                         + ADD TO YOUR TIMELINE

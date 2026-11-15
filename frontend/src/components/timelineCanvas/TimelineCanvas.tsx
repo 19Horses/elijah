@@ -4,10 +4,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CollectedUserRow } from '../../queries/collectedContent';
 import type { CollectionContent, ContentType } from '../../types/content';
-import {
-  GUEST_LOCKED_CURSOR_LABEL,
-  PREVIEW_SWITCH_FADE_MS,
-} from './constants';
+import { GUEST_LOCKED_CURSOR_LABEL, PREVIEW_SWITCH_FADE_MS } from './constants';
 import { createTimelineSketch } from './createTimelineSketch';
 import {
   createAudioController,

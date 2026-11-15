@@ -1410,10 +1410,7 @@ export function createViewContext(
   const focusItem = (target: FocusTarget) => {
     if (isLockedTarget(deps, target)) {
       // Guest locked collected content → login; private while signed in → no-op.
-      if (
-        target.lane === 'collected' &&
-        isGuestLockedCollected(deps)
-      ) {
+      if (target.lane === 'collected' && isGuestLockedCollected(deps)) {
         deps.refs.onGuestLockedClickRef.current?.();
       }
       return;
