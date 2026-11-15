@@ -2429,7 +2429,8 @@ export function createDrawFrameHandler(
         !deps.processed[mainHover.hoveredMain]?.isPrivate) ||
       hoveringCollected ||
       lastHoveredPreviewId !== null;
-    const videoPlay = runtime.videoPlayButton as TimelineRuntime['videoPlayButton'];
+    const videoPlay =
+      runtime.videoPlayButton as TimelineRuntime['videoPlayButton'];
     const overVideoPlay = videoPlay
       ? Math.hypot(mouseWorld.x - videoPlay.cx, mouseWorld.y - videoPlay.cy) <=
         videoPlay.r
