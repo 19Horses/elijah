@@ -108,6 +108,7 @@ import type {
   AudioPlayerState,
   ContentBounds,
   NodeHoverRegion,
+  TimelineRuntime,
   TimelineSketchDeps,
 } from '../types';
 import type { BoundsContext } from './bounds';
@@ -1299,7 +1300,7 @@ export function createDrawFrameHandler(
         (collectedHover.hoveredCollectedIsImage ||
           collectedHover.hoveredUserRow !== null);
       if (guestLockedHover) {
-        const canvas = p.canvas as HTMLCanvasElement;
+        const canvas = (p.drawingContext as CanvasRenderingContext2D).canvas;
         const rect = canvas.getBoundingClientRect();
         deps.refs.onGuestLockedHoverRef.current?.({
           x: rect.left + (p.mouseX / p.width) * rect.width,
@@ -2428,7 +2429,7 @@ export function createDrawFrameHandler(
         !deps.processed[mainHover.hoveredMain]?.isPrivate) ||
       hoveringCollected ||
       lastHoveredPreviewId !== null;
-    const videoPlay = runtime.videoPlayButton;
+    const videoPlay = runtime.videoPlayButton as TimelineRuntime['videoPlayButton'];
     const overVideoPlay = videoPlay
       ? Math.hypot(mouseWorld.x - videoPlay.cx, mouseWorld.y - videoPlay.cy) <=
         videoPlay.r
