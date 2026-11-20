@@ -17,6 +17,11 @@ type OpenedCollectionCardsProps = {
   // The collected item (by content id) whose collection's card is hovered,
   // or null.
   onHover: (contentId: string | null) => void;
+  // After the timeline entrance — same gate as the live countdowns.
+  reveal?: boolean;
+  // How many live countdowns sit above these, so the opened cards stagger in
+  // after them (same 120ms step).
+  staggerAfter?: number;
 };
 
 // At the foot of the collections column, each collection the viewer has
@@ -28,6 +33,8 @@ function OpenedCollectionCards({
   collectedContentIds,
   onOpen,
   onHover,
+  reveal = false,
+  staggerAfter = 0,
 }: OpenedCollectionCardsProps) {
   const live = collections.filter((collection) => {
     const expiresAt = getEffectiveExpiresAt(collection);
@@ -35,7 +42,7 @@ function OpenedCollectionCards({
   });
   return (
     <>
-      {live.map((collection) => {
+      {live.map((collection, index) => {
         const collected = (collection.content ?? []).find((item) =>
           collectedContentIds.has(item._id)
         );
@@ -43,7 +50,14 @@ function OpenedCollectionCards({
           <button
             key={collection._id}
             type="button"
-            className="timeline-item-card timeline-item-card--compact timeline-item-card--opened"
+            className={`timeline-item-card timeline-item-card--compact timeline-item-card--opened${
+              reveal ? ' timeline-item-card--opened-visible' : ''
+            }`}
+            style={
+              {
+                '--countdown-stack-delay': `${(staggerAfter + index) * 120}ms`,
+              } as React.CSSProperties
+            }
             disabled={!collected}
             onClick={() => collected && onOpen(collected._id)}
             onMouseEnter={() => collected && onHover(collected._id)}

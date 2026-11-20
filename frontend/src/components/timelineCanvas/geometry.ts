@@ -6,8 +6,8 @@ import {
   ITEM_WIDTH,
   ITEM_ZOOM_OUT_GROWTH_MAX,
   ITEM_ZOOM_OUT_GROWTH_POWER,
+  MAIN_LINE_Y,
   PADDING_X,
-  PADDING_Y,
   ZOOM_OUT_GROWTH_POWER,
 } from './constants';
 import type {
@@ -44,14 +44,16 @@ export function getContentBounds(
   const width = fitted.width * scale;
   const height = fitted.height * scale;
   const offsetXInSlot = (ITEM_WIDTH - width) / 2;
-  const offsetYInSlot = (IMAGE_HEIGHT - height) / 2;
   const left = slotX + offsetXInSlot + offset.dx;
-  const top = PADDING_Y + offsetYInSlot + offset.dy;
+  // Image middles share the main centreline so neighbours connect level;
+  // aspect only changes how far the top/bottom sit from that line.
+  const centerY = MAIN_LINE_Y + offset.dy;
+  const top = centerY - height / 2;
 
   return {
     left,
     right: left + width,
-    centerY: top + height / 2,
+    centerY,
     top,
     width,
     height,

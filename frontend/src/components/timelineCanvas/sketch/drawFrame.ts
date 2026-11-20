@@ -18,6 +18,7 @@ import {
   ITEM_LABEL_LINE_HEIGHT,
   ITEM_LABEL_SCALE,
   ITEM_WIDTH,
+  COLLECTION_PREVIEW_LABEL_SCALE,
   DATE_LABEL_SHADOW_BLUR_PX,
   BRANCH_DIM_COLOUR,
   BRANCH_DIM_LERP,
@@ -53,6 +54,10 @@ import {
   COLLECT_ANIM_MS,
   COLLECT_HOLD_MS,
   COLLECT_RETURN_IMAGE_WAIT_MS,
+  DETAIL_IMAGE_HEIGHT_VH,
+  DETAIL_IMAGE_LEFT_PX,
+  DETAIL_TEXT_GAP_PX,
+  DETAIL_TEXT_VIEWPORT_LEFT,
   SECONDARY_LABEL_ALPHA,
   SECONDARY_LABEL_GAP,
   UNSEEN_DOT_COLOUR,
@@ -67,6 +72,7 @@ import {
   TITLE_TRUNCATE_MAX_CHARS,
   TITLE_TRUNCATE_ZOOM_FACTOR,
   COLLECTION_OTHER_ITEM_ALPHA,
+  COLLECTION_VIEW_FOCUS_ID,
   SOLO_GRID_TEXT_LEADING,
   SOLO_GRID_TEXT_SIZE,
   SUBLABEL_HIDE_ZOOM,
@@ -74,6 +80,7 @@ import {
   ITEM_HOVER_GROW_MS,
 } from '../constants';
 import {
+  drawBranchConnector,
   getBranchRoute,
   getMainConnectorPoints,
   nearestArcLength,
@@ -281,6 +288,8 @@ export function createDrawFrameHandler(
   // Last reported hovered collectible-item content id, so the ref only fires
   // when it changes.
   let lastHoveredPreviewId: string | null = null;
+  // Last collection-card title the panel asked the map to soft-focus on.
+  let lastCenterOnPreviewId: string | null = null;
   // Eased 0-1 "highlighted" progress per collectible item (keyed by content
   // id), so growing into/out of the selected/hovered look eases rather than
   // snapping straight to size.
@@ -351,6 +360,25 @@ export function createDrawFrameHandler(
       } else {
         view.clearPreviewFocus();
       }
+    }
+
+    // Collection-card title hover: ease the map toward that item (soft zoom).
+    // Leaving a title keeps the camera there; hovering the badge header
+    // (COLLECTION_VIEW_FOCUS_ID) eases back to the initial collection framing.
+    const centerOnPreviewId = deps.refs.centerOnPreviewIdRef.current;
+    if (
+      centerOnPreviewId === COLLECTION_VIEW_FOCUS_ID &&
+      lastCenterOnPreviewId !== COLLECTION_VIEW_FOCUS_ID
+    ) {
+      lastCenterOnPreviewId = COLLECTION_VIEW_FOCUS_ID;
+      view.clearPreviewFocus();
+    } else if (
+      centerOnPreviewId &&
+      centerOnPreviewId !== COLLECTION_VIEW_FOCUS_ID &&
+      centerOnPreviewId !== lastCenterOnPreviewId
+    ) {
+      lastCenterOnPreviewId = centerOnPreviewId;
+      view.previewContentId(centerOnPreviewId);
     }
 
     const dimAlpha = getTypeDimAlpha(typeHighlightStrength);
@@ -454,11 +482,17 @@ export function createDrawFrameHandler(
     // and focus these items, so the two can never drift apart. Lazily
     // computed on first use, once per frame.
     // The collection item hovered in the panel's list (or on the map) grows
-    // in place, its label with it; the view stays where it is.
-    const centerOnPreviewContentId =
+    // in place; panel title hover also soft-pans/zooms via centerOnPreviewId
+    // above.
+    const centerOnPreviewRaw =
       runtime.focusTarget === null
-        ? deps.refs.centerOnPreviewIdRef.current ?? lastHoveredPreviewId
+        ? deps.refs.centerOnPreviewIdRef.current
         : null;
+    const centerOnPreviewContentId =
+      runtime.focusTarget !== null ||
+      centerOnPreviewRaw === COLLECTION_VIEW_FOCUS_ID
+        ? null
+        : centerOnPreviewRaw ?? lastHoveredPreviewId;
     // A hidden tab hands back one huge frame; don't let it skip the ease.
     const expandStep = Math.min(p.deltaTime, 100) / PREVIEW_EXPAND_MS;
     if (
@@ -537,9 +571,18 @@ export function createDrawFrameHandler(
             COLLECT_RETURN_IMAGE_WAIT_MS
         ) {
           runtime.collectReturnStartMs = p.millis();
+          // Close the collection UI in the same turn as opening detail, so
+          // badges don't flash back in between.
+          if (runtime.collectPendingIsolationExit) {
+            runtime.collectPendingIsolationExit = false;
+            deps.refs.onBranchIsolationExitRef.current?.();
+          }
           // Now on the viewer's timeline, the item opens straight away, as
           // though they'd clicked it, zooming in from where it landed.
           view.focusItem({ lane: returnLane, index: returnIndex });
+          // Map already hidden from the collect flight — don't let the
+          // normal focus fade start at 0 and flash everything back in.
+          runtime.focusContentFade = 1;
         }
       }
       // The rest of the map stays hidden meanwhile; once the item is open
@@ -548,41 +591,83 @@ export function createDrawFrameHandler(
       const opened =
         runtime.focusTarget?.lane === returnLane &&
         runtime.focusTarget.index === returnIndex;
-      if (
-        runtime.collectReturnStartMs !== null &&
-        (!opened || runtime.focusContentFade >= 1 - LOAD_ALPHA_SNAP)
-      ) {
-        runtime.collectReturnIndex = -1;
-        runtime.collectReturnStartMs = null;
-        runtime.collectContentId = null;
-        runtime.collectFinalRect = null;
-        returnFade = opened ? 0 : 1;
+      // Keep return suppression up through the whole focus settle. Clearing
+      // as soon as focusContentFade hits 1 (we force that on collect→focus)
+      // used to drop collectFade and let the map flash mid-zoom.
+      if (runtime.collectReturnStartMs !== null) {
+        if (opened && !runtime.viewAnimating) {
+          runtime.collectReturnIndex = -1;
+          runtime.collectReturnStartMs = null;
+          runtime.collectContentId = null;
+          runtime.collectFinalRect = null;
+        } else if (
+          !opened &&
+          p.millis() - runtime.collectReturnStartMs > 2000
+        ) {
+          // Focus never took — don't leave the map permanently blank.
+          runtime.collectReturnIndex = -1;
+          runtime.collectReturnStartMs = null;
+          runtime.collectContentId = null;
+          runtime.collectFinalRect = null;
+          returnFade = 1;
+        }
       }
     }
     const isReturnTarget = (lane: 'main' | 'collected', index: number) =>
       returnIndex !== -1 && lane === returnLane && index === returnIndex;
 
-    const collectFade = (1 - collectProgress) * returnFade;
+    // Hidden for the collect flight and the return→focus settle.
+    const collectFade = isCollecting || returnIndex !== -1 ? 0 : returnFade;
     const isCollectTarget = (index: number) =>
       isCollecting && index === runtime.collectIndex;
+    // Flies the collectible to the viewport centre while growing it to the
+    // same on-screen size as a timeline click-to-focus (~60vh tall).
     const moveToScreenCentre = <
       T extends Pick<
         ContentBounds,
-        'left' | 'right' | 'top' | 'height' | 'centerY'
+        'left' | 'right' | 'top' | 'width' | 'height' | 'centerY' | 'dateBottom'
       >
     >(
       rect: T
     ): T => {
       const centreX = runtime.cameraX + p.width / (2 * runtime.zoom);
       const centreY = runtime.cameraY + p.height / (2 * runtime.zoom);
-      const dx = (centreX - (rect.left + rect.right) / 2) * collectProgress;
-      const dy = (centreY - (rect.top + rect.height / 2)) * collectProgress;
+      const fromX = (rect.left + rect.right) / 2;
+      const fromY = rect.top + rect.height / 2;
+      const toX = fromX + (centreX - fromX) * collectProgress;
+      const toY = fromY + (centreY - fromY) * collectProgress;
+      const zoom = Math.max(runtime.zoom, 1e-6);
+      const maxWidthScreen =
+        p.width * DETAIL_TEXT_VIEWPORT_LEFT -
+        DETAIL_TEXT_GAP_PX -
+        DETAIL_IMAGE_LEFT_PX;
+      let targetScreenH = p.height * DETAIL_IMAGE_HEIGHT_VH;
+      let targetScreenW =
+        rect.width * (targetScreenH / Math.max(rect.height, 1e-6));
+      if (targetScreenW > maxWidthScreen && maxWidthScreen > 0) {
+        targetScreenW = maxWidthScreen;
+        targetScreenH =
+          rect.height * (targetScreenW / Math.max(rect.width, 1e-6));
+      }
+      const screenW =
+        rect.width * zoom +
+        (targetScreenW - rect.width * zoom) * collectProgress;
+      const screenH =
+        rect.height * zoom +
+        (targetScreenH - rect.height * zoom) * collectProgress;
+      const width = screenW / zoom;
+      const height = screenH / zoom;
+      const left = toX - width / 2;
+      const top = toY - height / 2;
       return {
         ...rect,
-        left: rect.left + dx,
-        right: rect.right + dx,
-        top: rect.top + dy,
-        centerY: rect.centerY + dy,
+        left,
+        right: left + width,
+        top,
+        width,
+        height,
+        centerY: toY,
+        dateBottom: top + height + (rect.dateBottom - (rect.top + rect.height)),
       };
     };
 
@@ -807,10 +892,11 @@ export function createDrawFrameHandler(
       getDetailDrawBounds: getDetailDrawBoundsIso,
       contentAlphaFor,
       isolateOtherAlpha: isolateOtherAlpha * collectFade,
+      isolateProgress: isolate,
       collectFade,
       // Viewing a collection greys out the viewer's own item pictures (ones
-      // they've collected, whether or not they're in the collection) and
-      // hides their labels, easing in with the isolation.
+      // they've collected, whether or not they're in the collection); titles
+      // and dates stay visible.
       isolateGrey: isolateActive ? isolate : 0,
       isolatedRow: isolateActive ? isolateRow : null,
       collectionContentIds: isolateActive
@@ -1117,6 +1203,7 @@ export function createDrawFrameHandler(
       runtime.branchIsolate = 0;
       if (!runtime.branchIsolateActive && runtime.branchIsolateRow !== null) {
         runtime.branchIsolateRow = null;
+        lastCenterOnPreviewId = null;
         syncInteractionLock(deps);
       }
     } else if (runtime.branchIsolate > 1 - HIGHLIGHT_FADE_SNAP) {
@@ -1148,6 +1235,54 @@ export function createDrawFrameHandler(
       drawCtx,
       collectedHover
     );
+
+    // Collectible stems/chains — same layer as other connectors, under every
+    // picture (collected and not-yet-collected).
+    if (isolateActive && isolateRow !== null) {
+      const isolateWeight = timelineWeight(runtime);
+      const isolateEntries = getIsolatedLine()?.entries ?? [];
+      const byContentId = new Map(
+        isolateEntries.map((entry) => [entry.contentId, entry] as const)
+      );
+      const connectorCtx = p.drawingContext as CanvasRenderingContext2D;
+      connectorCtx.globalAlpha = isolate * previewSwitchAlpha * collectFade;
+      for (const entry of isolateEntries) {
+        if (entry.kind !== 'preview') {
+          continue;
+        }
+        if (entry.linkedTo) {
+          const neighbour = byContentId.get(entry.linkedTo);
+          if (!neighbour || entry.rect.left < neighbour.rect.right + 1) {
+            continue;
+          }
+          const points = getBranchRoute(
+            { x: neighbour.rect.right, y: neighbour.rect.centerY },
+            { x: entry.rect.left, y: entry.rect.centerY },
+            { fromDir: 'horizontal', toDir: 'horizontal' }
+          );
+          drawBranchConnector(p, points, isolateColour, isolateWeight, true);
+          continue;
+        }
+        if (!entry.branchFromMain) {
+          continue;
+        }
+        const previewItem = deps.processedPreview[entry.index];
+        if (!previewItem) {
+          continue;
+        }
+        const endpoints = boundsCtx.getBranchEndpoints(
+          previewItem.anchorTime,
+          entry.rect,
+          bounds
+        );
+        const points = getBranchRoute(endpoints.from, endpoints.to, {
+          fromDir: 'vertical',
+          toDir: 'horizontal',
+        });
+        drawBranchConnector(p, points, isolateColour, isolateWeight, true);
+      }
+      resetCanvasEffects(connectorCtx);
+    }
 
     // While a line is hovered (outside of viewing an item), its timeline's
     // owner's name tag rides it: easing along the timeline's path after the
@@ -1357,8 +1492,9 @@ export function createDrawFrameHandler(
     }
 
     // Viewers' flashes along the timelines, passing behind the items — only
-    // on the map, not while an item is being zoomed into or viewed.
-    if (runtime.focusTarget === null) {
+    // on the map, not while an item is being zoomed into or viewed, and not
+    // during collect / return (they would flash in under the flying item).
+    if (runtime.focusTarget === null && !isCollecting && returnIndex === -1) {
       viewerDotAnimator.drawFlashes(p, runtime.zoom);
     }
 
@@ -1453,6 +1589,7 @@ export function createDrawFrameHandler(
               index: entry.index,
               contentId: entry.contentId,
               linkedTo: entry.linkedTo,
+              branchFromMain: entry.branchFromMain,
               rect: getDetailDrawBoundsIso(
                 'collected',
                 entry.index,
@@ -1465,6 +1602,7 @@ export function createDrawFrameHandler(
             index: entry.index,
             contentId: entry.contentId,
             linkedTo: entry.linkedTo,
+            branchFromMain: entry.branchFromMain,
             rect: isCollectTarget(entry.index)
               ? moveToScreenCentre(entry.rect)
               : entry.rect,
@@ -1472,9 +1610,8 @@ export function createDrawFrameHandler(
         })
         .sort((a, b) => a.rect.left - b.rect.left);
 
-      // Publish the straightened rects (collected and collectible alike) so a
-      // click can hit-test where they actually appear (on the main line)
-      // rather than their branch positions.
+      // Publish hit regions for collected items (in place) and collectibles
+      // (chained beside them on the same row).
       runtime.isolatedRegions = isolatedOrdered.map(
         ({ kind, index, rect }) => ({
           left: rect.left,
@@ -1493,7 +1630,8 @@ export function createDrawFrameHandler(
       // draws at full colour with a subtle glow in the viewer's colour; every
       // other collectible is greyed out — the opposite of a hover highlight.
       // Hovering one here reports it back the other way via onPreviewHoverRef,
-      // so the caller's list can mirror the highlight.
+      // so the caller's list can mirror the highlight. Connectors for these
+      // were drawn earlier with the other timelines, under every picture.
       const previewCtx = p.drawingContext as CanvasRenderingContext2D;
       const collectionPanelRect = document
         .querySelector('.collection-card-panel--visible')
@@ -1600,19 +1738,21 @@ export function createDrawFrameHandler(
           resetCanvasEffects(previewCtx);
         }
         if (!hideLabel) {
+          const collectibleLabelScale =
+            ITEM_LABEL_SCALE *
+            COLLECTION_PREVIEW_LABEL_SCALE *
+            (1 +
+              (PREVIEW_EXPAND_SCALE - 1) *
+                (previewExpand.get(item.contentId) ?? 0));
           dateLabels.push({
             x: (rect.left + rect.right) / 2,
             y: rect.top + rect.height + 12,
             below: true,
             font: CANVAS_LABEL_FONT,
-            scale:
-              ITEM_LABEL_SCALE *
-              (1 +
-                (PREVIEW_EXPAND_SCALE - 1) *
-                  (previewExpand.get(item.contentId) ?? 0)),
+            scale: collectibleLabelScale,
             letterSpacing: ITEM_LABEL_LETTER_SPACING,
             textFont: CANVAS_TITLE_FONT,
-            textScale: ITEM_TITLE_SCALE,
+            textScale: ITEM_TITLE_SCALE * COLLECTION_PREVIEW_LABEL_SCALE,
             collectedBy: collectedByFor(
               deps.refs.collectorsRef.current?.get(item.contentId)
             ),
@@ -1637,43 +1777,6 @@ export function createDrawFrameHandler(
         lastHoveredPreviewId = hoveredPreviewContentId;
         deps.refs.onPreviewHoverRef.current?.(hoveredPreviewContentId);
       }
-
-      const ctx2 = p.drawingContext as CanvasRenderingContext2D;
-      const isolateWeight = timelineWeight(runtime);
-      // The viewer's own items keep their usual branch lines; each of the
-      // collection's items is linked to the item it sits beside with a
-      // dotted line.
-      const isolatedById = new Map(
-        isolatedOrdered.map((entry) => [entry.contentId, entry])
-      );
-      for (const entry of isolatedOrdered) {
-        const partner = entry.linkedTo
-          ? isolatedById.get(entry.linkedTo)
-          : undefined;
-        if (!partner) {
-          continue;
-        }
-        const [a, b] =
-          entry.rect.left < partner.rect.left
-            ? [entry, partner]
-            : [partner, entry];
-        ctx2.globalAlpha = isolate * previewSwitchAlpha * collectFade;
-        ctx2.setLineDash([0.1, zoomGrowth * 6]);
-        ctx2.lineCap = 'round';
-        const points = getMainConnectorPoints(
-          { x: a.rect.right, y: a.rect.centerY },
-          { x: b.rect.left, y: b.rect.centerY }
-        );
-        p.stroke(isolateColour);
-        p.strokeWeight(isolateWeight);
-        p.noFill();
-        p.beginShape();
-        points.forEach((point) => p.vertex(point.x, point.y));
-        p.endShape();
-      }
-      ctx2.setLineDash([]);
-      ctx2.lineCap = 'butt';
-      resetCanvasEffects(ctx2);
     } else {
       if (runtime.isolatedRegions.length > 0) {
         runtime.isolatedRegions = [];

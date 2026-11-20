@@ -80,6 +80,10 @@ export function createTimelineSketch(
       deps.runtime.collectReported = false;
       deps.runtime.collectContentId = null;
       deps.runtime.collectFinalRect = null;
+      if (deps.runtime.collectPendingIsolationExit) {
+        deps.runtime.collectPendingIsolationExit = false;
+        deps.refs.onBranchIsolationExitRef.current?.();
+      }
     };
     const loadCollectedImages = (
       items: ProcessedCollected[],
@@ -286,6 +290,10 @@ export function createTimelineSketch(
         runtime.collectReported = false;
         runtime.collectContentId = null;
         runtime.collectFinalRect = null;
+        if (runtime.collectPendingIsolationExit) {
+          runtime.collectPendingIsolationExit = false;
+          deps.refs.onBranchIsolationExitRef.current?.();
+        }
         view.showFullMap();
       }
     };
