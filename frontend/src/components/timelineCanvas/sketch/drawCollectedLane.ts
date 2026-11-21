@@ -263,8 +263,7 @@ export function drawCollectedLaneConnectors(
             segment.fromItemTarget?.lane === 'main'
               ? deps.items[segment.fromItemTarget.index]?._id
               : segment.fromItemTarget?.lane === 'collected'
-              ? deps.processedCollected[segment.fromItemTarget.index]
-                  ?.contentId
+              ? deps.processedCollected[segment.fromItemTarget.index]?.contentId
               : undefined;
           const toId =
             segment.toItemTarget?.lane === 'main'

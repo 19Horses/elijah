@@ -2102,11 +2102,13 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
         const gapOwn = own
           .filter((o) => getPreviousMainIndex(o.anchorTime) === gapIndex)
           .sort(
-            (a, b) =>
-              a.anchorTime - b.anchorTime || a.rect.left - b.rect.left
+            (a, b) => a.anchorTime - b.anchorTime || a.rect.left - b.rect.left
           );
         const rejoinTail =
-          !chainPred && rejoinAt >= 0 && mainBounds[rejoinAt] && gapOwn.length > 0
+          !chainPred &&
+          rejoinAt >= 0 &&
+          mainBounds[rejoinAt] &&
+          gapOwn.length > 0
             ? gapOwn[gapOwn.length - 1]
             : null;
         const preferredLeft = rejoinTail

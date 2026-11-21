@@ -915,7 +915,11 @@ export function createDrawFrameHandler(
           return pairs;
         }
         for (const entry of getIsolatedLine()?.entries ?? []) {
-          if (entry.kind !== 'preview' || !entry.linkFromId || !entry.linkOutId) {
+          if (
+            entry.kind !== 'preview' ||
+            !entry.linkFromId ||
+            !entry.linkOutId
+          ) {
             continue;
           }
           const [a, b] = [entry.linkFromId, entry.linkOutId].sort();
