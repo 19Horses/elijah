@@ -78,6 +78,8 @@ import {
   SUBLABEL_HIDE_ZOOM,
   SUBLABEL_SHOW_ZOOM,
   ITEM_HOVER_GROW_MS,
+  IMAGE_HEIGHT,
+  MAIN_LINE_Y,
 } from '../constants';
 import {
   drawBranchConnector,
@@ -752,8 +754,13 @@ export function createDrawFrameHandler(
     p.scale(runtime.zoom);
     p.translate(-runtime.cameraX, -runtime.cameraY);
 
+    // While focused, use the same settled collected layout the camera aims at
+    // (getFocusBounds → getCollectedBounds(1)). Live zoom-dependent row growth
+    // would reflow connectors every frame and make the right edge node glitch.
     const bounds = boundsCtx.getAllBounds();
-    const collectedBounds = boundsCtx.getCollectedBounds();
+    const collectedBounds = boundsCtx.getCollectedBounds(
+      runtime.focusTarget !== null ? 1 : undefined
+    );
 
     const lineWorldX = boundsCtx.getNowWorldX();
     const mouseWorld = screenToWorld(
@@ -902,6 +909,20 @@ export function createDrawFrameHandler(
       collectionContentIds: isolateActive
         ? new Set(deps.processedPreview.map((preview) => preview.contentId))
         : new Set(),
+      replacedBranchPairs: (() => {
+        const pairs = new Set<string>();
+        if (!isolateActive) {
+          return pairs;
+        }
+        for (const entry of getIsolatedLine()?.entries ?? []) {
+          if (entry.kind !== 'preview' || !entry.linkFromId || !entry.linkOutId) {
+            continue;
+          }
+          const [a, b] = [entry.linkFromId, entry.linkOutId].sort();
+          pairs.add(`${a}|${b}`);
+        }
+        return pairs;
+      })(),
       edgeNodes,
       dateLabels,
       drawnLines,
@@ -1250,36 +1271,54 @@ export function createDrawFrameHandler(
         if (entry.kind !== 'preview') {
           continue;
         }
-        if (entry.linkedTo) {
-          const neighbour = byContentId.get(entry.linkedTo);
-          if (!neighbour || entry.rect.left < neighbour.rect.right + 1) {
-            continue;
-          }
+        // Into this collectible: explicit map-neighbour join, else linked
+        // isolate entry, else a stem from main.
+        if (entry.linkFrom) {
           const points = getBranchRoute(
-            { x: neighbour.rect.right, y: neighbour.rect.centerY },
+            entry.linkFrom,
             { x: entry.rect.left, y: entry.rect.centerY },
             { fromDir: 'horizontal', toDir: 'horizontal' }
           );
           drawBranchConnector(p, points, isolateColour, isolateWeight, true);
-          continue;
+        } else if (entry.linkedTo) {
+          const neighbour = byContentId.get(entry.linkedTo);
+          if (neighbour && entry.rect.left >= neighbour.rect.right + 1) {
+            const points = getBranchRoute(
+              { x: neighbour.rect.right, y: neighbour.rect.centerY },
+              { x: entry.rect.left, y: entry.rect.centerY },
+              { fromDir: 'horizontal', toDir: 'horizontal' }
+            );
+            drawBranchConnector(p, points, isolateColour, isolateWeight, true);
+          }
+        } else if (entry.branchFromMain) {
+          const previewItem = deps.processedPreview[entry.index];
+          if (previewItem) {
+            const endpoints = boundsCtx.getBranchEndpoints(
+              previewItem.anchorTime,
+              entry.rect,
+              bounds
+            );
+            const points = getBranchRoute(endpoints.from, endpoints.to, {
+              fromDir: 'vertical',
+              toDir: 'horizontal',
+            });
+            drawBranchConnector(p, points, isolateColour, isolateWeight, true);
+          }
         }
-        if (!entry.branchFromMain) {
-          continue;
+        // Out to the next map neighbour (same-row peer or next main item).
+        if (entry.linkOut) {
+          const outOnMain =
+            Math.abs(entry.linkOut.y - MAIN_LINE_Y) < IMAGE_HEIGHT / 4;
+          const points = getBranchRoute(
+            { x: entry.rect.right, y: entry.rect.centerY },
+            entry.linkOut,
+            {
+              fromDir: 'horizontal',
+              toDir: outOnMain ? 'vertical' : 'horizontal',
+            }
+          );
+          drawBranchConnector(p, points, isolateColour, isolateWeight, true);
         }
-        const previewItem = deps.processedPreview[entry.index];
-        if (!previewItem) {
-          continue;
-        }
-        const endpoints = boundsCtx.getBranchEndpoints(
-          previewItem.anchorTime,
-          entry.rect,
-          bounds
-        );
-        const points = getBranchRoute(endpoints.from, endpoints.to, {
-          fromDir: 'vertical',
-          toDir: 'horizontal',
-        });
-        drawBranchConnector(p, points, isolateColour, isolateWeight, true);
       }
       resetCanvasEffects(connectorCtx);
     }
@@ -1590,6 +1629,8 @@ export function createDrawFrameHandler(
               contentId: entry.contentId,
               linkedTo: entry.linkedTo,
               branchFromMain: entry.branchFromMain,
+              linkFrom: entry.linkFrom,
+              linkOut: entry.linkOut,
               rect: getDetailDrawBoundsIso(
                 'collected',
                 entry.index,
@@ -1603,6 +1644,8 @@ export function createDrawFrameHandler(
             contentId: entry.contentId,
             linkedTo: entry.linkedTo,
             branchFromMain: entry.branchFromMain,
+            linkFrom: entry.linkFrom,
+            linkOut: entry.linkOut,
             rect: isCollectTarget(entry.index)
               ? moveToScreenCentre(entry.rect)
               : entry.rect,

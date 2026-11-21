@@ -256,6 +256,29 @@ export function drawCollectedLaneConnectors(
       }
 
       segments.forEach((segment, segmentIndex) => {
+        // Mid-chain collectible dotted links replace the solid connector
+        // between the same two items — skip drawing it.
+        if (ctx.replacedBranchPairs.size > 0) {
+          const fromId =
+            segment.fromItemTarget?.lane === 'main'
+              ? deps.items[segment.fromItemTarget.index]?._id
+              : segment.fromItemTarget?.lane === 'collected'
+              ? deps.processedCollected[segment.fromItemTarget.index]
+                  ?.contentId
+              : undefined;
+          const toId =
+            segment.toItemTarget?.lane === 'main'
+              ? deps.items[segment.toItemTarget.index]?._id
+              : segment.toItemTarget?.lane === 'collected'
+              ? deps.processedCollected[segment.toItemTarget.index]?.contentId
+              : undefined;
+          if (fromId && toId) {
+            const [a, b] = [fromId, toId].sort();
+            if (ctx.replacedBranchPairs.has(`${a}|${b}`)) {
+              return;
+            }
+          }
+        }
         const edge = ctx.edgeNodes;
         const progress = edge?.progress ?? 0;
         // An end on the focused item rides its node out to the viewport

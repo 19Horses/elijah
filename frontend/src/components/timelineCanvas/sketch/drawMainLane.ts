@@ -161,6 +161,9 @@ export type MainLaneDrawContext = {
   // the viewer has still to collect keep their labels while the others' are
   // hidden.
   collectionContentIds: Set<string>;
+  // Solid branch connectors a mid-chain collectible is replacing with dotted
+  // lines (normalized `${idA}|${idB}` with idA < idB). Skipped while drawn.
+  replacedBranchPairs: Set<string>;
   // The focused item's branch nodes on their way out to the viewport edges, or
   // null when every node sits on its item.
   edgeNodes: EdgeNodeLayout | null;
