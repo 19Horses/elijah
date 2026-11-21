@@ -16,8 +16,8 @@ import {
   PADDING_X,
   PADDING_Y,
   PREVIEW_EXPAND_SCALE,
+  COLLECTION_PREVIEW_SCALE,
   COLLECTION_ROW_GAP,
-  COLLECTION_ROW_GAP_EXTRA,
 } from '../constants';
 import {
   getBranchRoute,
@@ -42,16 +42,27 @@ import type {
   TimelineSketchDeps,
 } from '../types';
 
-// One entry (a real collected item, or a collectible from the active
-// collection) in the isolated view's merged, date-ordered branch row.
+// One entry (a real collected item in place on the branch, or a collectible
+// placed as it would sit once collected) in the isolated view.
 export type IsolatedLineEntry = {
   kind: 'collected' | 'preview';
   index: number;
   contentId: string;
   rect: ContentBounds;
-  // For a collection item: the item it's linked to by a dotted line (the
-  // viewer's own item it sits beside, or the collection item between them).
+  // Same-gap chain predecessor (own item or another collectible) — dotted
+  // horizontal link. When absent and branchFromMain, the dotted link leaves
+  // the main timeline instead (mirroring a real collect).
   linkedTo?: string;
+  branchFromMain?: boolean;
+  // When a collectible sits mid-chain, dotted joins into / out of the
+  // neighbours it sits between (row peers and/or main) — e.g. Iman Image →
+  // Show Collection → Soldering — taking the place of the solid connectors.
+  linkFrom?: ConnectorPoint;
+  linkOut?: ConnectorPoint;
+  // Content ids at the far ends of linkFrom / linkOut (for hiding the solid
+  // connectors those dotted lines replace).
+  linkFromId?: string;
+  linkOutId?: string;
 };
 
 export type IsolatedLine = {
@@ -149,10 +160,8 @@ export type BoundsContext = {
     order: { lane: 'main' | 'collected'; index: number }[];
     frame: ContentBounds | null;
   };
-  // The isolated branch's own items, merged by date with the active
-  // collection's not-yet-collected items, evenly spaced and straightened onto
-  // the main line — the single source of truth for both where those items are
-  // drawn and where the camera frames/focuses them.
+  // Own branch items in place, plus collectibles placed/linked as they would
+  // be once collected (same-gap chain, or branch from main).
   // `expanded` grows collection items (by content id) about their centres,
   // each by its own eased 0-1 amount.
   getIsolatedMergedLine: (
@@ -237,8 +246,14 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     Math.max(0, ...offsets.map((offset) => Math.abs(offset)));
 
   // Items shrink less than the world as the camera zooms out (see
-  // itemZoomScale), each growing about its own centre.
-  const itemScale = () => itemZoomScale(runtime.zoom, runtime.fitZoomLevel);
+  // itemZoomScale), each growing about its own centre. While a collection is
+  // isolated, or an item is focused, pin to base size so the zoom only moves
+  // the camera — live growth would reflow items/connectors and jog the view
+  // (e.g. the right connector on "Another Test Audio" while focusing).
+  const itemScale = () =>
+    runtime.branchIsolateRow !== null || runtime.focusTarget !== null
+      ? 1
+      : itemZoomScale(runtime.zoom, runtime.fitZoomLevel);
 
   // Viewing a collection hands the main timeline's extra size over to the
   // collection's items, easing with the view (0 = home screen, 1 = swapped).
@@ -491,11 +506,15 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       return undefined;
     }
     const towardMain = Math.sign(MAIN_LINE_Y - rowY) || 1;
-    const rowGrowth = zoomOutGrowth(
-      runtime.zoom,
-      runtime.fitZoomLevel,
-      LANE_GAP_GROWTH_POWER
-    );
+    // Match settled focus layout so corridor routes don't thrash mid-zoom.
+    const rowGrowth =
+      runtime.focusTarget !== null
+        ? 1
+        : zoomOutGrowth(
+            runtime.zoom,
+            runtime.fitZoomLevel,
+            LANE_GAP_GROWTH_POWER
+          );
     const gap = Math.min(LANE_GAP, COLLECTED_ROW_EXTRA_GAP) * rowGrowth;
     return rowY + towardMain * (IMAGE_HEIGHT / 2 + gap / 2);
   };
@@ -932,6 +951,90 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       });
     });
 
+    // Same-row chain links: both ends share one y (packed per corridor) so
+    // parallel colours stay level. Per-edge packing alone can assign the
+    // left and right ends different offsets and draw an angled "straight".
+    type ChainLink = {
+      fromKey: string;
+      toKey: string;
+      sourceIndex: number;
+    };
+    const corridors = new Map<
+      string,
+      { pred: number; index: number; links: ChainLink[] }
+    >();
+    processedCollected.forEach((item, index) => {
+      if (!collectedBounds[index]) {
+        return;
+      }
+      item.sources.forEach((source, sourceIndex) => {
+        const predecessor = findChainPredecessor(index, (other) =>
+          other.sources.some((s) => s.rowIndex === source.rowIndex)
+        );
+        if (predecessor < 0 || !collectedBounds[predecessor]) {
+          return;
+        }
+        const corridorKey = `${predecessor}:${index}`;
+        const link: ChainLink = {
+          fromKey: `chainFrom:${index}:${sourceIndex}`,
+          toKey: `chainTo:${index}:${sourceIndex}`,
+          sourceIndex,
+        };
+        const existing = corridors.get(corridorKey);
+        if (existing) {
+          existing.links.push(link);
+        } else {
+          corridors.set(corridorKey, {
+            pred: predecessor,
+            index,
+            links: [link],
+          });
+        }
+      });
+    });
+    corridors.forEach(({ pred, index, links }) => {
+      const pb = collectedBounds[pred];
+      const ib = collectedBounds[index];
+      // Forked successors sit on other rows — leave metro routing alone.
+      if (Math.abs(pb.centerY - ib.centerY) > IMAGE_HEIGHT / 2) {
+        return;
+      }
+      const centerY = (pb.centerY + ib.centerY) / 2;
+      links.sort(
+        (a, b) =>
+          a.sourceIndex - b.sourceIndex || a.fromKey.localeCompare(b.fromKey)
+      );
+      const offsets = packLines(
+        links.map((link) => lineWeightForKey(link.fromKey))
+      );
+      const restOffsets = packRestingLines(links.length);
+      const halfSpan = halfSpanOf(restOffsets);
+      links.forEach((link, k) => {
+        const y = centerY + offsets[k];
+        const restY = centerY + restOffsets[k];
+        const from = map.get(link.fromKey);
+        const to = map.get(link.toKey);
+        if (from) {
+          from.y = y;
+          from.restY = restY;
+          from.node = {
+            centre: { x: from.x, y: centerY },
+            halfSpan,
+            axis: 'y',
+          };
+        }
+        if (to) {
+          to.y = y;
+          to.restY = restY;
+          to.node = {
+            centre: { x: to.x, y: centerY },
+            halfSpan,
+            axis: 'y',
+          };
+        }
+      });
+    });
+
     itemAttachCache = { main: mainBounds, collected: collectedBounds, map };
     return map;
   };
@@ -1292,33 +1395,6 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     return travel;
   };
 
-  // Viewing a collection, everything in the viewer's row — their own items
-  // and the collection's still to collect — sits in equal-width slots in
-  // date order, so the gaps between them match. Each one's slot centre (world
-  // x), by content id, centred on where their dates fall.
-  const collectionSlotCentres = (rowIndex: number): Map<string, number> => {
-    const own = processedCollected.filter((item) =>
-      item.sources.some((s) => s.rowIndex === rowIndex)
-    );
-    const ownIds = new Set(own.map((item) => item.contentId));
-    const row = [
-      ...own,
-      ...deps.processedPreview.filter((item) => !ownIds.has(item.contentId)),
-    ].sort((a, b) => a.anchorTime - b.anchorTime);
-    const slots = new Map<string, number>();
-    if (row.length === 0) {
-      return slots;
-    }
-    const step = ITEM_WIDTH * MAIN_ITEM_SCALE + ITEM_GAP;
-    const centre =
-      row.reduce((sum, item) => sum + timeToWorldX(item.anchorTime), 0) /
-      row.length;
-    row.forEach((item, k) => {
-      slots.set(item.contentId, centre + (k - (row.length - 1) / 2) * step);
-    });
-    return slots;
-  };
-
   // Which row each collector's timeline sits in. Each keeps its side of the
   // main line (by its own row's parity), but collectors whose lines don't
   // overlap left to right share a row, nearest the main line first, rather
@@ -1383,26 +1459,22 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     rowGrowthOverride?: number,
     swap = collectionSwap()
   ): ContentBounds[] => {
-    // Viewing a collection grows the viewer's own items that are in it, like
-    // the collection's not-yet-collected items, by the main items' extra size.
-    const collectionIds =
-      swap > 0 && runtime.branchIsolateRow !== null
-        ? new Set(deps.processedPreview.map((preview) => preview.contentId))
-        : null;
-    const collectionGrow = (item: (typeof processedCollected)[number]) =>
-      collectionIds?.has(item.contentId) &&
-      item.sources.some((s) => s.rowIndex === runtime.branchIsolateRow)
-        ? 1 + (MAIN_ITEM_SCALE - 1) * swap
-        : 1;
     // Grows the row spacing as the camera zooms out, faster than the
     // nodes/lines themselves thicken (LANE_GAP_GROWTH_POWER > the line/node
     // growth power), so rows keep pulling further apart at extreme zoom-out
     // rather than just barely staying clear of the bigger nodes/lines. A
     // caller can pin the growth (e.g. 1 = settled) rather than tracking the
     // live zoom.
+    // Isolation also pins row spacing (same reason as itemScale above).
     const rowGrowth =
       rowGrowthOverride ??
-      zoomOutGrowth(runtime.zoom, runtime.fitZoomLevel, LANE_GAP_GROWTH_POWER);
+      (runtime.branchIsolateRow !== null
+        ? 1
+        : zoomOutGrowth(
+            runtime.zoom,
+            runtime.fitZoomLevel,
+            LANE_GAP_GROWTH_POWER
+          ));
     // The nearest rows also clear the main items' extra size.
     const rowGap =
       LANE_GAP * rowGrowth + (IMAGE_HEIGHT * (MAIN_ITEM_SCALE - 1)) / 2;
@@ -1419,15 +1491,6 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     // How many items already attach to a given predecessor, so a fork (one
     // item feeding several) stacks its branches into separate rows.
     const successorCount = new Map<number, number>();
-    // Viewing a collection, the viewer's own items share one row of evenly
-    // spaced slots (see below).
-    const ownSlots =
-      swap > 0 &&
-      runtime.branchIsolateRow !== null &&
-      runtime.branchIsolateRow >= 0
-        ? collectionSlotCentres(runtime.branchIsolateRow)
-        : null;
-
     const laneFor = collectorLanes();
 
     // Place in chronological order so a chain's predecessor is positioned
@@ -1473,50 +1536,29 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       rowPrevRight.set(rowIndex, baseLeft + width);
       placedRow[index] = rowIndex;
 
-      // Viewing a collection, the viewer's own items (the only ones showing)
-      // move in to one row nearest the main timeline on their side — whatever
-      // rows they sat in, as an item several collected sits in the first
-      // collector's — each to its slot there, easing with the view.
-      const homeTop = rowTopForRowIndex(rowIndex, rowGap, rowHeight);
-      let rowTop = homeTop;
-      if (
-        swap > 0 &&
-        runtime.branchIsolateRow !== null &&
-        runtime.branchIsolateRow >= 0 &&
-        item.sources.some((s) => s.rowIndex === runtime.branchIsolateRow)
-      ) {
-        const ownTop = rowTopForRowIndex(
-          runtime.branchIsolateRow % 2,
-          rowGap + COLLECTION_ROW_GAP_EXTRA,
-          rowHeight
-        );
-        rowTop = homeTop + (ownTop - homeTop) * swap;
-        const slot = ownSlots?.get(item.contentId);
-        if (slot !== undefined) {
-          baseLeft += (slot - width / 2 - baseLeft) * swap;
-        }
-      }
-      const baseTop = rowTop + (IMAGE_HEIGHT - height) / 2;
+      // Own branch items stay where they already sit — isolation only adds
+      // collectibles stemming off them (see getIsolatedMergedLine).
+      // Image middles share the row centreline so same-row chain connectors
+      // run level into each other (height only changes top/bottom crop).
+      const rowTop = rowTopForRowIndex(rowIndex, rowGap, rowHeight);
+      const rowCenterY = rowTop + IMAGE_HEIGHT / 2;
       const offset = collectedOffsets[index];
       // Laid out at base size, then grown about its centre.
-      const grow =
-        scale * collectionGrow(item) * itemAppearScale(deps, item.contentId);
+      const grow = scale * itemAppearScale(deps, item.contentId);
       const scaledWidth = width * grow;
       const scaledHeight = height * grow;
       const left = baseLeft + offset.dx - (scaledWidth - width) / 2;
-      const top = baseTop + offset.dy - (scaledHeight - height) / 2;
+      const centerY = rowCenterY + offset.dy;
+      const top = centerY - scaledHeight / 2;
       bounds[index] = inSoloGrid(`collected:${index}`, {
         left,
         right: left + scaledWidth,
-        centerY: top + scaledHeight / 2,
+        centerY,
         top,
         width: scaledWidth,
         height: scaledHeight,
         dateBottom: top + scaledHeight + DATE_OFFSET,
       });
-      if (swap > 0 && rowTop !== homeTop) {
-        swapping[index] = true;
-      }
     }
 
     makeRoomForLabels(
@@ -1696,18 +1738,19 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     return { targetX, order, frame };
   };
 
-  // The isolated branch's own items merged by date with the active
-  // collection's not-yet-collected items (skipping any the viewer has
-  // already collected onto this branch), the collection's placed on the
-  // branch's row at their own dates. Single source of truth for both where
-  // these items are drawn (drawFrame.ts) and where the camera frames/focuses
-  // them (view.ts) — kept in bounds.ts so the two can never drift apart.
+  // Own branch items stay put; collectibles are placed as a real collect on
+  // this row would be (skipping any already collected onto the branch).
+  // When the same content already sits on the map — main timeline or any
+  // collector's copy — the collectible overlays that spot (a real collect
+  // merges into that tile and stays put). Only content with no map copy yet
+  // gets a new stem on this row.
   const getIsolatedMergedLine = (
     rowIndex: number,
     expanded: Map<string, number> | null = null,
     swap = collectionSwap()
   ): IsolatedLine | null => {
     const cb = getCollectedBounds(undefined, swap);
+    const mainBounds = getAllBounds(swap);
     const isolatedCollected = processedCollected
       .map((item, index) => ({ item, index }))
       .filter(
@@ -1721,11 +1764,11 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       .map((item, index) => ({ item, index }))
       .filter(({ item }) => !isolatedContentIds.has(item.contentId));
 
-    // The viewer's own items stay where they sit on their branch. Each of the
-    // collection's items sits beside whichever of theirs is nearest before it
-    // in date (else nearest after), at that item's height and as near its own
-    // date as it can without overlapping it, linked to it (or to the
-    // collection item between them) with a dotted line.
+    // Own items stay put. Collectibles are placed as they would be once
+    // collected on this row: same-gap successors chain to the right of the
+    // previous pick; otherwise they sit at their date and branch from the
+    // main timeline (through main, then out — not a sideways stem off an
+    // existing user item in another gap).
     const own = isolatedCollected
       .map(({ item, index }) => ({
         kind: 'collected' as const,
@@ -1744,10 +1787,8 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
 
     const previewSize = (item: (typeof previews)[number]['item']) => {
       const fitted = getFittedSize(item.aspectRatio, ITEM_WIDTH, IMAGE_HEIGHT);
-      // The collection's items take the main timeline's extra size; the
-      // selected one also grows about its own centre on top of that
-      // (`expand`), without moving where it's placed.
-      const sizeScale = (1 + (MAIN_ITEM_SCALE - 1) * swap) * itemScale();
+      const sizeScale =
+        itemScale() * (1 + (COLLECTION_PREVIEW_SCALE - 1) * swap);
       return {
         width: fitted.width * sizeScale,
         height: fitted.height * sizeScale,
@@ -1755,93 +1796,222 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
           1 + (PREVIEW_EXPAND_SCALE - 1) * (expanded?.get(item.contentId) ?? 0),
       };
     };
-    // Which of the viewer's items each collection item hangs off, and on which
-    // side of it.
-    const groups = new Map<
-      string,
-      {
-        anchor: (typeof own)[number] | null;
-        after: boolean;
-        items: typeof previews;
+
+    // Where this content already lives on the map: main first, else the
+    // (single, merged) collected tile — collecting would join that tile.
+    const mapCounterpart = (
+      contentId: string
+    ): { rect: ContentBounds; onMain: boolean } | null => {
+      const mainIndex = items.findIndex((entry) => entry._id === contentId);
+      if (mainIndex >= 0 && mainBounds[mainIndex]) {
+        return { rect: mainBounds[mainIndex], onMain: true };
       }
-    >();
-    previews.forEach((entry) => {
-      const time = entry.item.anchorTime;
-      const before = [...own].reverse().find((o) => o.anchorTime <= time);
-      const anchor = before ?? own.find((o) => o.anchorTime > time) ?? null;
-      const after = anchor === null || before !== undefined;
-      const key = `${anchor?.contentId ?? ''}:${after}`;
-      const group = groups.get(key) ?? { anchor, after, items: [] };
-      group.items.push(entry);
-      groups.set(key, group);
-    });
+      const collectedIndex = processedCollected.findIndex(
+        (entry) => entry.contentId === contentId
+      );
+      if (collectedIndex >= 0 && cb[collectedIndex]) {
+        return { rect: cb[collectedIndex], onMain: false };
+      }
+      return null;
+    };
+
+    const rectAtCounterpart = (
+      item: (typeof previews)[number]['item'],
+      counterpart: ContentBounds
+    ): ContentBounds => {
+      const {
+        width: baseWidth,
+        height: baseHeight,
+        expand,
+      } = previewSize(item);
+      const width = baseWidth * expand;
+      const height = baseHeight * expand;
+      const left = counterpart.left + counterpart.width / 2 - width / 2;
+      const top = counterpart.centerY - height / 2;
+      return {
+        left,
+        right: left + width,
+        top,
+        centerY: counterpart.centerY,
+        width,
+        height,
+        dateBottom: top + height + DATE_OFFSET,
+      };
+    };
+
+    // Main-timeline dates: a collectible chains from the previous pick on
+    // the same row only when no main item falls strictly between them. A
+    // main item in between means a real collect would rejoin main and
+    // branch out again — use a stem from main for that case.
+    const mainTimes = items
+      .map((entry) =>
+        entry.date ? new Date(entry.date).getTime() : Number.NaN
+      )
+      .filter((t) => !Number.isNaN(t));
+    const mainBetween = (earlier: number, later: number) =>
+      mainTimes.some((t) => t > earlier && t < later);
+
+    // Immediate spatial neighbours a collectible sits between. Same-row tiles
+    // must be adjacent (chain spacing) — packed-row strangers further away
+    // don't count, or chain-starts like Drum Break grow a dotted line out
+    // into empty space. Main items only fill the missing side when the other
+    // side is already an adjacent row peer (branch tail → next main, e.g.
+    // Iman Image → Show Collection → Soldering). Through-join only with both
+    // sides; a chain start stems from main.
+    type ThroughPeer = { contentId: string; rect: ContentBounds };
+    const chainGap = ITEM_GAP * 1.5;
+    const throughJoinAt = (
+      rect: ContentBounds,
+      contentId: string,
+      rowPeers: ThroughPeer[],
+      opts?: { onMain?: boolean; allowMainSucc?: boolean }
+    ): Pick<
+      IsolatedLineEntry,
+      | 'linkedTo'
+      | 'linkFrom'
+      | 'linkOut'
+      | 'linkFromId'
+      | 'linkOutId'
+      | 'branchFromMain'
+    > => {
+      const sameRow = (r: ContentBounds) =>
+        Math.abs(r.centerY - rect.centerY) < IMAGE_HEIGHT / 2;
+      const row = rowPeers.filter(
+        (p) => p.contentId !== contentId && sameRow(p.rect)
+      );
+      const mainPeers: ThroughPeer[] = items
+        .map((entry, mainIndex) =>
+          mainBounds[mainIndex]
+            ? { contentId: entry._id, rect: mainBounds[mainIndex] }
+            : null
+        )
+        .filter((p): p is ThroughPeer => p !== null);
+      // Adjacent only — ignores other collectors sharing the row further out.
+      const earlierRow = row
+        .filter(
+          (p) =>
+            p.rect.right <= rect.left + 1 &&
+            rect.left - p.rect.right <= chainGap
+        )
+        .sort((a, b) => b.rect.right - a.rect.right);
+      const laterRow = row
+        .filter(
+          (p) =>
+            p.rect.left >= rect.right - 1 &&
+            p.rect.left - rect.right <= chainGap
+        )
+        .sort((a, b) => a.rect.left - b.rect.left);
+      const earlierMain = mainPeers
+        .filter((p) => p.rect.right <= rect.left + 1)
+        .sort((a, b) => b.rect.right - a.rect.right);
+      const laterMain = mainPeers
+        .filter((p) => p.rect.left >= rect.right - 1)
+        .sort((a, b) => a.rect.left - b.rect.left);
+
+      let pred = earlierRow[0];
+      let succ = laterRow[0];
+      if (opts?.onMain) {
+        pred = pred ?? earlierMain[0];
+        succ = succ ?? laterMain[0];
+      } else if (opts?.allowMainSucc && pred && !succ) {
+        // Free-placed into a rejoin slot: dotted out to the next main item.
+        succ = laterMain[0];
+      } else if (!pred && succ) {
+        // Adjacent row peer only on the right: chain start — stem from main,
+        // no dotted line out to that neighbour alone.
+        return { branchFromMain: true };
+      }
+
+      if (pred && succ) {
+        return {
+          linkedTo: pred.contentId,
+          linkFrom: { x: pred.rect.right, y: pred.rect.centerY },
+          linkOut: { x: succ.rect.left, y: succ.rect.centerY },
+          linkFromId: pred.contentId,
+          linkOutId: succ.contentId,
+        };
+      }
+      if (pred) {
+        // Mid-chain overlay with only a left neighbour: keep linking in, but
+        // do NOT invent a long dotted line out to a distant main item (that
+        // was the Drum Break stray). A real chain-start overlay with no
+        // adjacent peers falls through to branchFromMain below.
+        return {
+          linkedTo: pred.contentId,
+          linkFrom: { x: pred.rect.right, y: pred.rect.centerY },
+          linkFromId: pred.contentId,
+        };
+      }
+      // Chain start / lone overlay — keep the stem from the main timeline.
+      return { branchFromMain: true };
+    };
+
+    // Overlay a collectible on an existing map tile. Main-timeline overlays
+    // through-join adjacent main items when mid-line; collected overlays
+    // through-join their row (and main, when that's the next neighbour).
+    const placeOnCounterpart = (
+      item: (typeof previews)[number]['item'],
+      index: number,
+      counterpart: { rect: ContentBounds; onMain: boolean }
+    ): IsolatedLineEntry => {
+      const rect = rectAtCounterpart(item, counterpart.rect);
+      const rowPeers: ThroughPeer[] = [];
+      if (!counterpart.onMain) {
+        processedCollected.forEach((other, otherIndex) => {
+          const otherRect = cb[otherIndex];
+          if (!otherRect || other.contentId === item.contentId) {
+            return;
+          }
+          rowPeers.push({ contentId: other.contentId, rect: otherRect });
+        });
+      }
+      placed.forEach((p) => {
+        rowPeers.push({ contentId: p.contentId, rect: p.rect });
+      });
+      const join = throughJoinAt(rect, item.contentId, rowPeers, {
+        onMain: counterpart.onMain,
+      });
+      return {
+        kind: 'preview',
+        index,
+        contentId: item.contentId,
+        rect,
+        ...join,
+      };
+    };
 
     const placed: IsolatedLineEntry[] = [];
     if (own.length === 0) {
-      // No branch yet (they haven't collected anything): the collection's
-      // items sit in a row of their own just above the main timeline, spaced
-      // evenly along its length and not linked to anything.
-      const main = getAllBounds(swap);
-      const start = main[0]?.left ?? 0;
-      const end = main[main.length - 1]?.right ?? start;
-      const step = (end - start) / previews.length;
+      // No branch yet: collection items sit in a row just above the main
+      // timeline, spaced evenly along its length — unless a counterpart
+      // already exists on the map, in which case they overlay it.
+      const start = mainBounds[0]?.left ?? 0;
+      const end = mainBounds[mainBounds.length - 1]?.right ?? start;
+      const free = previews.filter(
+        ({ item }) => !mapCounterpart(item.contentId)
+      );
+      const step = (end - start) / Math.max(free.length, 1);
       const centerY =
         MAIN_LINE_Y -
         (IMAGE_HEIGHT * (1 + MAIN_ITEM_SCALE)) / 2 -
         COLLECTION_ROW_GAP;
-      previews.forEach(({ item, index }, k) => {
-        const {
-          width: baseWidth,
-          height: baseHeight,
-          expand,
-        } = previewSize(item);
-        const width = baseWidth * expand;
-        const height = baseHeight * expand;
-        const left = start + step * (k + 0.5) - width / 2;
-        const top = centerY - height / 2;
-        placed.push({
-          kind: 'preview',
-          index,
-          contentId: item.contentId,
-          rect: {
-            left,
-            right: left + width,
-            top,
-            centerY,
-            width,
-            height,
-            dateBottom: top + height + DATE_OFFSET,
-          },
-        });
-      });
-    }
-    // Beside the viewer's own items, each to its slot in their row (see
-    // collectionSlotCentres), linked to the one before it in date order
-    // (or, the first, to the one after).
-    if (own.length > 0) {
-      const slots = collectionSlotCentres(rowIndex);
-      const centerY = own[0].rect.centerY;
-      const rowOrder = [
-        ...own.map((o) => ({ contentId: o.contentId, time: o.anchorTime })),
-        ...previews.map(({ item }) => ({
-          contentId: item.contentId,
-          time: item.anchorTime,
-        })),
-      ].sort((a, b) => a.time - b.time);
+      let freeIndex = 0;
       previews.forEach(({ item, index }) => {
+        const counterpart = mapCounterpart(item.contentId);
+        if (counterpart) {
+          placed.push(placeOnCounterpart(item, index, counterpart));
+          return;
+        }
         const {
           width: baseWidth,
           height: baseHeight,
           expand,
         } = previewSize(item);
-        const centerX =
-          slots.get(item.contentId) ?? timeToWorldX(item.anchorTime);
         const width = baseWidth * expand;
         const height = baseHeight * expand;
-        const left = centerX - width / 2;
+        const left = start + step * (freeIndex + 0.5) - width / 2;
+        freeIndex += 1;
         const top = centerY - height / 2;
-        const at = rowOrder.findIndex((o) => o.contentId === item.contentId);
-        const neighbour = rowOrder[at - 1] ?? rowOrder[at + 1];
         placed.push({
           kind: 'preview',
           index,
@@ -1855,55 +2025,127 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
             height,
             dateBottom: top + height + DATE_OFFSET,
           },
-          linkedTo: neighbour?.contentId,
+          branchFromMain: true,
         });
       });
-      groups.clear();
+    } else {
+      const centerY = own[0].rect.centerY;
+      // Occupied spans on this row (own items + placed collectibles), so new
+      // picks don't overlap. Counterparts on other rows don't reserve space.
+      const occupied: { left: number; right: number }[] = own.map((o) => ({
+        left: o.rect.left,
+        right: o.rect.right,
+      }));
+      const clearLeft = (width: number, preferredLeft: number) => {
+        let left = preferredLeft;
+        let guard = 0;
+        while (guard++ < occupied.length + 2) {
+          const hit = occupied.find(
+            (o) => left < o.right + ITEM_GAP && left + width > o.left - ITEM_GAP
+          );
+          if (!hit) {
+            break;
+          }
+          left = hit.right + ITEM_GAP;
+        }
+        return left;
+      };
+
+      previews.forEach(({ item, index }) => {
+        const counterpart = mapCounterpart(item.contentId);
+        if (counterpart) {
+          placed.push(placeOnCounterpart(item, index, counterpart));
+          return;
+        }
+        const {
+          width: baseWidth,
+          height: baseHeight,
+          expand,
+        } = previewSize(item);
+        const width = baseWidth * expand;
+        const height = baseHeight * expand;
+        const time = item.anchorTime;
+        type Pred = { contentId: string; right: number; time: number };
+        const candidates: Pred[] = [
+          ...own
+            .filter(
+              (o) => o.anchorTime < time && !mainBetween(o.anchorTime, time)
+            )
+            .map((o) => ({
+              contentId: o.contentId,
+              right: o.rect.right,
+              time: o.anchorTime,
+            })),
+          ...placed
+            .filter((p) => Math.abs(p.rect.centerY - centerY) < IMAGE_HEIGHT)
+            .map((p) => {
+              const pt = previews.find((e) => e.item.contentId === p.contentId)
+                ?.item.anchorTime;
+              return pt !== undefined && pt < time && !mainBetween(pt, time)
+                ? {
+                    contentId: p.contentId,
+                    right: p.rect.right,
+                    time: pt,
+                  }
+                : null;
+            })
+            .filter((p): p is Pred => p !== null),
+        ];
+        candidates.sort((a, b) => b.time - a.time);
+        const chainPred = candidates[0];
+        // No same-gap chain pred, but this row already has picks in this main
+        // gap that rejoin the next main item: sit in that rejoin slot (after
+        // the chain tail) so the dotted line can replace the solid rejoin —
+        // e.g. Iman Image → Show Collection → Soldering.
+        const gapIndex = getPreviousMainIndex(time);
+        const rejoinAt = rejoinMainIndex(gapIndex);
+        const gapOwn = own
+          .filter((o) => getPreviousMainIndex(o.anchorTime) === gapIndex)
+          .sort(
+            (a, b) => a.anchorTime - b.anchorTime || a.rect.left - b.rect.left
+          );
+        const rejoinTail =
+          !chainPred &&
+          rejoinAt >= 0 &&
+          mainBounds[rejoinAt] &&
+          gapOwn.length > 0
+            ? gapOwn[gapOwn.length - 1]
+            : null;
+        const preferredLeft = rejoinTail
+          ? rejoinTail.rect.right + ITEM_GAP
+          : chainPred
+          ? chainPred.right + ITEM_GAP
+          : timeToWorldX(time) - width / 2;
+        const left = clearLeft(width, preferredLeft);
+        const top = centerY - height / 2;
+        const rect: ContentBounds = {
+          left,
+          right: left + width,
+          top,
+          centerY,
+          width,
+          height,
+          dateBottom: top + height + DATE_OFFSET,
+        };
+        const rowPeers: ThroughPeer[] = [
+          ...own.map((o) => ({ contentId: o.contentId, rect: o.rect })),
+          ...placed.map((p) => ({ contentId: p.contentId, rect: p.rect })),
+        ];
+        const join = throughJoinAt(rect, item.contentId, rowPeers, {
+          // Only the rejoin-slot insert may dotted-out to main (Soldering).
+          allowMainSucc: rejoinTail !== null,
+        });
+        placed.push({
+          kind: 'preview',
+          index,
+          contentId: item.contentId,
+          rect,
+          ...join,
+        });
+        occupied.push({ left, right: left + width });
+        occupied.sort((a, b) => a.left - b.left);
+      });
     }
-    groups.forEach(({ anchor, after, items }) => {
-      if (!anchor) {
-        return;
-      }
-      const centerY = anchor.rect.centerY;
-      // Walk outward from the anchor: later items to its right in date order,
-      // earlier ones to its left in reverse.
-      const ordered = after ? items : [...items].reverse();
-      let edge = after ? anchor.rect.right : anchor.rect.left;
-      let previousId = anchor.contentId;
-      ordered.forEach(({ item, index }) => {
-        const {
-          width: baseWidth,
-          height: baseHeight,
-          expand,
-        } = previewSize(item);
-        const dateX = timeToWorldX(item.anchorTime);
-        const baseLeft = after
-          ? Math.max(dateX - baseWidth / 2, edge + ITEM_GAP)
-          : Math.min(dateX + baseWidth / 2, edge - ITEM_GAP) - baseWidth;
-        const centerX = baseLeft + baseWidth / 2;
-        const width = baseWidth * expand;
-        const height = baseHeight * expand;
-        const left = centerX - width / 2;
-        const top = centerY - height / 2;
-        placed.push({
-          kind: 'preview',
-          index,
-          contentId: item.contentId,
-          rect: {
-            left,
-            right: left + width,
-            top,
-            centerY,
-            width,
-            height,
-            dateBottom: top + height + DATE_OFFSET,
-          },
-          linkedTo: previousId,
-        });
-        edge = after ? baseLeft + baseWidth : baseLeft;
-        previousId = item.contentId;
-      });
-    });
 
     const entries: IsolatedLineEntry[] = [
       ...own.map(({ kind, index, contentId, rect }) => ({

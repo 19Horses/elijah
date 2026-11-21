@@ -21,6 +21,7 @@ import { getContentTypeKicker } from '../constants/contentTypes';
 import {
   ALREADY_COLLECTED_MAX_TILT_DEG,
   ALREADY_COLLECTED_MIN_TILT_DEG,
+  COLLECTION_VIEW_FOCUS_ID,
 } from '../components/timelineCanvas/constants';
 import { panelTagTilt } from '../utils/tilt';
 import CollectionViewer from '../components/CollectionViewer';
@@ -78,6 +79,7 @@ import { getDisplayColour } from '../services/userColor';
 import { getStoredUser, USER_CHANGED_EVENT } from '../services/userStorage';
 import type { CollectionContent, ContentType } from '../types/content';
 import { prefersReducedMotion } from '../utils/motionPreference';
+import ExpandableRichText from '../components/ExpandableRichText';
 import RichText from '../components/RichText';
 import { hasRichText } from '../utils/richText';
 
@@ -101,6 +103,20 @@ type HomeProps = {
 // How long a collection box's list takes to slide open or shut (matches
 // .collection-card-panel's transition).
 const COLLECTION_PANEL_SLIDE_MS = 300;
+
+// Collection badge lists (and their selection indices) go oldest → newest.
+function collectionContentByDate(
+  content: CollectionContent[] | null | undefined
+): CollectionContent[] {
+  return [...(content ?? [])].sort((a, b) => {
+    const ta = a.date ? new Date(a.date).getTime() : Number.POSITIVE_INFINITY;
+    const tb = b.date ? new Date(b.date).getTime() : Number.POSITIVE_INFINITY;
+    if (ta !== tb) {
+      return ta - tb;
+    }
+    return a._id.localeCompare(b._id);
+  });
+}
 
 function Home({
   onEntranceComplete,
@@ -148,9 +164,72 @@ function Home({
   const [centerOnCollectionItemId, setCenterOnCollectionItemId] = useState<
     string | null
   >(null);
+  // Canvas hover/click of a collectible: scroll its badge row into view and
+  // pulse the title / + twice (`pulseKey` retriggers when the same item is
+  // clicked again). Panel hover only highlights.
+  const [pulseCollectionItemId, setPulseCollectionItemId] = useState<
+    string | null
+  >(null);
+  const [pulseKey, setPulseKey] = useState(0);
   useEffect(() => {
     setCenterOnCollectionItemId(null);
   }, [expandedCollectionId]);
+
+  const pulseCollectionItem = useCallback((contentId: string) => {
+    setHoveredCollectionItemId(contentId);
+    // Drop the class for a frame so a re-click restarts the CSS animation.
+    setPulseCollectionItemId(null);
+    requestAnimationFrame(() => {
+      setPulseCollectionItemId(contentId);
+      setPulseKey((key) => key + 1);
+    });
+  }, []);
+
+  const handleCanvasPreviewHover = useCallback(
+    (contentId: string | null) => {
+      if (contentId) {
+        pulseCollectionItem(contentId);
+      } else {
+        setHoveredCollectionItemId(null);
+      }
+    },
+    [pulseCollectionItem]
+  );
+
+  // Scroll the badge list so the hovered collectible's row (description and
+  // all) is on screen, and clear the colour pulse once it has played twice.
+  useEffect(() => {
+    if (!pulseCollectionItemId || pulseKey === 0) {
+      return undefined;
+    }
+    const title = document.querySelector(
+      `.collection-card-title[data-content-id="${CSS.escape(
+        pulseCollectionItemId
+      )}"]`
+    );
+    const list = document.querySelector('.collection-card-list');
+    if (title instanceof HTMLElement && list instanceof HTMLElement) {
+      const pad = 16;
+      const listRect = list.getBoundingClientRect();
+      const titleRect = title.getBoundingClientRect();
+      let delta = 0;
+      if (titleRect.bottom > listRect.bottom - pad) {
+        delta = titleRect.bottom - (listRect.bottom - pad);
+      } else if (titleRect.top < listRect.top + pad) {
+        delta = titleRect.top - (listRect.top + pad);
+      }
+      if (Math.abs(delta) > 0.5) {
+        list.scrollTo({ top: list.scrollTop + delta, behavior: 'smooth' });
+      }
+    }
+    const clear = window.setTimeout(() => {
+      setPulseCollectionItemId((current) =>
+        current === pulseCollectionItemId ? null : current
+      );
+    }, 1350);
+    return () => window.clearTimeout(clear);
+  }, [pulseCollectionItemId, pulseKey]);
+
   // Per-collection "has the viewer already collected from this one" status.
   // A collection id's absence means its status hasn't been checked yet.
   const [collectedStatus, setCollectedStatus] = useState<
@@ -175,6 +254,9 @@ function Home({
   const [videoState, setVideoState] = useState<VideoPlayerState | null>(null);
   // Mini player / zoomed popup only after the user has actually hit play.
   const [videoEverPlayed, setVideoEverPlayed] = useState(false);
+  // True while the video overlay is the browser fullscreen element. Pausing
+  // must not unmount it, or fullscreen exits and the timeline snaps back.
+  const [videoFullscreen, setVideoFullscreen] = useState(false);
 
   const { data: contentDetail } = useContentDetail(focusSlug, timeline?.items);
 
@@ -187,6 +269,12 @@ function Home({
 
   const showMiniVideo =
     videoState !== null && !isVideoFocused && videoEverPlayed;
+  // Zoomed overlay stays up while playing, or while fullscreen (so pause
+  // doesn't tear down the fullscreen element and snap back to the timeline).
+  const showZoomedVideo =
+    videoState !== null &&
+    isVideoZoomedIn &&
+    (videoState.playing || videoFullscreen);
   const hasAudioPlayer = audioState !== null && audioState !== undefined;
   // Whether the video's small player came in before the audio player, and so
   // sits above it; settled whenever only one of them is showing.
@@ -258,6 +346,7 @@ function Home({
     fadeOutTimerRef.current = window.setTimeout(() => {
       setVideoState(null);
       setVideoEverPlayed(false);
+      setVideoFullscreen(false);
       setVideoFadingOut(false);
       fadeOutTimerRef.current = null;
     }, 450);
@@ -269,6 +358,7 @@ function Home({
     }
     setVideoFadingOut(false);
     setVideoEverPlayed(false);
+    setVideoFullscreen(false);
     setVideoState(null);
   }, []);
 
@@ -361,6 +451,7 @@ function Home({
   const handleContentFocus = useCallback(
     (slug: string) => {
       setFocusSlug(slug);
+      setCollectingItemId(null);
       setDetailReady(false);
       setDetailImageRect(null);
 
@@ -557,9 +648,15 @@ function Home({
     collections?.find(
       (collection) => collection._id === expandedCollectionId
     ) ?? null;
+  // Stable across hover re-renders — a fresh array each time made the canvas
+  // think the collection changed and flash-reload the timeline.
+  const expandedCollectionContent = useMemo(
+    () => collectionContentByDate(expandedCollection?.content),
+    [expandedCollection?.content]
+  );
   const expandedSelectedItemId =
-    expandedCollection?.content?.[
-      selectedItemIndexByCollection[expandedCollection._id] ?? 0
+    expandedCollectionContent[
+      selectedItemIndexByCollection[expandedCollection?._id ?? ''] ?? 0
     ]?._id ?? null;
   // Hovering either side (the title or the canvas item) previews the
   // highlight without disturbing the persisted selection underneath it.
@@ -839,6 +936,17 @@ function Home({
     return <p className="home-status">No timeline items yet.</p>;
   }
 
+  const availableCollections = (collections ?? []).filter(
+    (collection) => collectedStatus[collection._id] === false
+  );
+  // Already-opened cards only sit under live ones while any are still open.
+  const openedCollections =
+    availableCollections.length > 0
+      ? (collections ?? []).filter(
+          (collection) => collectedStatus[collection._id] === true
+        )
+      : [];
+
   return (
     <section className="home">
       <div
@@ -849,11 +957,14 @@ function Home({
         <TimelineCanvas
           items={timeline.items}
           collectedRows={collectedRows}
-          previewItems={expandedCollection?.content ?? undefined}
+          previewItems={
+            expandedCollection ? expandedCollectionContent : undefined
+          }
           previewColour={getDisplayColour()}
           highlightedPreviewContentId={highlightedCollectionItemId}
           centerOnPreviewContentId={centerOnCollectionItemId}
-          onPreviewItemHover={setHoveredCollectionItemId}
+          onPreviewItemHover={handleCanvasPreviewHover}
+          onPreviewItemClick={pulseCollectionItem}
           onPreviewCollectStart={setCollectingItemId}
           onPreviewCollect={handlePreviewCollect}
           cancelPreviewCollectControlRef={cancelPreviewCollectRef}
@@ -931,6 +1042,7 @@ function Home({
                 onEnded={handleVideoEnded}
                 onClose={handleCloseVideo}
                 onJumpToItem={handleJumpToVideoItem}
+                onFullscreenChange={setVideoFullscreen}
               />
             )}
           </div>
@@ -976,8 +1088,14 @@ function Home({
               hidden while an item is being viewed. */}
           <div
             className={`collection-card-list${
-              focusSlug !== null || branchFocus?.empty
+              focusSlug !== null ||
+              branchFocus?.empty ||
+              collectingItemId !== null
                 ? ' collection-card-list--hidden'
+                : ''
+            }${
+              collectingItemId !== null
+                ? ' collection-card-list--collecting'
                 : ''
             }`}
           >
@@ -995,60 +1113,65 @@ function Home({
                 />
               ) : (
                 <>
-                  {(collections ?? [])
-                    .filter(
-                      (collection) => collectedStatus[collection._id] === false
-                    )
-                    .map((collection, collectionIndex) => (
-                      <div
-                        data-collection-id={collection._id}
-                        className={`collection-card-stack${
-                          collectingItemId !== null
-                            ? ' collection-card-stack--hidden collection-card-stack--collecting'
-                            : ''
-                        }`}
-                        key={collection._id}
-                        style={
-                          {
-                            '--countdown-stack-delay': `${
-                              collectionIndex * 120
-                            }ms`,
-                          } as React.CSSProperties
+                  {availableCollections.map((collection, collectionIndex) => (
+                    <div
+                      data-collection-id={collection._id}
+                      className={`collection-card-stack${
+                        collectingItemId !== null || focusSlug !== null
+                          ? ' collection-card-stack--hidden'
+                          : ''
+                      }${
+                        collectingItemId !== null
+                          ? ' collection-card-stack--collecting'
+                          : ''
+                      }`}
+                      key={collection._id}
+                      style={
+                        {
+                          '--countdown-stack-delay': `${
+                            collectionIndex * 120
+                          }ms`,
+                        } as React.CSSProperties
+                      }
+                    >
+                      <CollectionCountdown
+                        collection={collection}
+                        reveal={revealCountdowns}
+                        open={openPanelId === collection._id}
+                        // Signed out, a collection can't be opened: the
+                        // label says so, and a click goes to log in.
+                        cursorLabel={
+                          currentUsername
+                            ? null
+                            : 'Create an account/log in to open this collection'
                         }
+                        onClick={() =>
+                          currentUsername
+                            ? handleCollectionBadgeClick(collection._id)
+                            : navigate('/login')
+                        }
+                        onHeaderHover={() => {
+                          setHoveredCollectionItemId(null);
+                          setCenterOnCollectionItemId(COLLECTION_VIEW_FOCUS_ID);
+                        }}
                       >
-                        <CollectionCountdown
-                          collection={collection}
-                          reveal={revealCountdowns}
-                          open={openPanelId === collection._id}
-                          // Signed out, a collection can't be opened: the
-                          // label says so, and a click goes to log in.
-                          cursorLabel={
-                            currentUsername
-                              ? null
-                              : 'Create an account/log in to open this collection'
-                          }
-                          onClick={() =>
-                            currentUsername
-                              ? handleCollectionBadgeClick(collection._id)
-                              : navigate('/login')
-                          }
+                        <div
+                          className={`collection-card-panel${
+                            openPanelId === collection._id
+                              ? ' collection-card-panel--visible'
+                              : ''
+                          }`}
                         >
                           <div
-                            className={`collection-card-panel${
-                              openPanelId === collection._id
-                                ? ' collection-card-panel--visible'
-                                : ''
-                            }`}
+                            className="collection-card-titles"
+                            style={
+                              {
+                                '--collection-title-colour': branchColour,
+                              } as React.CSSProperties
+                            }
                           >
-                            <div
-                              className="collection-card-titles"
-                              style={
-                                {
-                                  '--collection-title-colour': branchColour,
-                                } as React.CSSProperties
-                              }
-                            >
-                              {(collection.content ?? []).map((item, index) => {
+                            {collectionContentByDate(collection.content).map(
+                              (item, index) => {
                                 const isFocused =
                                   focusSlug !== null && item.slug === focusSlug;
                                 const isCollected = collectedContentIds.has(
@@ -1063,6 +1186,7 @@ function Home({
                                   <button
                                     key={item._id}
                                     type="button"
+                                    data-content-id={item._id}
                                     className={`collection-card-title${
                                       isFocused
                                         ? ' collection-card-title--active'
@@ -1070,6 +1194,10 @@ function Home({
                                     }${
                                       isCollected
                                         ? ' collection-card-title--collected'
+                                        : ''
+                                    }${
+                                      pulseCollectionItemId === item._id
+                                        ? ' collection-card-title--pulse'
                                         : ''
                                     }`}
                                     style={
@@ -1157,33 +1285,30 @@ function Home({
                                     )}
                                     {hasRichText(description) &&
                                       !isCollected && (
-                                        <span className="collection-card-title__description">
+                                        <ExpandableRichText
+                                          className="collection-card-title__description"
+                                          bodyClassName="collection-card-title__description-body"
+                                          toggleClassName="collection-card-title__description-toggle"
+                                        >
                                           <RichText value={description} />
-                                        </span>
+                                        </ExpandableRichText>
                                       )}
                                   </button>
                                 );
-                              })}
-                            </div>
+                              }
+                            )}
                           </div>
-                        </CollectionCountdown>
-                      </div>
-                    ))}
+                        </div>
+                      </CollectionCountdown>
+                    </div>
+                  ))}
                   {/* Those already opened, collapsed at the foot (not once every
-                    one's been opened). */}
+                    one's been opened). Fade in staggered after the live ones. */}
                   <OpenedCollectionCards
-                    collections={
-                      (collections ?? []).some(
-                        (collection) =>
-                          collectedStatus[collection._id] === false
-                      )
-                        ? (collections ?? []).filter(
-                            (collection) =>
-                              collectedStatus[collection._id] === true
-                          )
-                        : []
-                    }
+                    collections={openedCollections}
                     collectedContentIds={collectedContentIds}
+                    reveal={revealCountdowns}
+                    staggerAfter={availableCollections.length}
                     onOpen={(contentId) => {
                       setHoveredCardContentId(null);
                       focusContentIdControlRef?.current?.(contentId);
@@ -1194,7 +1319,7 @@ function Home({
               ))}
           </div>
         </div>
-        {videoState && isVideoZoomedIn && videoState.playing && (
+        {videoState && showZoomedVideo && (
           <VideoOverlayPlayer
             state={videoState}
             isZoomedIn={true}
@@ -1206,6 +1331,7 @@ function Home({
             onEnded={handleVideoEnded}
             onClose={handleCloseVideo}
             onJumpToItem={handleJumpToVideoItem}
+            onFullscreenChange={setVideoFullscreen}
           />
         )}
       </div>

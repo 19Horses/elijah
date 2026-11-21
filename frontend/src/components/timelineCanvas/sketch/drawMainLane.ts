@@ -140,11 +140,13 @@ export type MainLaneDrawContext = {
   nodeRegions: NodeHoverRegion[];
   // Multiplier that fades connectors out while a branch is isolated (1 = none).
   isolateOtherAlpha: number;
+  // How far (0-1) isolation has progressed (kept for callers that still
+  // ease other isolate visuals with it).
+  isolateProgress: number;
   // Everything but an item being collected fades away while it flies in (and
   // back as it lands).
   collectFade: number;
-  // How far (0-1) item pictures are greyed out and their labels hidden, while
-  // a collection is being viewed.
+  // How far (0-1) item pictures are greyed out while a collection is viewed.
   isolateGrey: number;
   // The viewer's own branch row while a collection is being viewed (its lines
   // stay as the other collectors' fade out), else null.
@@ -159,6 +161,9 @@ export type MainLaneDrawContext = {
   // the viewer has still to collect keep their labels while the others' are
   // hidden.
   collectionContentIds: Set<string>;
+  // Solid branch connectors a mid-chain collectible is replacing with dotted
+  // lines (normalized `${idA}|${idB}` with idA < idB). Skipped while drawn.
+  replacedBranchPairs: Set<string>;
   // The focused item's branch nodes on their way out to the viewport edges, or
   // null when every node sits on its item.
   edgeNodes: EdgeNodeLayout | null;
@@ -284,6 +289,8 @@ export function placeViewerDots(
       x: firstX + side * (k % VIEWER_DOT_COLUMNS) * step,
       y: firstY + Math.floor(k / VIEWER_DOT_COLUMNS) * step,
       alpha,
+      // Grow the hover tag away from the image (right when on its right).
+      expand: side,
     });
   });
 }
@@ -479,7 +486,9 @@ export function drawMainLaneConnectors(
 
     const lineAlpha = mainConnectorAlpha(ctx, index, connectorLoadAlpha);
     // Viewing an item fades the lines away; its edge nodes' stubs stay.
-    mainCtx.globalAlpha = lineAlpha * ctx.otherContentAlpha;
+    // collectFade keeps lines hidden through collect → focus handoff so they
+    // don't flash in under the flying/settling item.
+    mainCtx.globalAlpha = lineAlpha * ctx.otherContentAlpha * ctx.collectFade;
 
     // Focused item's endpoint follows its image to the detail position.
     const fromBounds = ctx.getDetailDrawBounds('main', index, bounds[index]);
@@ -524,7 +533,9 @@ export function drawMainLaneConnectors(
       to: { key: `main:${index + 1}`, slug: deps.processed[index + 1].slug },
       points: drawn,
     });
-    mainCtx.globalAlpha = lineAlpha;
+    // Stubs (and their dots below) ignore the focus fade so edge nodes stay
+    // visible while the rest of the map is hidden — same as collected lanes.
+    mainCtx.globalAlpha = lineAlpha * ctx.collectFade;
     if (edge) {
       const edgeDotRadius =
         DOT_RADIUS * edgeNodeDotScale(deps.runtime.zoom, edge.progress);
@@ -793,16 +804,14 @@ export function drawMainLaneItems(
         deps.runtime.detailLayout > 0
       )
     ) {
-      // The kind tag and label are hidden while a collection is being viewed,
-      // unless it's one of its items the viewer has still to collect.
-      const labelHide = toCollect ? 0 : ctx.isolateGrey;
+      // Titles/dates stay visible in the collection view (pictures may still
+      // grey via isolateGrey); only a focused detail layout hides them.
       const kind = getContentTypeKicker(item.contentType);
-      if (kind && labelHide < 1) {
+      if (kind) {
         mainCtx.globalAlpha =
-          (ctx.isTypeHighlightActive && !typeMatch
+          ctx.isTypeHighlightActive && !typeMatch
             ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
-            : visibilityAlpha) *
-          (1 - labelHide);
+            : visibilityAlpha;
         drawKindTag(
           p,
           kind,
@@ -812,7 +821,7 @@ export function drawMainLaneItems(
         );
         resetCanvasEffects(mainCtx);
       }
-      if (labelHide < 1) {
+      {
         const seenIds = deps.refs.seenTimelineIdsRef.current;
         const unseen = Boolean(seenIds && !seenIds.has(deps.items[index]._id));
         ctx.dateLabels.push({
@@ -849,10 +858,9 @@ export function drawMainLaneItems(
           maxWidth: Math.max(width, ITEM_WIDTH * 0.8),
           colour: ITEM_LABEL_COLOUR,
           alpha:
-            (ctx.isTypeHighlightActive && !typeMatch
+            ctx.isTypeHighlightActive && !typeMatch
               ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
-              : visibilityAlpha) *
-            (1 - labelHide),
+              : visibilityAlpha,
         });
       }
     }
@@ -987,7 +995,10 @@ export function drawMainLaneConnectorDots(
     };
     const dFrom = place({ x: fromBounds.right, y: fromBounds.centerY }, 'from');
     const dTo = place({ x: toBounds.left, y: toBounds.centerY }, 'to');
-    mainCtx.globalAlpha = mainConnectorAlpha(ctx, index, connectorLoadAlpha);
+    // Edge-node dots stay while the map fades (only these dots are drawn —
+    // unfocused ends are dotless).
+    mainCtx.globalAlpha =
+      mainConnectorAlpha(ctx, index, connectorLoadAlpha) * ctx.collectFade;
     [dFrom, dTo].forEach((d) => {
       if (!d.dotless && !d.hidden) {
         drawDot(p, d.x, d.y, MAIN_LINE_COLOUR, d.scale, d.holeRatio);

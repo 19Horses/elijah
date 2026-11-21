@@ -3,12 +3,17 @@ import { pageBackgroundAt } from '../canvasEffects';
 import { extractSubPath, polylineLength } from '../connectors';
 import { frameLerp } from '../geometry';
 import {
+  CANVAS_LABEL_FONT,
+  LINE_TAG_RADIUS_PX,
   MAIN_USERNAME,
   VIEWER_DOT_FADE_MS,
-  VIEWER_DOT_HOVER_GROW,
   VIEWER_DOT_HOVER_LERP,
   VIEWER_DOT_RADIUS_PX,
   VIEWER_DOT_RING_PX,
+  VIEWER_DOT_TAG_FONT_PX,
+  VIEWER_DOT_TAG_PAD_X_PX,
+  VIEWER_DOT_TAG_PAD_Y_PX,
+  VIEWER_DOT_TAG_TEXT_AT,
   VIEWER_FLASH_GLOW_PX,
   VIEWER_FLASH_LENGTH_PX,
   VIEWER_FLASH_MAX_MS,
@@ -33,6 +38,8 @@ export type ViewerDotTarget = {
   x: number;
   y: number;
   alpha: number;
+  // Which way the hover name tag grows (away from the content image).
+  expand: 1 | -1;
 };
 
 // One stretch of timeline drawn this frame, between two items (`key` tells
@@ -152,6 +159,11 @@ type PlacedDot = {
   colour: string;
   alpha: number;
   hover: number;
+  // Hit box in world units (grows with the outward name tag).
+  hitLeft: number;
+  hitRight: number;
+  hitTop: number;
+  hitBottom: number;
   // The viewer, for a dot that can be hovered (not a fading ghost).
   viewer?: ViewerDotTarget;
 };
@@ -165,18 +177,20 @@ export function createViewerDotAnimator() {
   let placed: PlacedDot[] = [];
   let flashes: { flash: Flash; alpha: number }[] = [];
 
-  // The viewer whose dot is under `point` (world), as of the last update.
+  // The viewer whose dot (or expanded name tag) is under `point` (world).
   const hitTest = (
     point: { x: number; y: number },
-    zoom: number
+    _zoom: number
   ): ViewerDotTarget | null => {
-    const reach = (VIEWER_DOT_RADIUS_PX + VIEWER_DOT_RING_PX + 2) / zoom;
     for (let i = placed.length - 1; i >= 0; i--) {
       const dot = placed[i];
       if (
         dot.viewer &&
         dot.alpha > 0.5 &&
-        Math.hypot(point.x - dot.x, point.y - dot.y) <= reach
+        point.x >= dot.hitLeft &&
+        point.x <= dot.hitRight &&
+        point.y >= dot.hitTop &&
+        point.y <= dot.hitBottom
       ) {
         return dot.viewer;
       }
@@ -260,17 +274,51 @@ export function createViewerDotAnimator() {
         ((target.userId === hoveredUserId ? 1 : 0) - state.hover) *
         frameLerp(VIEWER_DOT_HOVER_LERP, elapsed);
 
+      // Measure the hover name tag in world units so hit-testing can cover it
+      // while the shape is expanding (text size is measured at screen px).
+      p.push();
+      p.textFont(CANVAS_LABEL_FONT);
+      p.textStyle(p.NORMAL);
+      p.textSize(VIEWER_DOT_TAG_FONT_PX);
+      const nameWidth = p.textWidth(target.username);
+      p.pop();
+      const circleW = (VIEWER_DOT_RADIUS_PX * 2) / zoom;
+      const circleH = circleW;
+      const tagW = Math.max(
+        circleW,
+        (nameWidth + VIEWER_DOT_TAG_PAD_X_PX * 2) / zoom
+      );
+      const tagH = Math.max(
+        circleH,
+        (VIEWER_DOT_TAG_FONT_PX + VIEWER_DOT_TAG_PAD_Y_PX * 2) / zoom
+      );
+      const pad = (VIEWER_DOT_RING_PX + 2) / zoom;
+      const hoverT = state.hover;
+      const width = circleW + (tagW - circleW) * hoverT;
+      const height = circleH + (tagH - circleH) * hoverT;
+      // Grow away from the content: keep the near edge of the circle fixed.
+      const left =
+        target.expand === 1
+          ? target.x - circleW / 2
+          : target.x + circleW / 2 - width;
+      const top = target.y - height / 2;
+
       if (state.ghost) {
         state.ghost.alpha -= fadeStep;
         if (state.ghost.alpha <= 0) {
           state.ghost = null;
         } else {
+          const ghostHalf = circleW / 2 + pad;
           placed.push({
             x: state.ghost.x,
             y: state.ghost.y,
             colour: target.colour,
             alpha: target.alpha * state.ghost.alpha * worldAlpha,
             hover: 0,
+            hitLeft: state.ghost.x - ghostHalf,
+            hitRight: state.ghost.x + ghostHalf,
+            hitTop: state.ghost.y - ghostHalf,
+            hitBottom: state.ghost.y + ghostHalf,
           });
         }
       }
@@ -281,6 +329,10 @@ export function createViewerDotAnimator() {
         colour: target.colour,
         alpha: target.alpha * state.slotAlpha * worldAlpha,
         hover: state.hover,
+        hitLeft: left - pad,
+        hitRight: left + width + pad,
+        hitTop: top - pad,
+        hitBottom: top + height + pad,
         viewer: target,
       });
     });
@@ -290,18 +342,60 @@ export function createViewerDotAnimator() {
     const { zoom } = runtime;
     const ring = VIEWER_DOT_RING_PX / zoom;
     const drawCtx = p.drawingContext as CanvasRenderingContext2D;
+    const previousFont = p.textFont();
+    p.textFont(CANVAS_LABEL_FONT);
+    p.textStyle(p.NORMAL);
     p.noStroke();
-    placed.forEach(({ x, y, colour, alpha, hover }) => {
-      const radius =
-        (VIEWER_DOT_RADIUS_PX / zoom) * (1 + VIEWER_DOT_HOVER_GROW * hover);
+    placed.forEach(({ x, y, colour, alpha, hover, viewer }) => {
+      const baseR = VIEWER_DOT_RADIUS_PX / zoom;
+      const circleW = baseR * 2;
+      const circleH = baseR * 2;
+
+      p.textSize(VIEWER_DOT_TAG_FONT_PX / zoom);
+      const name = viewer?.username ?? '';
+      const padX = VIEWER_DOT_TAG_PAD_X_PX / zoom;
+      const padY = VIEWER_DOT_TAG_PAD_Y_PX / zoom;
+      const tagW = Math.max(circleW, (name ? p.textWidth(name) : 0) + padX * 2);
+      const tagH = Math.max(circleH, VIEWER_DOT_TAG_FONT_PX / zoom + padY * 2);
+
+      // Circle at rest; eases into a timeline-style name tag on hover,
+      // growing away from the content image.
+      const width = circleW + (tagW - circleW) * hover;
+      const height = circleH + (tagH - circleH) * hover;
+      const expand = viewer?.expand ?? 1;
+      const left = expand === 1 ? x - circleW / 2 : x + circleW / 2 - width;
+      const top = y - height / 2;
+      const corner =
+        (Math.min(width, height) / 2) * (1 - hover) +
+        (LINE_TAG_RADIUS_PX / zoom) * hover;
+
       drawCtx.globalAlpha = alpha;
       // The ring masks the lines behind in the page background's colour.
       p.fill(pageBackgroundAt(((y - runtime.cameraY) * zoom) / p.height));
-      p.circle(x, y, (radius + ring) * 2);
+      p.rect(
+        left - ring,
+        top - ring,
+        width + ring * 2,
+        height + ring * 2,
+        corner + ring
+      );
       p.fill(colour);
-      p.circle(x, y, radius * 2);
+      p.rect(left, top, width, height, corner);
+
+      const textT =
+        hover <= VIEWER_DOT_TAG_TEXT_AT
+          ? 0
+          : (hover - VIEWER_DOT_TAG_TEXT_AT) / (1 - VIEWER_DOT_TAG_TEXT_AT);
+      if (textT > 0 && name) {
+        const ink = colour.toLowerCase() === '#ffffff' ? 17 : 255;
+        p.fill(ink, 255 * textT);
+        p.textAlign(p.CENTER, p.CENTER);
+        p.textSize(VIEWER_DOT_TAG_FONT_PX / zoom);
+        p.text(name, left + width / 2, y);
+      }
     });
     drawCtx.globalAlpha = 1;
+    p.textFont(previousFont);
   };
 
   // The flashes, drawn over the timelines but under the items, so one passing

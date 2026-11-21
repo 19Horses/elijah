@@ -85,6 +85,7 @@ export function createTimelineRuntime(): TimelineRuntime {
     collectReturnLane: 'collected',
     collectReturnWaitStartMs: 0,
     collectReturnStartMs: null,
+    collectPendingIsolationExit: false,
     loadStartMs: 0,
     entranceComplete: false,
     focusContentFade: 0,
@@ -193,11 +194,12 @@ export function updateHighlightFade(
 }
 
 export function isViewInteractionLocked(runtime: TimelineRuntime): boolean {
+  // Collection isolation stays navigable (pinch/wheel zoom and pan); only a
+  // focused item, detail reveal, or collect-return freezes the view.
   return (
     runtime.focusTarget !== null ||
     runtime.viewUnfocusing ||
     runtime.detailPhase !== 'none' ||
-    runtime.branchIsolateRow !== null ||
     runtime.collectReturnIndex !== -1
   );
 }

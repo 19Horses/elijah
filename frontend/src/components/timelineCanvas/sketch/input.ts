@@ -135,20 +135,22 @@ export function createInputHandlers(
             world.y >= region.top &&
             world.y <= region.bottom
         );
+        // Collectibles aren't zoomable — pulse their badge row instead.
+        if (hitIsolated?.lane === 'preview') {
+          const contentId = deps.processedPreview[hitIsolated.index]?.contentId;
+          if (contentId) {
+            deps.refs.onPreviewClickRef.current?.(contentId);
+          }
+          runtime.dragLane = null;
+          return;
+        }
         const isSameFocus =
           hitIsolated &&
           runtime.focusTarget !== null &&
           hitIsolated.lane === runtime.focusTarget.lane &&
           hitIsolated.index === runtime.focusTarget.index;
-        const startedCollect =
-          hitIsolated?.lane === 'preview' &&
-          isSameFocus &&
-          view.startPreviewCollect(hitIsolated.index);
         if (hitIsolated && !isSameFocus) {
           view.focusItem({ lane: hitIsolated.lane, index: hitIsolated.index });
-        } else if (startedCollect) {
-          runtime.dragLane = null;
-          return;
         } else if (runtime.focusTarget !== null) {
           view.unfocusItem();
         } else {

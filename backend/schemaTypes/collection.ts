@@ -1,4 +1,10 @@
-import {defineField, defineType} from 'sanity'
+import {defineArrayMember, defineField, defineType} from 'sanity'
+
+const API_VERSION = '2025-06-01'
+
+// Content referenced by any main timeline document (draft or published).
+const ON_MAIN_TIMELINE_FILTER =
+  '!(_id in *[_type == "mainTimeline"].items[].content._ref)'
 
 export const collection = defineType({
   name: 'collection',
@@ -51,9 +57,10 @@ export const collection = defineType({
     defineField({
       name: 'content',
       title: 'Content',
+      description: 'Items exclusive to this collection — not on the main timeline.',
       type: 'array',
       of: [
-        {
+        defineArrayMember({
           type: 'reference',
           to: [
             {type: 'imageAsset'},
@@ -61,8 +68,52 @@ export const collection = defineType({
             {type: 'videoAsset'},
             {type: 'newsletter'},
           ],
-        },
+          options: {
+            // Hide main-timeline items from the picker.
+            filter: ON_MAIN_TIMELINE_FILTER,
+          },
+          validation: (Rule) =>
+            Rule.custom(async (value, context) => {
+              const ref = value?._ref
+              if (!ref) {
+                return true
+              }
+              const client = context.getClient({apiVersion: API_VERSION})
+              const onMain = await client.fetch<boolean>(
+                `count(*[_type == "mainTimeline" && $ref in items[].content._ref]) > 0`,
+                {ref},
+              )
+              return onMain
+                ? 'This content is on the main timeline and cannot be added to a collection'
+                : true
+            }),
+        }),
       ],
+      validation: (Rule) =>
+        Rule.custom(async (items, context) => {
+          const refs = (items ?? [])
+            .map((item) =>
+              item && typeof item === 'object' && '_ref' in item
+                ? (item._ref as string | undefined)
+                : undefined,
+            )
+            .filter((ref): ref is string => Boolean(ref))
+          if (refs.length === 0) {
+            return true
+          }
+          const client = context.getClient({apiVersion: API_VERSION})
+          const conflicts = await client.fetch<string[]>(
+            `*[_type == "mainTimeline"].items[content._ref in $refs].content->title`,
+            {refs},
+          )
+          if (!conflicts?.length) {
+            return true
+          }
+          const names = [...new Set(conflicts.filter(Boolean))]
+          return names.length
+            ? `Main timeline content cannot be in a collection: ${names.join(', ')}`
+            : 'Main timeline content cannot be in a collection'
+        }),
     }),
   ],
   preview: {

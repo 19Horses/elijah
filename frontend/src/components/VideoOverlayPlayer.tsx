@@ -28,6 +28,9 @@ type VideoOverlayPlayerProps = {
   onEnded: () => void;
   onClose: () => void;
   onJumpToItem: () => void;
+  // Lets the parent keep this player mounted while fullscreen (pausing must
+  // not unmount the fullscreen element, or the browser exits fullscreen).
+  onFullscreenChange?: (fullscreen: boolean) => void;
 };
 
 function VideoOverlayPlayer({
@@ -41,19 +44,30 @@ function VideoOverlayPlayer({
   onEnded,
   onClose,
   onJumpToItem,
+  onFullscreenChange,
 }: VideoOverlayPlayerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [screenHovered, setScreenHovered] = useState(false);
+  const onFullscreenChangeRef = useRef(onFullscreenChange);
+  onFullscreenChangeRef.current = onFullscreenChange;
 
-  // Sync fullscreen state
+  // Sync fullscreen state with the browser and the parent.
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement));
+      const active = document.fullscreenElement;
+      const root = containerRef.current;
+      const next = Boolean(
+        active && root && (active === root || root.contains(active))
+      );
+      setIsFullscreen(next);
+      onFullscreenChangeRef.current?.(next);
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      // Unmounting a fullscreen element exits fullscreen; clear the parent flag.
+      onFullscreenChangeRef.current?.(false);
     };
   }, []);
 

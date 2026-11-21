@@ -1,6 +1,11 @@
 export const ITEM_WIDTH = 270;
 export const ITEM_GAP = 140;
-export const PREVIEW_EXPAND_SCALE = 1.3;
+export const PREVIEW_EXPAND_SCALE = 1.11;
+// Collectibles in the isolated collection view, relative to other items there
+// (already-collected / branch size) — slightly larger, not full main-item size.
+export const COLLECTION_PREVIEW_SCALE = 1.12;
+// Title/date under those collectibles, relative to the normal item label size.
+export const COLLECTION_PREVIEW_LABEL_SCALE = 1.12;
 // A collection item grows (and shrinks back) over this long when hovered.
 export const PREVIEW_EXPAND_MS = 280;
 export const IMAGE_HEIGHT = 216;
@@ -38,7 +43,7 @@ export const ITEM_TITLE_SCALE = 1.35;
 export const CANVAS_LABEL_FONT_MEDIUM =
   'Akzidenz Grotesk Pro Medium, Akzidenz Grotesk Pro, Helvetica, Arial, sans-serif';
 // Size (relative to DATE_FONT_SIZE) of the title-and-date label under items.
-export const ITEM_LABEL_SCALE = 0.65;
+export const ITEM_LABEL_SCALE = 0.42;
 // Its letter spacing (as a share of the font size) and line height.
 export const ITEM_LABEL_LETTER_SPACING = -0.02;
 export const ITEM_LABEL_LINE_HEIGHT = 1.1;
@@ -130,10 +135,15 @@ export const ALREADY_COLLECTED_MAX_TILT_DEG = 8;
 // A viewer moving on to another item: their dot fades out there and back in
 // at the new item over this long.
 export const VIEWER_DOT_FADE_MS = 220;
-// A hovered viewer dot grows by this fraction of its radius, easing at this
-// rate per frame.
-export const VIEWER_DOT_HOVER_GROW = 0.3;
+// A hovered viewer dot eases into a name tag (timeline line-tag style) at
+// this rate per frame. Tag padding and type size are screen px.
 export const VIEWER_DOT_HOVER_LERP = 0.25;
+export const VIEWER_DOT_TAG_PAD_X_PX = 8;
+export const VIEWER_DOT_TAG_PAD_Y_PX = 6;
+export const VIEWER_DOT_TAG_FONT_PX = 12;
+// Username fades in only after the tag has opened this far (0–1), so it
+// doesn't clip while the box is still growing.
+export const VIEWER_DOT_TAG_TEXT_AT = 0.72;
 // A viewer moving on to another item also sends a white flash along the
 // timelines joining the two: this long and thick (screen px, plus its glow),
 // at this steady pace (screen px per ms), taking at least / at most this long.
@@ -197,6 +207,20 @@ export const SHEEN_STAGGER_MS = 160;
 export const COLLECTION_FRAME_SIDE_PX = 64;
 export const COLLECTION_FRAME_TOP_PX = 190;
 export const COLLECTION_FRAME_BOTTOM_PX = 130;
+// Multiplies the isolated-collection fit zoom; <1 leaves a little air so the
+// view doesn't sit tight on the pack's items.
+export const COLLECTION_FIT_ZOOM_SCALAR = 0.9;
+// Small collections (e.g. 2 items) would otherwise fit-zoom onto a tiny pack.
+// Isolation framing always covers at least this many item slots wide.
+export const COLLECTION_FRAME_MIN_SLOTS = 5;
+// Hovering a collection-card title zooms at most this far past the current
+// isolation zoom (soft focus, not a full item dive).
+export const COLLECTION_HOVER_ZOOM_FACTOR = 3.1;
+// Sent from the collection badge header hover: canvas reframes to the
+// initial isolation zoom (not a content-item soft-focus).
+export const COLLECTION_VIEW_FOCUS_ID = '__collection_view__';
+// Ease rate for that soft-focus pan/zoom (lower than VIEW_ANIMATION_LERP).
+export const COLLECTION_HOVER_VIEW_LERP = 0.055;
 // World units between the main timeline's pictures and the row of a
 // collection's items shown above it when the viewer has no branch yet.
 export const COLLECTION_ROW_GAP = 150;
@@ -318,7 +342,7 @@ export const MAX_ZOOM_LEVEL = 1.2;
 export const SUBLABEL_SHOW_ZOOM = 0.34;
 export const SUBLABEL_HIDE_ZOOM = 0.3;
 // A hovered item's picture grows by this share of its size, over this long.
-export const ITEM_HOVER_GROW = 0.06;
+export const ITEM_HOVER_GROW = 0.015;
 export const ITEM_HOVER_GROW_MS = 180;
 // How strongly nodes and connector lines grow as the camera zooms out below
 // the default fit level. 1 = they merely hold their on-screen size instead of
@@ -385,7 +409,7 @@ export const SOLO_GRID_GAP_Y = 0.6;
 export const SOLO_GRID_TOP_PX = 130;
 export const SOLO_GRID_BOTTOM_PX = 90;
 export const PREVIEW_SWITCH_FADE_MS = 250;
-export const COLLECT_ANIM_MS = 700;
+export const COLLECT_ANIM_MS = 1001;
 export const COLLECT_HOLD_MS = 350;
 export const COLLECT_RETURN_ZOOM_LERP = 0.0825;
 export const COLLECT_RETURN_IMAGE_WAIT_MS = 600;

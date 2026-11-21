@@ -290,6 +290,12 @@ function getHorizontalEndsPoints(
   const dy = Math.abs(to.y - from.y);
   const start = { x: from.x, y: from.y };
   const end = { x: to.x, y: to.y };
+  // Truly level ends: one straight (no stub/elbow). Near-miss dy is handled
+  // upstream by pinning same-row item centres / chain attach ys together —
+  // drawing an angled "straight" here looks worse than a metro jog.
+  if (dy <= 1e-6) {
+    return [start, end];
+  }
   if (dy <= dx - fromStub - toStub) {
     const elbowX = from.x + dirX * fromStub;
     return [
@@ -415,6 +421,16 @@ function offsetRoute(
     const length = Math.hypot(pt.x - pts[i].x, pt.y - pts[i].y);
     return { x: (pt.x - pts[i].x) / length, y: (pt.y - pts[i].y) / length };
   });
+  // Collinear base (no real corner) — same as a single straight: can't absorb
+  // a change of sideways offset without inventing a kink.
+  if (
+    dirs.every(
+      (d) =>
+        Math.abs(d.x - dirs[0].x) < 1e-6 && Math.abs(d.y - dirs[0].y) < 1e-6
+    )
+  ) {
+    return null;
+  }
   // Signed sideways distance of `pt` from the line through `origin` along `d`.
   const side = (
     pt: ConnectorPoint,
@@ -679,9 +695,10 @@ export function drawBranchConnector(
   p: p5,
   points: ConnectorPoint[],
   colour: string,
-  weight = 1
+  weight = 1,
+  dashed = false
 ): void {
-  strokePolyline(p, points, colour, weight);
+  strokePolyline(p, points, colour, weight, dashed);
 }
 
 // `scale` grows the dot beyond its base radius (e.g. when zoomed out — see

@@ -42,6 +42,7 @@ function TimelineCanvas({
   highlightedPreviewContentId = null,
   centerOnPreviewContentId = null,
   onPreviewItemHover,
+  onPreviewItemClick,
   onPreviewCollectStart,
   onPreviewCollect,
   cancelPreviewCollectControlRef,
@@ -133,6 +134,7 @@ function TimelineCanvas({
   );
   const centerOnPreviewIdRef = useRef<string | null>(centerOnPreviewContentId);
   const onPreviewHoverRef = useRef(onPreviewItemHover);
+  const onPreviewClickRef = useRef(onPreviewItemClick);
   // Guest hovering a locked user-branch connector — drives the cursor label.
   const [guestLockedHover, setGuestLockedHover] = useState(false);
   const guestLockedHoverActiveRef = useRef(false);
@@ -250,6 +252,10 @@ function TimelineCanvas({
   useEffect(() => {
     onPreviewHoverRef.current = onPreviewItemHover;
   }, [onPreviewItemHover]);
+
+  useEffect(() => {
+    onPreviewClickRef.current = onPreviewItemClick;
+  }, [onPreviewItemClick]);
 
   useEffect(() => {
     onGuestLockedClickRef.current = onGuestLockedClick;
@@ -498,6 +504,7 @@ function TimelineCanvas({
         highlightedPreviewIdRef,
         centerOnPreviewIdRef,
         onPreviewHoverRef,
+        onPreviewClickRef,
         onGuestLockedHoverRef,
         onGuestLockedClickRef,
         reloadPreviewRef,

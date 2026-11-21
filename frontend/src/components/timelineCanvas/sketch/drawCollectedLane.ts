@@ -117,7 +117,9 @@ export function computeCollectedLaneHover(
   collectedBounds: ContentBounds[],
   mainBounds: ContentBounds[],
   mouseWorld: { x: number; y: number },
-  isFocusActive: boolean,
+  // True while focused / isolating / menu open: no item or line hover — the
+  // faded map behind a zoomed item must not steal the pointer.
+  hoverSuppressed: boolean,
   // While isolating a branch, every other collector's items are faded out
   // (see contentAlphaFor) and shouldn't get hover feedback — only the
   // isolated branch's own items should. Defaults to "every item", the normal
@@ -128,25 +130,27 @@ export function computeCollectedLaneHover(
   let hoveredCollectedIsImage = false;
   let hoveredUserRow: number | null = null;
 
-  for (let index = deps.processedCollected.length - 1; index >= 0; index--) {
-    if (!isItemHoverable(index)) {
-      continue;
-    }
-    const b = collectedBounds[index];
-    if (
-      mouseWorld.x >= b.left &&
-      mouseWorld.x <= b.right &&
-      mouseWorld.y >= b.top &&
-      mouseWorld.y <= b.top + b.height
-    ) {
-      hoveredCollected = index;
-      hoveredCollectedIsImage = true;
-      break;
+  if (!hoverSuppressed) {
+    for (let index = deps.processedCollected.length - 1; index >= 0; index--) {
+      if (!isItemHoverable(index)) {
+        continue;
+      }
+      const b = collectedBounds[index];
+      if (
+        mouseWorld.x >= b.left &&
+        mouseWorld.x <= b.right &&
+        mouseWorld.y >= b.top &&
+        mouseWorld.y <= b.top + b.height
+      ) {
+        hoveredCollected = index;
+        hoveredCollectedIsImage = true;
+        break;
+      }
     }
   }
 
   let hoveredLineDistance = Infinity;
-  if (hoveredCollected === -1 && !isFocusActive) {
+  if (hoveredCollected === -1 && !hoverSuppressed) {
     // Lines are slim, so the hit zone reaches a fixed distance on screen either
     // side; the nearest line in reach wins so tight bundles stay pickable.
     const reach = CONNECTOR_HOVER_THRESHOLD_PX / deps.runtime.zoom;
@@ -236,8 +240,9 @@ export function drawCollectedLaneConnectors(
         );
       }
 
-      // Viewing a collection fades every other collector's lines out, but
-      // keeps the viewer's own; showing one timeline alone fades them all.
+      // Viewing a collection fades every other collector's lines out; the
+      // viewer's own solid branch stays (collectibles sit on a parallel row
+      // linked by dotted lines). Showing one timeline alone fades every line.
       const isolateAlpha =
         (source.rowIndex === ctx.isolatedRow
           ? ctx.collectFade
@@ -251,6 +256,28 @@ export function drawCollectedLaneConnectors(
       }
 
       segments.forEach((segment, segmentIndex) => {
+        // Mid-chain collectible dotted links replace the solid connector
+        // between the same two items — skip drawing it.
+        if (ctx.replacedBranchPairs.size > 0) {
+          const fromId =
+            segment.fromItemTarget?.lane === 'main'
+              ? deps.items[segment.fromItemTarget.index]?._id
+              : segment.fromItemTarget?.lane === 'collected'
+              ? deps.processedCollected[segment.fromItemTarget.index]?.contentId
+              : undefined;
+          const toId =
+            segment.toItemTarget?.lane === 'main'
+              ? deps.items[segment.toItemTarget.index]?._id
+              : segment.toItemTarget?.lane === 'collected'
+              ? deps.processedCollected[segment.toItemTarget.index]?.contentId
+              : undefined;
+          if (fromId && toId) {
+            const [a, b] = [fromId, toId].sort();
+            if (ctx.replacedBranchPairs.has(`${a}|${b}`)) {
+              return;
+            }
+          }
+        }
         const edge = ctx.edgeNodes;
         const progress = edge?.progress ?? 0;
         // An end on the focused item rides its node out to the viewport
@@ -327,7 +354,8 @@ export function drawCollectedLaneConnectors(
             : fullRoute;
         // Viewing an item fades the lines away; its edge nodes' stubs stay.
         const lineAlpha = collectedCtx.globalAlpha;
-        collectedCtx.globalAlpha = lineAlpha * ctx.otherContentAlpha;
+        collectedCtx.globalAlpha =
+          lineAlpha * ctx.otherContentAlpha * ctx.collectFade;
         // A hovered timeline thickens to double width, easing with its tag;
         // so does one clicked into, while it's viewed, easing with the
         // others' grey-out.
@@ -641,18 +669,14 @@ export function drawCollectedLaneItems(
         deps.runtime.detailLayout > 0
       )
     ) {
-      // The kind tag and label are hidden while a collection is being viewed:
-      // the viewer has these already, so only what's left to collect is
-      // called out.
-      const labelHide = ctx.isolateGrey;
+      // Titles/dates stay visible in the collection view (pictures may still
+      // grey via isolateGrey); only a focused detail layout hides them.
       const kind = getContentTypeKicker(item.contentType);
-      if (kind && labelHide < 1) {
+      if (kind) {
         collectedCtx.globalAlpha =
           (ctx.isTypeHighlightActive && !typeMatch
             ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
-            : visibilityAlpha) *
-          branchDimAlpha *
-          (1 - labelHide);
+            : visibilityAlpha) * branchDimAlpha;
         drawKindTag(
           p,
           kind,
@@ -662,45 +686,41 @@ export function drawCollectedLaneItems(
         );
         resetCanvasEffects(collectedCtx);
       }
-      if (labelHide < 1) {
-        ctx.dateLabels.push({
-          x: imageLeft + width / 2,
-          y: top + height + 12,
-          below: true,
-          // Labelled on the side away from the main line: on top of an item
-          // above it, under one below it.
-          placement: top + height / 2 < MAIN_LINE_Y ? 'above' : 'below',
-          measureKey: item.contentId,
-          font: CANVAS_LABEL_FONT,
-          scale: ITEM_LABEL_SCALE,
-          letterSpacing: ITEM_LABEL_LETTER_SPACING,
-          textFont: CANVAS_TITLE_FONT,
-          textScale: ITEM_TITLE_SCALE,
-          collectedBy: collectedByFor(
-            deps.refs.collectorsRef.current?.get(item.contentId)
-          ),
-          lineHeight: ITEM_LABEL_LINE_HEIGHT,
-          outlined: true,
-          anchor: {
-            left: imageLeft,
-            right: imageLeft + width,
-            top,
-            bottom: top + height,
-          },
-          text: item.title,
-          secondary: formatFullDate(item.anchorTime),
-          // Wraps within roughly the item's own width (a narrow item still
-          // gets a reasonable measure), well clear of its neighbours'.
-          maxWidth: Math.max(width, ITEM_WIDTH * 0.8),
-          colour: ITEM_LABEL_COLOUR,
-          alpha:
-            (ctx.isTypeHighlightActive && !typeMatch
-              ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
-              : visibilityAlpha) *
-            branchDimAlpha *
-            (1 - labelHide),
-        });
-      }
+      ctx.dateLabels.push({
+        x: imageLeft + width / 2,
+        y: top + height + 12,
+        below: true,
+        // Labelled on the side away from the main line: on top of an item
+        // above it, under one below it.
+        placement: top + height / 2 < MAIN_LINE_Y ? 'above' : 'below',
+        measureKey: item.contentId,
+        font: CANVAS_LABEL_FONT,
+        scale: ITEM_LABEL_SCALE,
+        letterSpacing: ITEM_LABEL_LETTER_SPACING,
+        textFont: CANVAS_TITLE_FONT,
+        textScale: ITEM_TITLE_SCALE,
+        collectedBy: collectedByFor(
+          deps.refs.collectorsRef.current?.get(item.contentId)
+        ),
+        lineHeight: ITEM_LABEL_LINE_HEIGHT,
+        outlined: true,
+        anchor: {
+          left: imageLeft,
+          right: imageLeft + width,
+          top,
+          bottom: top + height,
+        },
+        text: item.title,
+        secondary: formatFullDate(item.anchorTime),
+        // Wraps within roughly the item's own width (a narrow item still
+        // gets a reasonable measure), well clear of its neighbours'.
+        maxWidth: Math.max(width, ITEM_WIDTH * 0.8),
+        colour: ITEM_LABEL_COLOUR,
+        alpha:
+          (ctx.isTypeHighlightActive && !typeMatch
+            ? getCombinedAlpha(visibilityAlpha, ctx.dimAlpha)
+            : visibilityAlpha) * branchDimAlpha,
+      });
     }
 
     if (item.slug) {
@@ -815,8 +835,9 @@ export function drawCollectedLaneConnectorDots(
           0.55 * connectorLoadAlpha
         );
       }
-      // Viewing a collection fades every other collector's lines out, but
-      // keeps the viewer's own; showing one timeline alone fades them all.
+      // Viewing a collection fades every other collector's lines out; the
+      // viewer's own solid branch stays. Showing one timeline alone fades
+      // every line.
       const isolateAlpha =
         (source.rowIndex === ctx.isolatedRow
           ? ctx.collectFade

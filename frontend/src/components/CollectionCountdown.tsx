@@ -6,6 +6,7 @@ import {
   getEffectiveExpiresAt,
 } from '../services/debugTimers';
 import { getDisplayColour } from '../services/userColor';
+import ExpandableRichText from './ExpandableRichText';
 import RichText from './RichText';
 import { hasRichText } from '../utils/richText';
 
@@ -23,6 +24,8 @@ type CollectionCountdownProps = {
   cursorLabel?: string | null;
   // After the timeline and e-menu have entered — starts the staggered reveal.
   reveal?: boolean;
+  // Pointer entered the badge header (image / title), not an item row.
+  onHeaderHover?: () => void;
 };
 
 function formatCountdown(ms: number): string {
@@ -69,6 +72,7 @@ function CollectionCountdown({
   children,
   cursorLabel = null,
   reveal = false,
+  onHeaderHover,
 }: CollectionCountdownProps) {
   // Where the mouse is over the box, for the label that follows it.
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
@@ -180,6 +184,11 @@ function CollectionCountdown({
           onClick?.();
         }}
         onMouseMove={(e) => setPointer({ x: e.clientX, y: e.clientY })}
+        onMouseEnter={() => {
+          if (open) {
+            onHeaderHover?.();
+          }
+        }}
         onMouseLeave={() => setPointer(null)}
       >
         <span className="collection-countdown__header">
@@ -201,9 +210,13 @@ function CollectionCountdown({
           />
         )}
         {hasRichText(collection.description) && (
-          <span className="collection-countdown__description">
+          <ExpandableRichText
+            className="collection-countdown__description"
+            bodyClassName="collection-countdown__description-body"
+            toggleClassName="collection-countdown__description-toggle"
+          >
             <RichText value={collection.description} />
-          </span>
+          </ExpandableRichText>
         )}
         {contents && !open && (
           <span className="collection-countdown__contents">{contents}</span>

@@ -43,6 +43,8 @@ export type TimelineCanvasProps = {
   // currently over on the canvas (or null), so the caller's own item list
   // can mirror the highlight the other way.
   onPreviewItemHover?: (contentId: string | null) => void;
+  // Click on a collectible on the canvas (they aren't zoomable).
+  onPreviewItemClick?: (contentId: string) => void;
   onPreviewCollectStart?: (contentId: string) => void;
   onPreviewCollect?: (contentId: string) => void;
   cancelPreviewCollectControlRef?: MutableRefObject<(() => void) | undefined>;
@@ -385,6 +387,9 @@ export type TimelineRuntime = {
   collectReturnLane: 'main' | 'collected';
   collectReturnWaitStartMs: number;
   collectReturnStartMs: number | null;
+  // Isolation exit deferred until focus opens, so the collection UI doesn't
+  // flash back in between the fly-to-centre and the zoomed-in detail.
+  collectPendingIsolationExit: boolean;
   loadStartMs: number;
   // Set once the staggered entrance (images + connectors) has fully faded
   // in, so the one-shot onEntranceComplete callback only fires once.
@@ -498,6 +503,7 @@ export type TimelineSketchRefs = {
   onPreviewHoverRef: RefObject<
     ((contentId: string | null) => void) | undefined
   >;
+  onPreviewClickRef: RefObject<((contentId: string) => void) | undefined>;
   // Sketch → React: screen position while a guest hovers a locked user-branch
   // connector or collected item (null when not), for the sign-in cursor label.
   onGuestLockedHoverRef: RefObject<

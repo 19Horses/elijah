@@ -5,10 +5,18 @@ import {
   DETAIL_TEXT_GAP_PX,
   DETAIL_TEXT_VIEWPORT_LEFT,
   ENTRANCE_ZOOM_START_FACTOR,
+  COLLECTION_FIT_ZOOM_SCALAR,
   COLLECTION_FRAME_BOTTOM_PX,
+  COLLECTION_FRAME_MIN_SLOTS,
   COLLECTION_FRAME_SIDE_PX,
   COLLECTION_FRAME_TOP_PX,
+  COLLECTION_HOVER_VIEW_LERP,
+  COLLECTION_HOVER_ZOOM_FACTOR,
   COLLECTION_PANEL_GAP_PX,
+  ITEM_GAP,
+  ITEM_WIDTH,
+  LOAD_ALPHA_SNAP,
+  MAIN_ITEM_SCALE,
   FIT_VIEW_MARGINS_PX,
   MAIN_FIT_VIEW_MARGINS_PX,
   MAIN_FIT_ZOOM_SCALAR,
@@ -140,6 +148,7 @@ export function createViewContext(
     runtime.animationStartCameraY = runtime.cameraY;
     runtime.animationStartZoom = runtime.zoom;
     runtime.slowViewAnimation = false;
+    hoverFocusAnimating = false;
   };
 
   // Frame an arbitrary set of item bounds: set the target zoom/camera so the
@@ -202,6 +211,11 @@ export function createViewContext(
 
   // The home view as last framed, and the collection panel width it left
   // room for, so it can be re-framed when the panel comes or goes.
+  // Zoom the isolation framing settled on — hover soft-focus is relative to
+  // this, so moving between card titles doesn't ratchet the zoom upward.
+  let isolateFrameZoom: number | null = null;
+  // Soft-focus from a collection-card title uses a slower view lerp.
+  let hoverFocusAnimating = false;
   let home: { zoom: number; x: number; y: number; panelInset: number } | null =
     null;
   // The focused timeline's framing likewise, to re-frame as its cards load.
@@ -498,47 +512,49 @@ export function createViewContext(
       if (!line) {
         return null;
       }
-      // Just the collection's own items: those still to collect, and any the
-      // viewer already has, on their branch or the main timeline. (One on the
-      // main timeline they haven't collected shows as one to collect, above
-      // it; its main-timeline copy isn't counted.)
-      const collectionIds = new Set(
-        deps.processedPreview.map((preview) => preview.contentId)
-      );
+      // Fit the whole isolated line — the viewer's branch items, the
+      // collection's still-to-collect slots, and the main timeline under that
+      // stretch. Pad short packs out to a minimum slot width so a 2-item
+      // collection (e.g. "We go again") doesn't zoom in tighter than a fuller
+      // one.
       const mainBounds = bounds.getAllBounds(1);
-      const collectionRects = [
-        ...line.entries
-          .filter((entry) => collectionIds.has(entry.contentId))
-          .map((entry) => entry.rect),
-        ...deps.items.flatMap((item, index) =>
-          collectionIds.has(item._id) &&
-          deps.refs.collectorsRef.current
-            ?.get(item._id)
-            ?.some((collector) => collector.username === deps.currentUsername)
-            ? [mainBounds[index]]
-            : []
-        ),
-      ];
-      // (With nothing of the collection placed, the branch and the main
-      // timeline under it — or the whole main timeline.)
       const hasBranch = line.entries.some(
         (entry) => entry.kind === 'collected'
       );
-      const fallback = [
-        ...line.entries.map((entry) => entry.rect),
-        ...mainBounds.filter(
-          (b) => !hasBranch || (b.right >= line.minX && b.left <= line.maxX)
-        ),
-      ];
-      // (The pack's own items alone are centred; the main timeline under
-      // them may run off the screen's foot.)
+      const slot = ITEM_WIDTH * MAIN_ITEM_SCALE + ITEM_GAP;
+      const minSpan = slot * COLLECTION_FRAME_MIN_SLOTS;
+      const lineSpan = Math.max(1, line.maxX - line.minX);
+      const padX = Math.max(0, minSpan - lineSpan) / 2;
+      const frameMinX = line.minX - padX;
+      const frameMaxX = line.maxX + padX;
+      const lineTop = Math.min(...line.entries.map((e) => e.rect.top));
+      const lineBottom = Math.max(
+        ...line.entries.map((e) => e.rect.dateBottom)
+      );
       const framed = computeFitTargetsForBounds(
-        collectionRects.length > 0 ? collectionRects : fallback,
+        [
+          ...line.entries.map((entry) => entry.rect),
+          ...mainBounds.filter(
+            (b) => !hasBranch || (b.right >= frameMinX && b.left <= frameMaxX)
+          ),
+          // Invisible extent so padding still counts when no main item sits
+          // in the extra width.
+          {
+            left: frameMinX,
+            right: frameMaxX,
+            top: lineTop,
+            width: frameMaxX - frameMinX,
+            height: lineBottom - lineTop,
+            centerY: (lineTop + lineBottom) / 2,
+            dateBottom: lineBottom,
+          },
+        ],
         // Centred in the space the header, panel and labels leave.
-        collectionFrameMargins()
+        collectionFrameMargins(),
+        COLLECTION_FIT_ZOOM_SCALAR
       );
       if (framed) {
-        capTargetZoom(framed, Math.max(MAX_ZOOM_LEVEL, runtime.fitZoomLevel));
+        capTargetZoom(framed, MAX_ZOOM_LEVEL);
       }
       return framed;
     };
@@ -566,6 +582,7 @@ export function createViewContext(
     if (!framed) {
       return null;
     }
+    isolateFrameZoom = runtime.targetZoom;
     return { x: framed.centerX, y: framed.centerY };
   };
 
@@ -603,10 +620,8 @@ export function createViewContext(
     if (target.lane === 'main') {
       return bounds.getAllBounds()[target.index];
     }
-    // While isolating, an item (collected or collectible) is drawn at its
-    // straightened even-spaced position, so the focus must aim there — not
-    // its branch position (collected) or it wouldn't otherwise have one
-    // (collectible, which only exists while isolating).
+    // While isolating, collectibles only exist chained beside the branch, and
+    // collected items stay in place — aim at those isolated-line rects.
     if (runtime.branchIsolateRow !== null) {
       const line = bounds.getIsolatedMergedLine(runtime.branchIsolateRow);
       const found = line?.entries.find(
@@ -691,6 +706,28 @@ export function createViewContext(
       minY = Math.min(minY, b.top);
       maxY = Math.max(maxY, b.dateBottom);
     }
+    // Collectibles sit on a parallel row while isolating — include them so
+    // pinch-zoom / pan isn't clamped away from that row.
+    if (runtime.branchIsolateRow !== null) {
+      const line = bounds.getIsolatedMergedLine(runtime.branchIsolateRow);
+      for (const entry of line?.entries ?? []) {
+        minX = Math.min(minX, entry.rect.left);
+        maxX = Math.max(maxX, entry.rect.right);
+        minY = Math.min(minY, entry.rect.top);
+        maxY = Math.max(maxY, entry.rect.dateBottom);
+      }
+      // Small packs nearly fill the framed view; without extra room every
+      // scroll tick hits the clamp and jogs. Keep the pan extent at least a
+      // bit larger than the viewport so the camera can move freely.
+      const viewW = p.width / Math.max(runtime.zoom, 1e-6);
+      const viewH = p.height / Math.max(runtime.zoom, 1e-6);
+      const padX = Math.max(0, (viewW * 1.35 - (maxX - minX)) / 2);
+      const padY = Math.max(0, (viewH * 1.35 - (maxY - minY)) / 2);
+      minX -= padX;
+      maxX += padX;
+      minY -= padY;
+      maxY += padY;
+    }
     if (!Number.isFinite(minX)) {
       return null;
     }
@@ -769,9 +806,11 @@ export function createViewContext(
       runtime.panTargetCameraX = runtime.cameraX;
       runtime.panTargetCameraY = runtime.cameraY;
     }
-    // A pan gesture takes over from any in-flight wheel-zoom so the two
-    // eases don't fight over the camera.
+    // A pan gesture takes over from any in-flight wheel-zoom or programmatic
+    // view animation so the two eases don't fight over the camera.
     runtime.zooming = false;
+    runtime.viewAnimating = false;
+    runtime.viewUnfocusing = false;
 
     runtime.panTargetCameraX += deltaX / runtime.zoom;
     runtime.panTargetCameraY += deltaY / runtime.zoom;
@@ -876,11 +915,13 @@ export function createViewContext(
     runtime.zoomAnchorScreenX = screenX;
     runtime.zoomAnchorScreenY = screenY;
 
-    // A zoom gesture takes over from any in-flight pan so the two eases
-    // don't fight over the camera.
+    // A zoom gesture takes over from any in-flight pan or programmatic view
+    // animation (e.g. collection frame-in) so the two eases don't fight.
     runtime.panning = false;
     runtime.panTargetCameraX = runtime.cameraX;
     runtime.panTargetCameraY = runtime.cameraY;
+    runtime.viewAnimating = false;
+    runtime.viewUnfocusing = false;
     resetCanvasFocus(runtime);
     runtime.zooming = true;
   };
@@ -903,16 +944,18 @@ export function createViewContext(
     runtime.cameraY =
       runtime.zoomAnchorWorldY - runtime.zoomAnchorScreenY / appliedZoom;
     runtime.zoom = appliedZoom;
-    clampCameraToContent();
+    // Clamping mid-gesture fights the pinch anchor (especially in a small
+    // collection view whose content fits the screen) and jogs the timeline.
+    // Clamp once the ease settles instead.
+    if (settled) {
+      clampCameraToContent();
+      runtime.zooming = false;
+    }
     // Keep the pan target in sync so a following drag/scroll starts smoothly
     // from here instead of the pre-zoom position.
     runtime.panTargetCameraX = runtime.cameraX;
     runtime.panTargetCameraY = runtime.cameraY;
     syncViewTargets();
-
-    if (settled) {
-      runtime.zooming = false;
-    }
   };
 
   const fitView = () => {
@@ -969,22 +1012,24 @@ export function createViewContext(
     runtime.panning = false;
     runtime.zooming = false;
     resetCanvasFocus(runtime);
-    deps.refs.onContentUnfocusRef.current?.();
-    runtime.focusContentFade = 0;
+    // Don't notify unfocus here — that clears the collecting UI hide and
+    // flashes collection badges before the detail view opens. focusItem
+    // below (from drawFrame) replaces focus in one step.
+    runtime.focusContentFade = 1;
     notifyFocusFade(deps);
     const wasIsolating = runtime.branchIsolateActive;
     runtime.branchIsolateActive = false;
     runtime.branchIsolate = 0;
     runtime.branchIsolateRow = null;
+    isolateFrameZoom = null;
     runtime.branchDimStrength = 0;
     runtime.branchDimRow = null;
     runtime.collectStartMs = null;
     runtime.collectIndex = -1;
     runtime.collectReported = false;
     computeFitViewTargets();
-    if (wasIsolating) {
-      deps.refs.onBranchIsolationExitRef.current?.();
-    }
+    // Close the collection panel only as focus opens (see drawFrame).
+    runtime.collectPendingIsolationExit = wasIsolating;
     runtime.zoom = rect.width / roughBounds.width;
     const itemBounds = boundsFor();
     runtime.zoom = rect.width / itemBounds.width;
@@ -1079,7 +1124,9 @@ export function createViewContext(
     }
 
     const lerpFactor = frameLerp(
-      runtime.slowViewAnimation
+      hoverFocusAnimating
+        ? COLLECTION_HOVER_VIEW_LERP
+        : runtime.slowViewAnimation
         ? COLLECT_RETURN_ZOOM_LERP
         : runtime.viewUnfocusing
         ? VIEW_UNFOCUS_ANIMATION_LERP
@@ -1113,7 +1160,10 @@ export function createViewContext(
         nextZoom
       );
       if (runtime.focusTarget && !runtime.viewUnfocusing) {
-        runtime.focusContentFade = progress;
+        // Collect → focus: the map is already gone; keep it that way so the
+        // settle zoom doesn't flash other content back in.
+        runtime.focusContentFade =
+          runtime.collectReturnIndex !== -1 ? 1 : progress;
       } else if (runtime.viewUnfocusing) {
         runtime.focusContentFade = 1 - progress;
       }
@@ -1146,7 +1196,8 @@ export function createViewContext(
           ? Math.max(0, Math.min(1, 1 - remainingPan / totalPan))
           : 1;
       if (runtime.focusTarget && !runtime.viewUnfocusing) {
-        runtime.focusContentFade = progress;
+        runtime.focusContentFade =
+          runtime.collectReturnIndex !== -1 ? 1 : progress;
       } else if (runtime.viewUnfocusing) {
         runtime.focusContentFade = 1 - progress;
       }
@@ -1157,6 +1208,7 @@ export function createViewContext(
       runtime.viewAnimating = false;
       runtime.viewUnfocusing = false;
       runtime.slowViewAnimation = false;
+      hoverFocusAnimating = false;
       if (runtime.focusTarget && !wasUnfocusing) {
         runtime.focusContentFade = 1;
         if (runtime.detailPhase === 'none') {
@@ -1175,6 +1227,20 @@ export function createViewContext(
   ): FocusTarget | null => {
     const allBounds = bounds.getAllBounds();
     const collectedBounds = bounds.getCollectedBounds();
+    // While zoomed into an item, the rest of the map is faded out — only the
+    // focused item itself stays clickable (to dismiss). Invisible neighbours
+    // must not steal the click.
+    const focus = runtime.focusTarget;
+    if (focus && runtime.focusContentFade > LOAD_ALPHA_SNAP) {
+      const focusedBounds =
+        focus.lane === 'main'
+          ? allBounds[focus.index]
+          : collectedBounds[focus.index];
+      if (focusedBounds && hitTest(focusedBounds, worldX, worldY)) {
+        return focus;
+      }
+      return null;
+    }
     // Showing one timeline alone, only the items in its grid can be clicked.
     const soloGrid = runtime.branchSoloActive ? runtime.soloGrid : null;
     for (let index = deps.processed.length - 1; index >= 0; index--) {
@@ -1401,6 +1467,7 @@ export function createViewContext(
     // box too).
     if (runtime.branchIsolateActive) {
       runtime.branchIsolateActive = false;
+      isolateFrameZoom = null;
       deps.refs.onBranchIsolationExitRef.current?.();
     }
     const row = deps.processedCollected
@@ -1431,6 +1498,10 @@ export function createViewContext(
   };
 
   const focusItem = (target: FocusTarget) => {
+    // Collectibles stay on the isolated collection timeline — no zoom-in.
+    if (target.lane === 'preview') {
+      return;
+    }
     if (isLockedTarget(deps, target)) {
       // Guest locked collected content → login; private while signed in → no-op.
       if (target.lane === 'collected' && isGuestLockedCollected(deps)) {
@@ -1446,9 +1517,9 @@ export function createViewContext(
       clearBranchFocus();
     }
     // Focusing an item from the isolated view keeps the isolation active
-    // underneath (the branch stays straightened and the others stay faded), so
-    // getFocusBounds aims at the item's straightened position and unfocusing
-    // returns to the isolated timeline rather than the full one.
+    // underneath (collectibles stay chained on the branch; others stay faded),
+    // so getFocusBounds aims there and unfocusing returns to the isolated
+    // timeline rather than the full one.
     runtime.panning = false;
     runtime.zooming = false;
     runtime.detailPhase = 'none';
@@ -1536,7 +1607,51 @@ export function createViewContext(
     if (isViewInteractionLocked(runtime) || isLockedTarget(deps, target)) {
       return;
     }
-    panToFocusBounds(getFocusBounds(target));
+    const focusBounds = getFocusBounds(target);
+    // Collection-card hover: ease toward the item with a soft zoom (not a
+    // full focus dive), framed in the space the panel leaves.
+    if (runtime.branchIsolateRow !== null) {
+      const baseZoom =
+        isolateFrameZoom ?? Math.max(runtime.zoom, runtime.targetZoom);
+      const softZoom = Math.min(
+        MAX_ZOOM_LEVEL,
+        baseZoom * COLLECTION_HOVER_ZOOM_FACTOR
+      );
+      // Centre in the map area left of the panel, with equal top/bottom so
+      // the item reads centred rather than pulled by the isolation margins.
+      const insets = panelInsets(COLLECTION_PANEL_GAP_PX);
+      const side = COLLECTION_FRAME_SIDE_PX;
+      const vertical =
+        (COLLECTION_FRAME_TOP_PX + COLLECTION_FRAME_BOTTOM_PX) / 2;
+      const margins = {
+        top: vertical,
+        bottom: vertical,
+        left: side + insets.left,
+        right: side + insets.right,
+      };
+      const availableWidth = Math.max(
+        1,
+        p.width - margins.left - margins.right
+      );
+      const availableHeight = Math.max(
+        1,
+        p.height - margins.top - margins.bottom
+      );
+      const centerX = (focusBounds.left + focusBounds.right) / 2;
+      const centerY = focusBounds.centerY;
+      runtime.targetZoom = softZoom;
+      runtime.targetCameraX =
+        centerX - (margins.left + availableWidth / 2) / softZoom;
+      runtime.targetCameraY =
+        centerY - (margins.top + availableHeight / 2) / softZoom;
+      runtime.panning = false;
+      runtime.zooming = false;
+      beginViewAnimation(centerX, centerY);
+      hoverFocusAnimating = true;
+      runtime.viewAnimating = true;
+      return;
+    }
+    panToFocusBounds(focusBounds);
   };
 
   const clearPreviewFocus = () => {
@@ -1545,6 +1660,17 @@ export function createViewContext(
     }
     runtime.panning = false;
     runtime.zooming = false;
+    // Badge-header hover (or other clear) while isolating: ease back to the
+    // full collection framing.
+    if (runtime.branchIsolateRow !== null) {
+      const centre = frameIsolatedBranch(runtime.branchIsolateRow);
+      if (centre) {
+        beginViewAnimation(centre.x, centre.y);
+        hoverFocusAnimating = true;
+        runtime.viewAnimating = true;
+      }
+      return;
+    }
     if (runtime.isCollectionViewActive) {
       frameOwnBranchWide();
       return;
@@ -1577,8 +1703,29 @@ export function createViewContext(
     return null;
   };
 
+  // Where isolation actually draws this content: the collectible slot if it's
+  // still to-collect, otherwise the own-branch copy. Prefer that over any
+  // other user's collected copy of the same contentId (which resolve would
+  // otherwise pick first).
+  const resolveIsolatedFocusTarget = (
+    contentId: string
+  ): FocusTarget | null => {
+    if (runtime.branchIsolateRow === null) {
+      return null;
+    }
+    const entry = bounds
+      .getIsolatedMergedLine(runtime.branchIsolateRow)
+      ?.entries.find((e) => e.contentId === contentId);
+    if (!entry) {
+      return null;
+    }
+    return { lane: entry.kind, index: entry.index };
+  };
+
   const previewContentId = (contentId: string) => {
-    const target = resolveContentFocusTarget(contentId);
+    const target =
+      resolveIsolatedFocusTarget(contentId) ??
+      resolveContentFocusTarget(contentId);
     if (target) {
       previewFocusItem(target);
     }
@@ -1669,7 +1816,13 @@ export function createViewContext(
 
   const setCollectionViewActive = (active: boolean) => {
     runtime.isCollectionViewActive = active;
-    if (isViewInteractionLocked(runtime)) {
+    // Isolation already frames the collection timeline; don't fight it with
+    // the wider own-branch framing. Focus/detail locks still skip reframing.
+    if (
+      isViewInteractionLocked(runtime) ||
+      runtime.branchIsolateActive ||
+      runtime.branchIsolateRow !== null
+    ) {
       return;
     }
     if (active) {
@@ -1710,6 +1863,7 @@ export function createViewContext(
     // Keep the row set so the straighten/fade can ease back out; drawFrame
     // clears it once the progress reaches zero.
     runtime.branchIsolateActive = false;
+    isolateFrameZoom = null;
     animateToFitAll();
     deps.refs.onBranchIsolationExitRef.current?.();
   };
@@ -1747,9 +1901,7 @@ export function createViewContext(
     runtime.branchIsolateActive = true;
     syncInteractionLock(deps);
 
-    // Frame the branch's final even-spaced straightened layout (main line
-    // edge-to-edge, vertically centred), not its scattered date-driven
-    // positions.
+    // Frame the branch in place with collectibles chained beside it.
     const centre = frameIsolatedBranch(ownRow);
     if (centre !== null) {
       beginViewAnimation(centre.x, centre.y);

@@ -392,6 +392,16 @@ main.main--home {
 
 /* An already opened collection, collapsed; without a collected item to
    stand in for, it's not a link. */
+.timeline-item-card--opened {
+  animation: none;
+  opacity: 0;
+}
+
+.timeline-item-card--opened.timeline-item-card--opened-visible {
+  animation: timeline-item-card-in 400ms ease both;
+  animation-delay: var(--countdown-stack-delay, 0ms);
+}
+
 .timeline-item-card--opened:disabled {
   cursor: default;
 }
@@ -1013,12 +1023,35 @@ main.main--home {
 
 .collection-countdown__description {
   color: rgba(0, 0, 0, 0.55);
-  display: -webkit-box;
+  display: flex;
+  flex-direction: column;
   font-size: 0.85rem;
+  gap: 0.2rem;
   line-height: 1.25;
+}
+
+.collection-countdown__description-body {
+  display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 6;
+}
+
+.collection-countdown__description--expanded
+  .collection-countdown__description-body {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+
+.collection-countdown__description-toggle {
+  align-self: flex-start;
+  color: rgba(0, 0, 0, 0.7);
+  cursor: pointer;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
 }
 
 .collection-countdown__contents {
@@ -1274,10 +1307,37 @@ main.main--home {
 
 .collection-card-title__description {
   color: rgba(0, 0, 0, 0.45);
+  display: flex;
   flex-basis: 100%;
+  flex-direction: column;
+  gap: 0.15rem;
   margin-top: -0.25rem;
   font-size: 0.8rem;
   line-height: 1.25;
+}
+
+.collection-card-title__description-body {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.collection-card-title__description--expanded
+  .collection-card-title__description-body {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+
+.collection-card-title__description-toggle {
+  align-self: flex-start;
+  color: rgba(0, 0, 0, 0.65);
+  cursor: pointer;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
 }
 
 .content-type-icon {
@@ -1298,6 +1358,40 @@ main.main--home {
 
 .collection-card-title:not(:disabled):hover {
   color: var(--collection-title-colour, #111827);
+}
+
+/* Canvas hover of this collectible: brand colour pulses twice on the title
+   and the + collect control. */
+@keyframes collection-card-title-pulse {
+  0%,
+  50%,
+  100% {
+    color: #111827;
+  }
+  25%,
+  75% {
+    color: var(--collection-title-colour, #111827);
+  }
+}
+
+@keyframes collection-card-plus-pulse {
+  0%,
+  50%,
+  100% {
+    background: rgba(0, 0, 0, 0.45);
+  }
+  25%,
+  75% {
+    background: var(--collection-title-colour, rgba(0, 0, 0, 0.7));
+  }
+}
+
+.collection-card-title--pulse .collection-card-title__text {
+  animation: collection-card-title-pulse 1.25s ease;
+}
+
+.collection-card-title--pulse .collection-card-title__plus {
+  animation: collection-card-plus-pulse 1.25s ease;
 }
 
 .collection-card-title--collected {
@@ -2053,6 +2147,12 @@ main.main--home {
 .collection-card-list--hidden {
   opacity: 0;
   pointer-events: none;
+}
+
+/* Match the stack's longer fade while a collect flies to centre, so badges
+   don't ease back in under the list as focus opens. */
+.collection-card-list--collecting {
+  transition-duration: 750ms;
 }
 
 /* Hidden boxes take no mouse at all, even the parts that switch it back on
