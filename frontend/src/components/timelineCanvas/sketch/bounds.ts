@@ -1726,10 +1726,10 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
 
   // Own branch items stay put; collectibles are placed as a real collect on
   // this row would be (skipping any already collected onto the branch).
-  // When the same content already sits on the main timeline, the collectible
-  // overlays that spot instead of inventing a second place for it. Other
-  // users' collected copies don't count — those still get a normal stem on
-  // this row.
+  // When the same content already sits on the map — main timeline or any
+  // collector's copy — the collectible overlays that spot (a real collect
+  // merges into that tile and stays put). Only content with no map copy yet
+  // gets a new stem on this row.
   const getIsolatedMergedLine = (
     rowIndex: number,
     expanded: Map<string, number> | null = null,
@@ -1783,11 +1783,20 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       };
     };
 
-    // Main-timeline copy of this content, if any.
-    const mainCounterpartRect = (contentId: string): ContentBounds | null => {
+    // Where this content already lives on the map: main first, else the
+    // (single, merged) collected tile — collecting would join that tile.
+    const mapCounterpart = (
+      contentId: string
+    ): { rect: ContentBounds; onMain: boolean } | null => {
       const mainIndex = items.findIndex((entry) => entry._id === contentId);
       if (mainIndex >= 0 && mainBounds[mainIndex]) {
-        return mainBounds[mainIndex];
+        return { rect: mainBounds[mainIndex], onMain: true };
+      }
+      const collectedIndex = processedCollected.findIndex(
+        (entry) => entry.contentId === contentId
+      );
+      if (collectedIndex >= 0 && cb[collectedIndex]) {
+        return { rect: cb[collectedIndex], onMain: false };
       }
       return null;
     };
@@ -1816,6 +1825,67 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       };
     };
 
+    // Main-timeline dates: a collectible chains from the previous pick on
+    // the same row only when no main item falls strictly between them. A
+    // main item in between means a real collect would rejoin main and
+    // branch out again — use a stem from main for that case.
+    const mainTimes = items
+      .map((entry) =>
+        entry.date ? new Date(entry.date).getTime() : Number.NaN
+      )
+      .filter((t) => !Number.isNaN(t));
+    const mainBetween = (earlier: number, later: number) =>
+      mainTimes.some((t) => t > earlier && t < later);
+
+    // Overlay a collectible on an existing map tile. Main-timeline overlays
+    // need no stem (they sit on the line). Collected overlays keep a dotted
+    // collectible connector: chain to an earlier overlay on that row when
+    // they share a gap, otherwise stem from main.
+    const placeOnCounterpart = (
+      item: (typeof previews)[number]['item'],
+      index: number,
+      counterpart: { rect: ContentBounds; onMain: boolean }
+    ): IsolatedLineEntry => {
+      const rect = rectAtCounterpart(item, counterpart.rect);
+      if (counterpart.onMain) {
+        return {
+          kind: 'preview',
+          index,
+          contentId: item.contentId,
+          rect,
+        };
+      }
+      const rowY = counterpart.rect.centerY;
+      const earlier = placed
+        .filter((p) => Math.abs(p.rect.centerY - rowY) < IMAGE_HEIGHT / 2)
+        .map((p) => {
+          const time = previews.find((e) => e.item.contentId === p.contentId)
+            ?.item.anchorTime;
+          return time !== undefined && time < item.anchorTime
+            ? { contentId: p.contentId, time }
+            : null;
+        })
+        .filter((p): p is { contentId: string; time: number } => p !== null)
+        .sort((a, b) => b.time - a.time);
+      const pred = earlier.find((e) => !mainBetween(e.time, item.anchorTime));
+      if (pred) {
+        return {
+          kind: 'preview',
+          index,
+          contentId: item.contentId,
+          rect,
+          linkedTo: pred.contentId,
+        };
+      }
+      return {
+        kind: 'preview',
+        index,
+        contentId: item.contentId,
+        rect,
+        branchFromMain: true,
+      };
+    };
+
     const placed: IsolatedLineEntry[] = [];
     if (own.length === 0) {
       // No branch yet: collection items sit in a row just above the main
@@ -1824,7 +1894,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       const start = mainBounds[0]?.left ?? 0;
       const end = mainBounds[mainBounds.length - 1]?.right ?? start;
       const free = previews.filter(
-        ({ item }) => !mainCounterpartRect(item.contentId)
+        ({ item }) => !mapCounterpart(item.contentId)
       );
       const step = (end - start) / Math.max(free.length, 1);
       const centerY =
@@ -1833,14 +1903,9 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
         COLLECTION_ROW_GAP;
       let freeIndex = 0;
       previews.forEach(({ item, index }) => {
-        const counterpart = mainCounterpartRect(item.contentId);
+        const counterpart = mapCounterpart(item.contentId);
         if (counterpart) {
-          placed.push({
-            kind: 'preview',
-            index,
-            contentId: item.contentId,
-            rect: rectAtCounterpart(item, counterpart),
-          });
+          placed.push(placeOnCounterpart(item, index, counterpart));
           return;
         }
         const {
@@ -1892,28 +1957,10 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
         return left;
       };
 
-      // Main-timeline dates: a collectible chains from the previous pick on
-      // this row when no main item falls strictly between them (so e.g. the
-      // next collectible after Bathrooms stems from Bathrooms). A main item
-      // in between means the real collect would rejoin main and branch out
-      // again — keep branchFromMain for that case.
-      const mainTimes = items
-        .map((entry) =>
-          entry.date ? new Date(entry.date).getTime() : Number.NaN
-        )
-        .filter((t) => !Number.isNaN(t));
-      const mainBetween = (earlier: number, later: number) =>
-        mainTimes.some((t) => t > earlier && t < later);
-
       previews.forEach(({ item, index }) => {
-        const counterpart = mainCounterpartRect(item.contentId);
+        const counterpart = mapCounterpart(item.contentId);
         if (counterpart) {
-          placed.push({
-            kind: 'preview',
-            index,
-            contentId: item.contentId,
-            rect: rectAtCounterpart(item, counterpart),
-          });
+          placed.push(placeOnCounterpart(item, index, counterpart));
           return;
         }
         const {
