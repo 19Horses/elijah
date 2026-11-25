@@ -1,6 +1,6 @@
 import { mapTagTilt } from '../../../utils/tilt';
 import type p5 from 'p5';
-import { formatFullDate } from '../../../utils/formatDate';
+import { formatShortDate } from '../../../utils/formatDate';
 import {
   getContentTypeColour,
   getContentTypeKicker,
@@ -27,7 +27,6 @@ import {
   DOT_RADIUS,
   ITEM_LABEL_LETTER_SPACING,
   ITEM_LABEL_LINE_HEIGHT,
-  ITEM_WIDTH,
   LOAD_ALPHA_SNAP,
   ITEM_LABEL_COLOUR,
   ITEM_LABEL_SCALE,
@@ -39,7 +38,7 @@ import {
   ALREADY_COLLECTED_MAX_TILT_DEG,
   ALREADY_COLLECTED_MIN_TILT_DEG,
   GUEST_LOCKED_CURSOR_LABEL,
-  MAIN_LINE_Y,
+  ITEM_WIDTH,
 } from '../constants';
 import {
   distanceToPolyline,
@@ -64,6 +63,7 @@ import type { BoundsContext } from './bounds';
 import {
   drawEdgeNodeStub,
   edgeNodeDotScale,
+  edgeNodeFade,
   edgeNodeHoleRatio,
   edgeNodeKey,
   edgeNodePosition,
@@ -320,6 +320,11 @@ export function drawCollectedLaneConnectors(
         };
         const start = moveEnd(segment.from, segment.fromNode, 'from');
         const end = moveEnd(segment.to, segment.toNode, 'to');
+        // A line out to a node that isn't shown (see buildEdgeNodeLayout)
+        // isn't drawn either.
+        if (start.edgeNode?.suppressed || end.edgeNode?.suppressed) {
+          return;
+        }
         const fullRoute = getBranchRoute(
           start.pt,
           end.pt,
@@ -395,6 +400,7 @@ export function drawCollectedLaneConnectors(
           DOT_RADIUS * edgeNodeDotScale(deps.runtime.zoom, progress);
         [start, end].forEach(({ pt, edgeNode }) => {
           if (edgeNode && !edgeNode.hidden) {
+            collectedCtx.globalAlpha = lineAlpha * edgeNodeFade(edgeNode);
             drawEdgeNodeStub(
               p,
               deps.runtime,
@@ -690,9 +696,8 @@ export function drawCollectedLaneItems(
         x: imageLeft + width / 2,
         y: top + height + 12,
         below: true,
-        // Labelled on the side away from the main line: on top of an item
-        // above it, under one below it.
-        placement: top + height / 2 < MAIN_LINE_Y ? 'above' : 'below',
+        // Title on top of the item, date under it.
+        placement: 'split',
         measureKey: item.contentId,
         font: CANVAS_LABEL_FONT,
         scale: ITEM_LABEL_SCALE,
@@ -711,10 +716,9 @@ export function drawCollectedLaneItems(
           bottom: top + height,
         },
         text: item.title,
-        secondary: formatFullDate(item.anchorTime),
-        // Wraps within roughly the item's own width (a narrow item still
-        // gets a reasonable measure), well clear of its neighbours'.
-        maxWidth: Math.max(width, ITEM_WIDTH * 0.8),
+        secondary: formatShortDate(item.anchorTime),
+        // Wraps a little wider than the item's own image.
+        maxWidth: ITEM_WIDTH,
         colour: ITEM_LABEL_COLOUR,
         alpha:
           (ctx.isTypeHighlightActive && !typeMatch
@@ -878,6 +882,7 @@ export function drawCollectedLaneConnectorDots(
                 side: undefined,
                 edgeKey: undefined,
                 hidden: false,
+                fade: undefined,
                 others: undefined,
               };
             }
@@ -889,6 +894,7 @@ export function drawCollectedLaneConnectorDots(
               side: node.side,
               edgeKey,
               hidden: node.hidden ?? false,
+              fade: edgeNodeFade(node),
               others: node.others,
             };
           };
@@ -896,7 +902,10 @@ export function drawCollectedLaneConnectorDots(
             if (!d.onEdge || !ctx.edgeNodes || d.hidden) {
               return;
             }
+            const alpha = collectedCtx.globalAlpha;
+            collectedCtx.globalAlpha = alpha * (d.fade ?? 1);
             drawDot(p, d.x, d.y, branchColour, d.scale, d.holeRatio);
+            collectedCtx.globalAlpha = alpha;
           };
           const dFrom = placeDot(from, 'from');
           const dTo = placeDot(to, 'to');

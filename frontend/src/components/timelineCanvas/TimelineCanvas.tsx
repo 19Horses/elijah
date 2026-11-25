@@ -55,6 +55,7 @@ function TimelineCanvas({
   seenTimelineIds = null,
   focusContentIdControlRef,
   resetViewControlRef,
+  detailScrollControlRef,
   soloTimelineControlRef,
   isCollectionView = false,
   colour,
@@ -107,6 +108,11 @@ function TimelineCanvas({
   const onBranchIsolationExitRef = useRef(onBranchIsolationExit);
   const localResetViewRef = useRef<(() => void) | undefined>(undefined);
   const resetViewRef = resetViewControlRef ?? localResetViewRef;
+  const localDetailScrollRef = useRef<
+    | ((scrollTop: number, pictureAlpha: number, headerMid: number) => void)
+    | undefined
+  >(undefined);
+  const detailScrollRef = detailScrollControlRef ?? localDetailScrollRef;
   const localSoloTimelineRef = useRef<(() => void) | undefined>(undefined);
   const soloTimelineRef = soloTimelineControlRef ?? localSoloTimelineRef;
   const localIsolateRef = useRef<(() => void) | undefined>(undefined);
@@ -410,10 +416,14 @@ function TimelineCanvas({
           event.stopImmediatePropagation();
           return;
         }
-        // Scroll the body region under the static back/title/date header.
-        const scrollRoot =
-          overlay.querySelector('.timeline-detail__side-scroll') ??
-          overlay.querySelector('.timeline-detail__side');
+        // Scroll the body region under the static back/title/date header
+        // (on mobile, the whole stacked detail, picture and all).
+        const scrollRoot = overlay.classList.contains(
+          'timeline-detail--stacked'
+        )
+          ? overlay
+          : overlay.querySelector('.timeline-detail__side-scroll') ??
+            overlay.querySelector('.timeline-detail__side');
         if (scrollRoot instanceof HTMLElement) {
           scrollRoot.scrollTop += event.deltaY * step;
         }
@@ -436,6 +446,51 @@ function TimelineCanvas({
     return () => {
       window.removeEventListener('wheel', preventScrollWhileFocused, options);
       document.removeEventListener('wheel', preventScrollWhileFocused, options);
+    };
+  }, []);
+
+  // On mobile, an opened item's details scroll as one (picture and all), but
+  // a video's or track's picture is the canvas (or the video player) showing
+  // through them: a swipe there scrolls the details too.
+  useEffect(() => {
+    let drag: { y: number; scrollTop: number; stack: HTMLElement } | null =
+      null;
+    const onTouchStart = (event: TouchEvent) => {
+      drag = null;
+      const target = event.target;
+      const stack = document.querySelector('.timeline-detail--stacked');
+      if (
+        event.touches.length !== 1 ||
+        !(stack instanceof HTMLElement) ||
+        !(
+          target instanceof HTMLCanvasElement ||
+          (target instanceof Element &&
+            target.closest('.video-overlay-player--zoomed-in'))
+        )
+      ) {
+        return;
+      }
+      drag = { y: event.touches[0].clientY, scrollTop: stack.scrollTop, stack };
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      if (!drag || event.touches.length !== 1) {
+        return;
+      }
+      drag.stack.scrollTop = drag.scrollTop + drag.y - event.touches[0].clientY;
+    };
+    const onTouchEnd = () => {
+      drag = null;
+    };
+    const options: AddEventListenerOptions = { passive: true, capture: true };
+    window.addEventListener('touchstart', onTouchStart, options);
+    window.addEventListener('touchmove', onTouchMove, options);
+    window.addEventListener('touchend', onTouchEnd, options);
+    window.addEventListener('touchcancel', onTouchEnd, options);
+    return () => {
+      window.removeEventListener('touchstart', onTouchStart, options);
+      window.removeEventListener('touchmove', onTouchMove, options);
+      window.removeEventListener('touchend', onTouchEnd, options);
+      window.removeEventListener('touchcancel', onTouchEnd, options);
     };
   }, []);
 
@@ -498,6 +553,7 @@ function TimelineCanvas({
         onBranchIsolationExitRef,
         onAudioStateChangeRef,
         resetViewRef,
+        detailScrollRef,
         soloTimelineRef,
         isolateOwnBranchRef,
         focusItemRef,

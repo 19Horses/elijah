@@ -1,6 +1,6 @@
 import { getContentTypeKicker } from '../../../constants/contentTypes';
 import type p5 from 'p5';
-import { formatFullDate } from '../../../utils/formatDate';
+import { formatShortDate } from '../../../utils/formatDate';
 import {
   getStaggeredLoadAlpha,
   getTypeDimAlpha,
@@ -17,8 +17,6 @@ import {
   ITEM_LABEL_LETTER_SPACING,
   ITEM_LABEL_LINE_HEIGHT,
   ITEM_LABEL_SCALE,
-  ITEM_WIDTH,
-  COLLECTION_PREVIEW_LABEL_SCALE,
   DATE_LABEL_SHADOW_BLUR_PX,
   BRANCH_DIM_COLOUR,
   BRANCH_DIM_LERP,
@@ -69,8 +67,6 @@ import {
   ZOOM_OUT_GROWTH_POWER,
   DATE_SHRINK_TRANSITION_FACTOR,
   DATE_SHRINK_ZOOM_FACTOR,
-  TITLE_TRUNCATE_MAX_CHARS,
-  TITLE_TRUNCATE_ZOOM_FACTOR,
   COLLECTION_OTHER_ITEM_ALPHA,
   COLLECTION_VIEW_FOCUS_ID,
   SOLO_GRID_TEXT_LEADING,
@@ -80,6 +76,12 @@ import {
   ITEM_HOVER_GROW_MS,
   IMAGE_HEIGHT,
   MAIN_LINE_Y,
+  ITEM_WIDTH,
+  ITEM_TITLE_GAP,
+  ITEM_LABEL_SIZE_ZOOM,
+  MOBILE_MEDIA_QUERY,
+  MOBILE_DETAIL_SIDE_PX,
+  MOBILE_DETAIL_IMAGE_MAX_VH,
 } from '../constants';
 import {
   drawBranchConnector,
@@ -99,12 +101,12 @@ import {
 import {
   drawKindTag,
   drawNodeCard,
+  edgeNodeRadiusPx,
   collectedByParts,
   countLabelClashes,
   drawLineTag,
   type LabelRect,
   measureLineTag,
-  truncateText,
   wrapText,
 } from '../labels';
 import {
@@ -639,11 +641,16 @@ export function createDrawFrameHandler(
       const toX = fromX + (centreX - fromX) * collectProgress;
       const toY = fromY + (centreY - fromY) * collectProgress;
       const zoom = Math.max(runtime.zoom, 1e-6);
-      const maxWidthScreen =
-        p.width * DETAIL_TEXT_VIEWPORT_LEFT -
-        DETAIL_TEXT_GAP_PX -
-        DETAIL_IMAGE_LEFT_PX;
-      let targetScreenH = p.height * DETAIL_IMAGE_HEIGHT_VH;
+      // (On mobile, as an opened item sits there: full width, shorter.)
+      const mobile = window.matchMedia(MOBILE_MEDIA_QUERY).matches;
+      const maxWidthScreen = mobile
+        ? p.width - MOBILE_DETAIL_SIDE_PX * 2
+        : p.width * DETAIL_TEXT_VIEWPORT_LEFT -
+          DETAIL_TEXT_GAP_PX -
+          DETAIL_IMAGE_LEFT_PX;
+      let targetScreenH =
+        p.height *
+        (mobile ? MOBILE_DETAIL_IMAGE_MAX_VH : DETAIL_IMAGE_HEIGHT_VH);
       let targetScreenW =
         rect.width * (targetScreenH / Math.max(rect.height, 1e-6));
       if (targetScreenW > maxWidthScreen && maxWidthScreen > 0) {
@@ -730,6 +737,9 @@ export function createDrawFrameHandler(
       const focus = runtime.focusTarget;
       if (focus && !(focus.lane === lane && focus.index === index)) {
         alpha *= otherContentAlpha;
+      } else if (focus) {
+        // On mobile, fading out as it scrolls up behind the header.
+        alpha *= runtime.detailPictureAlpha;
       }
       if (isReturnTarget(lane, index)) {
         return alpha;
@@ -1026,6 +1036,11 @@ export function createDrawFrameHandler(
     runtime.videoPlayButton = null;
     gallery.setNavRegions([]);
 
+    if (!runtime.focusTarget) {
+      runtime.detailScrollPx = 0;
+      runtime.detailPictureAlpha = 1;
+      runtime.detailHeaderMidPx = 0;
+    }
     if (runtime.focusTarget && runtime.detailLayout > 0) {
       const { lane, index } = runtime.focusTarget;
       // Use the straightened bounds while isolating, so the reported rect
@@ -1047,9 +1062,13 @@ export function createDrawFrameHandler(
           : isoBounds;
       // The focused image stays at its world bounds; report its on-screen
       // rect so the detail text can be placed around it.
+      // (`top` as if the details weren't scrolled: they scroll the picture
+      // themselves, on mobile.)
       deps.refs.onDetailImageRectRef.current?.({
         left: (laneBounds.left - runtime.cameraX) * runtime.zoom,
-        top: (laneBounds.top - runtime.cameraY) * runtime.zoom,
+        top:
+          (laneBounds.top - runtime.cameraY) * runtime.zoom +
+          runtime.detailScrollPx,
         width: laneBounds.width * runtime.zoom,
         height: laneBounds.height * runtime.zoom,
         ...(runtime.viewUnfocusing
@@ -1148,6 +1167,19 @@ export function createDrawFrameHandler(
         mainHover.mainConnectorHover = isMain;
         mainHover.mainHighlighted = isMain || mainHover.hoveredMain !== -1;
       }
+    }
+
+    // On mobile there's no hovering a timeline (its line or a viewer's dot):
+    // a tap would otherwise leave it highlighted and tagged.
+    if (window.matchMedia(MOBILE_MEDIA_QUERY).matches) {
+      if (!collectedHover.hoveredCollectedIsImage) {
+        collectedHover.hoveredCollected = -1;
+        collectedHover.hoveredUserRow = null;
+        collectedHover.hoveredLineDistance = Infinity;
+      }
+      mainHover.mainConnectorHover = false;
+      mainHover.mainConnectorDistance = Infinity;
+      mainHover.mainHighlighted = mainHover.hoveredMain !== -1;
     }
 
     // Hovering the user card behaves like hovering the viewer's own branch on
@@ -1283,7 +1315,7 @@ export function createDrawFrameHandler(
             { x: entry.rect.left, y: entry.rect.centerY },
             { fromDir: 'horizontal', toDir: 'horizontal' }
           );
-          drawBranchConnector(p, points, isolateColour, isolateWeight, true);
+          drawBranchConnector(p, points, isolateColour, isolateWeight);
         } else if (entry.linkedTo) {
           const neighbour = byContentId.get(entry.linkedTo);
           if (neighbour && entry.rect.left >= neighbour.rect.right + 1) {
@@ -1292,7 +1324,7 @@ export function createDrawFrameHandler(
               { x: entry.rect.left, y: entry.rect.centerY },
               { fromDir: 'horizontal', toDir: 'horizontal' }
             );
-            drawBranchConnector(p, points, isolateColour, isolateWeight, true);
+            drawBranchConnector(p, points, isolateColour, isolateWeight);
           }
         } else if (entry.branchFromMain) {
           const previewItem = deps.processedPreview[entry.index];
@@ -1306,7 +1338,7 @@ export function createDrawFrameHandler(
               fromDir: 'vertical',
               toDir: 'horizontal',
             });
-            drawBranchConnector(p, points, isolateColour, isolateWeight, true);
+            drawBranchConnector(p, points, isolateColour, isolateWeight);
           }
         }
         // Out to the next map neighbour (same-row peer or next main item).
@@ -1321,7 +1353,7 @@ export function createDrawFrameHandler(
               toDir: outOnMain ? 'vertical' : 'horizontal',
             }
           );
-          drawBranchConnector(p, points, isolateColour, isolateWeight, true);
+          drawBranchConnector(p, points, isolateColour, isolateWeight);
         }
       }
       resetCanvasEffects(connectorCtx);
@@ -1726,7 +1758,9 @@ export function createDrawFrameHandler(
         const previewAlpha =
           isolate *
           previewSwitchAlpha *
-          (isCollectTarget(entry.index) ? 1 : collectFade);
+          (isCollectTarget(entry.index) ? 1 : collectFade) *
+          // On mobile, fading out as it scrolls up behind the header.
+          (isFocusedPreview ? runtime.detailPictureAlpha : 1);
         // Its own canvas state for the glow and picture (see the lanes' item
         // drawing): Safari otherwise ignores the fade on pictures after it.
         p.push();
@@ -1787,7 +1821,6 @@ export function createDrawFrameHandler(
         if (!hideLabel) {
           const collectibleLabelScale =
             ITEM_LABEL_SCALE *
-            COLLECTION_PREVIEW_LABEL_SCALE *
             (1 +
               (PREVIEW_EXPAND_SCALE - 1) *
                 (previewExpand.get(item.contentId) ?? 0));
@@ -1795,11 +1828,12 @@ export function createDrawFrameHandler(
             x: (rect.left + rect.right) / 2,
             y: rect.top + rect.height + 12,
             below: true,
+            placement: 'split',
             font: CANVAS_LABEL_FONT,
             scale: collectibleLabelScale,
             letterSpacing: ITEM_LABEL_LETTER_SPACING,
             textFont: CANVAS_TITLE_FONT,
-            textScale: ITEM_TITLE_SCALE * COLLECTION_PREVIEW_LABEL_SCALE,
+            textScale: ITEM_TITLE_SCALE,
             collectedBy: collectedByFor(
               deps.refs.collectorsRef.current?.get(item.contentId)
             ),
@@ -1812,8 +1846,8 @@ export function createDrawFrameHandler(
               bottom: rect.top + rect.height,
             },
             text: item.title,
-            secondary: formatFullDate(item.anchorTime),
-            maxWidth: Math.max(rect.width, ITEM_WIDTH * 0.8),
+            secondary: formatShortDate(item.anchorTime),
+            maxWidth: ITEM_WIDTH,
             colour: ITEM_LABEL_COLOUR,
             alpha: isolate * previewSwitchAlpha,
           });
@@ -1876,7 +1910,39 @@ export function createDrawFrameHandler(
             (SUBLABEL_SHOW_ZOOM - SUBLABEL_HIDE_ZOOM)
         )
       );
-      for (const rawLabel of dateLabels) {
+      // A split label is drawn as two: its title (with any "New" line) on top
+      // of the item, and its date with who collected it under the item. The
+      // whole is still measured as one, so the rows leave room for both.
+      const drawnLabels = dateLabels.flatMap((label): DateLabel[] => {
+        if (label.placement !== 'split' || !label.anchor) {
+          return [label];
+        }
+        const hasDate = label.secondary !== undefined;
+        const title: DateLabel = {
+          ...label,
+          splitPart: 'title',
+          measureKey: undefined,
+          secondary: undefined,
+          // (With no date to sit under, who collected it stays with the title.)
+          collectedBy: hasDate ? undefined : label.collectedBy,
+        };
+        const date: DateLabel = {
+          ...label,
+          splitPart: 'date',
+          measureKey: undefined,
+          text: label.secondary ?? '',
+          secondary: undefined,
+          unseen: false,
+          textFont: undefined,
+          textScale: undefined,
+        };
+        return [
+          ...(label.measureKey ? [{ ...label, measureOnly: true }] : []),
+          title,
+          ...(hasDate ? [date] : []),
+        ];
+      });
+      for (const rawLabel of drawnLabels) {
         const label =
           rawLabel.anchor && rawLabel.collectedBy
             ? subLabelAlpha <= 0
@@ -1910,12 +1976,18 @@ export function createDrawFrameHandler(
             : label.align === 'left'
             ? p.LEFT
             : p.CENTER;
+        // An item's label is a fixed size on the map (see
+        // ITEM_LABEL_SIZE_ZOOM), so it zooms with its picture and never
+        // rewraps or shifts. Other labels keep their size on screen.
+        const sizeZoom = label.anchor ? ITEM_LABEL_SIZE_ZOOM : runtime.zoom;
         p.textFont(label.font ?? canvasFont);
         p.textSize(
-          (label.variant === 'title'
-            ? DATE_FONT_SIZE * 1.15
-            : DATE_FONT_SIZE * dateFontScale * (label.scale ?? 1)) /
-            runtime.zoom
+          label.variant === 'title'
+            ? (DATE_FONT_SIZE * 1.15) / sizeZoom
+            : (DATE_FONT_SIZE *
+                (label.anchor ? 1 : dateFontScale) *
+                (label.scale ?? 1)) /
+                sizeZoom
         );
         if (label.variant === 'title') {
           p.textStyle(p.BOLD);
@@ -1980,13 +2052,8 @@ export function createDrawFrameHandler(
           ...main,
           ...extras,
         ];
-        // Zoomed quite far out: shorten titles so the map stays readable.
-        const relativeZoom =
-          runtime.fitZoomLevel > 0 ? runtime.zoom / runtime.fitZoomLevel : 1;
-        const titleText =
-          relativeZoom <= TITLE_TRUNCATE_ZOOM_FACTOR
-            ? truncateText(label.text, TITLE_TRUNCATE_MAX_CHARS)
-            : label.text;
+        // Titles always show in full (wrapping onto more lines as needed).
+        const titleText = label.text;
         styleLine(true);
         let lines = withSecondary(
           label.maxWidth === undefined
@@ -2024,8 +2091,8 @@ export function createDrawFrameHandler(
           runtime.collectReturnIndex === -1
         ) {
           // (Measured with its "owned by" line, so the rows don't close up
-          // as that fades out; eased, so they don't jump as titles rewrap.)
-          const measured = blockHeight(lines.length) * runtime.zoom;
+          // as that fades out. In world units: the label's size on the map.)
+          const measured = blockHeight(lines.length);
           const previous = runtime.labelHeights.get(label.measureKey);
           runtime.labelHeights.set(
             label.measureKey,
@@ -2034,11 +2101,14 @@ export function createDrawFrameHandler(
               : previous + (measured - previous) * frameLerp(0.2, dt)
           );
         }
+        if (label.measureOnly) {
+          continue;
+        }
         let { x, y } = label;
         let below = label.below ?? false;
         let hAlign = horizontalAlign;
-        const prefixDotR = UNSEEN_DOT_RADIUS_PX / runtime.zoom;
-        const prefixGap = UNSEEN_DOT_GAP_PX / runtime.zoom;
+        const prefixDotR = UNSEEN_DOT_RADIUS_PX / sizeZoom;
+        const prefixGap = UNSEEN_DOT_GAP_PX / sizeZoom;
         const prefixLineWidth = () => {
           styleLine(false);
           return prefixDotR * 2 + prefixGap + p.textWidth(UNSEEN_LABEL_TEXT);
@@ -2050,7 +2120,7 @@ export function createDrawFrameHandler(
         if (label.anchor) {
           const { anchor } = label;
           const gap = 12;
-          const pad = 4 / runtime.zoom;
+          const pad = 4 / sizeZoom;
           const underWidth = Math.max(
             ...lines.map((line, k) => widthForLine(line, k))
           );
@@ -2068,7 +2138,8 @@ export function createDrawFrameHandler(
           );
           const sideHeight = blockHeight(sideLines.length);
           const underHeight = blockHeight(lines.length);
-          const aboveBottom = anchor.top - gap;
+          const aboveBottom =
+            anchor.top - (label.splitPart === 'title' ? ITEM_TITLE_GAP : gap);
           // The spots a label can take, in order of preference: under the
           // item, then beside it (lined up with its bottom edge) on the right
           // or left, then above it.
@@ -2138,7 +2209,11 @@ export function createDrawFrameHandler(
           // In a timeline's grid, labels always hang under their pictures;
           // otherwise they keep to the spots their item allows.
           const candidates =
-            runtime.soloGrid && runtime.branchSolo > 0
+            label.splitPart === 'title'
+              ? spots.slice(3, 4)
+              : label.splitPart === 'date'
+              ? spots.slice(0, 1)
+              : runtime.soloGrid && runtime.branchSolo > 0
               ? spots.slice(0, 1)
               : label.placement === 'side'
               ? spots.slice(1, 3)
@@ -2250,7 +2325,7 @@ export function createDrawFrameHandler(
                 )
               )
             );
-            p.strokeWeight((LABEL_OUTLINE_PX * 2) / runtime.zoom);
+            p.strokeWeight((LABEL_OUTLINE_PX * 2) / sizeZoom);
             p.rectMode(p.CENTER);
             p.rect(dotX, midY, prefixDotR * 2, prefixDotR * 2);
             p.rectMode(p.CORNER);
@@ -2282,7 +2357,7 @@ export function createDrawFrameHandler(
           p.stroke(
             mixHex(PAGE_BACKGROUND_TOP, PAGE_BACKGROUND_BOTTOM, screenY)
           );
-          p.strokeWeight((LABEL_OUTLINE_PX * 2) / runtime.zoom);
+          p.strokeWeight((LABEL_OUTLINE_PX * 2) / sizeZoom);
           p.strokeJoin(p.ROUND);
           lines.forEach((line, k) => {
             if (isPrefixLine(k)) {
@@ -2595,6 +2670,37 @@ export function createDrawFrameHandler(
       p.cursor('pointer');
     } else {
       p.cursor('grab');
+    }
+
+    // On mobile an opened item's details cover the canvas, its side nodes
+    // sitting level with their header (which has a background of its own):
+    // the nodes and their lines out to the edge are copied up onto the card
+    // layer, so they show above it. (Under the cards themselves.)
+    if (isFocusActive && window.matchMedia(MOBILE_MEDIA_QUERY).matches) {
+      const source = (p.drawingContext as CanvasRenderingContext2D).canvas;
+      const layerCtx = cards.drawingContext as CanvasRenderingContext2D;
+      const scale = source.width / p.width;
+      const reach = edgeNodeRadiusPx() * 2;
+      layerCtx.save();
+      layerCtx.setTransform(1, 0, 0, 1, 0, 0);
+      layerCtx.globalCompositeOperation = 'destination-over';
+      nodeRegions.forEach((region) => {
+        if (region.side !== 'left' && region.side !== 'right') {
+          return;
+        }
+        const x = (region.x - runtime.cameraX) * runtime.zoom;
+        const y = (region.y - runtime.cameraY) * runtime.zoom;
+        const left = region.side === 'left' ? 0 : x - reach;
+        const right = region.side === 'left' ? x + reach : p.width;
+        const sx = Math.max(0, Math.floor(left * scale));
+        const sy = Math.max(0, Math.floor((y - reach) * scale));
+        const sw = Math.min(source.width, Math.ceil(right * scale)) - sx;
+        const sh = Math.min(source.height, Math.ceil((y + reach) * scale)) - sy;
+        if (sw > 0 && sh > 0) {
+          layerCtx.drawImage(source, sx, sy, sw, sh, sx, sy, sw, sh);
+        }
+      });
+      layerCtx.restore();
     }
 
     reportAudioState(isFocusActive);

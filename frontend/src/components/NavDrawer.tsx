@@ -53,6 +53,12 @@ type NavDrawerProps = {
   // Whether it's showing, so the name turns into a way back to every
   // timeline.
   soloTimelineActive?: boolean;
+  // On mobile, the collections open from their own menu item.
+  mobileCollectionsOpen?: boolean;
+  onMobileCollectionsOpenChange?: (open: boolean) => void;
+  // How many collections the viewer hasn't opened yet (that item's label;
+  // it's not shown once there are none).
+  newCollectionCount?: number;
 };
 
 function NavDrawer({
@@ -61,6 +67,9 @@ function NavDrawer({
   resetViewControlRef,
   soloTimelineControlRef,
   soloTimelineActive = false,
+  mobileCollectionsOpen = false,
+  onMobileCollectionsOpenChange,
+  newCollectionCount = 0,
 }: NavDrawerProps) {
   const [isVisible, setIsVisible] = useState(false);
 
@@ -118,8 +127,9 @@ function NavDrawer({
   useEffect(() => {
     if (drawerOpen) {
       resetViewControlRef?.current?.();
+      onMobileCollectionsOpenChange?.(false);
     }
-  }, [drawerOpen, resetViewControlRef]);
+  }, [drawerOpen, resetViewControlRef, onMobileCollectionsOpenChange]);
 
   useEffect(() => {
     if (!drawerOpen) return undefined;
@@ -267,6 +277,31 @@ function NavDrawer({
           >
             Events
           </Link>
+          {/* Mobile only (see .e-menu__item--collections): shows or hides the
+              collections, which have no room to sit on screen there. Only
+              while there are new ones to open. */}
+          {newCollectionCount > 0 ? (
+            <button
+              type="button"
+              role="menuitem"
+              className={`e-menu__item e-menu__item--collections${
+                mobileCollectionsOpen ? ' e-menu__item--active' : ''
+              }`}
+              aria-expanded={mobileCollectionsOpen}
+              tabIndex={listOpen ? 0 : -1}
+              onClick={() => {
+                if (drawerOpen) {
+                  navigate('/home');
+                }
+                onMobileCollectionsOpenChange?.(
+                  drawerOpen ? true : !mobileCollectionsOpen
+                );
+              }}
+            >
+              {newCollectionCount} new collection
+              {newCollectionCount === 1 ? '' : 's'}
+            </button>
+          ) : null}
         </div>
       </div>
       <div

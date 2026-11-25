@@ -37,6 +37,12 @@ import {
   WHEEL_ZOOM_SENSITIVITY,
   ZOOM_LERP,
   ZOOM_SETTLE_THRESHOLD,
+  MOBILE_MEDIA_QUERY,
+  MOBILE_DETAIL_SIDE_PX,
+  MOBILE_DETAIL_IMAGE_MAX_VH,
+  MOBILE_DETAIL_TOP_PX,
+  MOBILE_HOME_COLUMNS,
+  MAIN_COLUMN_WIDTH,
 } from '../constants';
 import { frameLerp, hitTest } from '../geometry';
 import {
@@ -79,6 +85,11 @@ export type ViewContext = {
   scrollView: (deltaX: number, deltaY: number) => void;
   fitView: () => void;
   playEntranceAnimation: () => void;
+  setDetailScroll: (
+    scrollTop: number,
+    pictureAlpha?: number,
+    headerMid?: number
+  ) => void;
   startCollectReturn: (
     index: number,
     rect: DetailImageRect,
@@ -216,6 +227,13 @@ export function createViewContext(
   let isolateFrameZoom: number | null = null;
   // Soft-focus from a collection-card title uses a slower view lerp.
   let hoverFocusAnimating = false;
+  // The view as it was before a collection item's hover moved it, to ease
+  // back to when the hover ends (kept across moving item to item).
+  let hoverRestoreView: { zoom: number; x: number; y: number } | null = null;
+  // On mobile, the view an item was opened from (camera and zoom), to go back
+  // to when it's closed rather than the default framing. Kept while moving
+  // item to item.
+  let enteredView: { zoom: number; x: number; y: number } | null = null;
   let home: { zoom: number; x: number; y: number; panelInset: number } | null =
     null;
   // The focused timeline's framing likewise, to re-frame as its cards load.
@@ -244,22 +262,11 @@ export function createViewContext(
     // until you zoom out.
     const insets = panelInsets(COLLECTION_PANEL_GAP_PX, false, true);
     const panelInset = insets.left + insets.right;
-    // Across, it spans every item, the branches' too (something dated before
-    // the first main item sits out to its left), so none starts under the
-    // panel; up and down it stays on the main timeline.
+    // It frames just the main timeline's items, centred on them; branch
+    // items beyond either end, above or below run off until you zoom out.
     const mainBounds = bounds.getAllBounds();
-    const across = [...mainBounds];
-    const collectedBounds = bounds.getCollectedBounds(1);
-    if (mainBounds.length > 0 && collectedBounds.length > 0) {
-      const minLeft = Math.min(...collectedBounds.map((b) => b.left));
-      const maxRight = Math.max(...collectedBounds.map((b) => b.right));
-      across.push(
-        { ...mainBounds[0], left: minLeft, right: minLeft, width: 0 },
-        { ...mainBounds[0], left: maxRight, right: maxRight, width: 0 }
-      );
-    }
     const framed = computeFitTargetsForBounds(
-      across,
+      mainBounds,
       {
         ...MAIN_FIT_VIEW_MARGINS_PX,
         left: Math.max(MAIN_FIT_VIEW_MARGINS_PX.left, insets.left),
@@ -271,25 +278,20 @@ export function createViewContext(
       runtime.targetZoom = 1;
       runtime.targetCameraX = 0;
       runtime.targetCameraY = MAIN_LINE_Y - p.height / (2 * runtime.targetZoom);
-    } else if (collectedBounds.length > 0) {
-      // Up and down, the whole map (branches and their labels too) sits
-      // centred in the space the header leaves, when it fits; else the main
-      // timeline stays centred, the branches running off above and below.
-      const all = [...mainBounds, ...collectedBounds];
-      const top = Math.min(...all.map((b) => b.top));
-      const bottom = Math.max(
-        ...all.map((b) => Math.max(b.top + b.height, b.dateBottom))
+    }
+    // On mobile the whole main timeline is too small to read, so it opens
+    // zoomed in on its middle.
+    if (framed && window.matchMedia(MOBILE_MEDIA_QUERY).matches) {
+      const fromZoom = runtime.targetZoom;
+      const zoom = Math.max(
+        fromZoom,
+        p.width / (MOBILE_HOME_COLUMNS * MAIN_COLUMN_WIDTH)
       );
-      const zoom = runtime.targetZoom;
-      const space =
-        p.height -
-        MAIN_FIT_VIEW_MARGINS_PX.top -
-        MAIN_FIT_VIEW_MARGINS_PX.bottom;
-      const height = (bottom - top) * zoom;
-      if (height <= space) {
-        runtime.targetCameraY =
-          top - (MAIN_FIT_VIEW_MARGINS_PX.top + (space - height) / 2) / zoom;
-      }
+      const centreX = runtime.targetCameraX + p.width / (2 * fromZoom);
+      const centreY = runtime.targetCameraY + p.height / (2 * fromZoom);
+      runtime.targetZoom = zoom;
+      runtime.targetCameraX = centreX - p.width / (2 * zoom);
+      runtime.targetCameraY = centreY - p.height / (2 * zoom);
     }
     runtime.fitZoomLevel = wholeMapZoom;
     runtime.mapZoom = runtime.targetZoom;
@@ -414,6 +416,23 @@ export function createViewContext(
   };
 
   const computeFocusViewTargets = (focusBounds: ContentBounds) => {
+    // On mobile: full width (up to MOBILE_DETAIL_IMAGE_MAX_VH tall), centred,
+    // under the header, its details stacked underneath (see
+    // TimelineDetailOverlay).
+    if (window.matchMedia(MOBILE_MEDIA_QUERY).matches) {
+      const zoom = Math.min(
+        (p.width - MOBILE_DETAIL_SIDE_PX * 2) / focusBounds.width,
+        (p.height * MOBILE_DETAIL_IMAGE_MAX_VH) / focusBounds.height
+      );
+      const left = (p.width - focusBounds.width * zoom) / 2;
+      runtime.targetZoom = zoom;
+      runtime.targetCameraX = focusBounds.left - left / zoom;
+      // (Scrolled down, the picture sits that much higher.)
+      runtime.targetCameraY =
+        focusBounds.top -
+        (MOBILE_DETAIL_TOP_PX - runtime.detailScrollPx) / zoom;
+      return;
+    }
     // Frame the item directly at its detail position — left-aligned, vertically
     // centred, 60vh tall — so the focus is a single zoom with no extra slide.
     const maxWidthScreen =
@@ -448,6 +467,11 @@ export function createViewContext(
     expectColumn = false,
     forWorldView = false
   ): { left: number; right: number } => {
+    // On mobile the column floats over the map, full width, rather than
+    // sitting beside it (see index.css), so the map keeps the whole screen.
+    if (window.matchMedia(MOBILE_MEDIA_QUERY).matches) {
+      return { left: 0, right: 0 };
+    }
     // The column holds collection boxes, or a timeline's "You are viewing"
     // box and item cards: whatever of it is showing.
     const parts = document.querySelectorAll(
@@ -455,11 +479,15 @@ export function createViewContext(
         ? '.collection-card-stack:not(.collection-card-stack--hidden), .timeline-item-card--opened'
         : '.collection-card-stack:not(.collection-card-stack--hidden), .branch-focus-card, .collection-card-list:not(.collection-card-list--hidden) .timeline-item-card'
     );
+    // (A list hidden outright, as on mobile until opened, takes no room.)
+    const list = document.querySelector('.collection-card-list');
+    const listShown = !list || getComputedStyle(list).display !== 'none';
     const stack =
-      expectColumn ||
-      (forWorldView &&
-        parts.length === 0 &&
-        deps.refs.hasCollectionPanelRef.current)
+      listShown &&
+      (expectColumn ||
+        (forWorldView &&
+          parts.length === 0 &&
+          deps.refs.hasCollectionPanelRef.current))
         ? document.querySelector('.top-right-stack')
         : null;
     if (parts.length === 0 && !stack) {
@@ -470,7 +498,11 @@ export function createViewContext(
     ).canvas.getBoundingClientRect();
     let panelRight = -Infinity;
     parts.forEach((part) => {
-      panelRight = Math.max(panelRight, part.getBoundingClientRect().right);
+      const rect = part.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) {
+        return;
+      }
+      panelRight = Math.max(panelRight, rect.right);
     });
     if (stack) {
       // The column's cards are --top-right-card-width wide:
@@ -505,8 +537,7 @@ export function createViewContext(
   const frameIsolatedBranch = (
     rowIndex: number
   ): { x: number; y: number } | null => {
-    // Framed as it will settle: with the main and collection items' sizes
-    // swapped over.
+    // Framed as it will settle.
     const frameAtCurrentZoom = () => {
       const line = bounds.getIsolatedMergedLine(rowIndex, null, 1);
       if (!line) {
@@ -517,7 +548,7 @@ export function createViewContext(
       // stretch. Pad short packs out to a minimum slot width so a 2-item
       // collection (e.g. "We go again") doesn't zoom in tighter than a fuller
       // one.
-      const mainBounds = bounds.getAllBounds(1);
+      const mainBounds = bounds.getAllBounds();
       const hasBranch = line.entries.some(
         (entry) => entry.kind === 'collected'
       );
@@ -583,6 +614,7 @@ export function createViewContext(
       return null;
     }
     isolateFrameZoom = runtime.targetZoom;
+    hoverRestoreView = null;
     return { x: framed.centerX, y: framed.centerY };
   };
 
@@ -971,6 +1003,28 @@ export function createViewContext(
     runtime.viewUnfocusing = false;
   };
 
+  // On mobile the opened item's details scroll as one with its picture: the
+  // view moves up by however far they've scrolled since last time.
+  const setDetailScroll = (
+    scrollTop: number,
+    pictureAlpha = 1,
+    headerMid = 0
+  ) => {
+    const delta = scrollTop - runtime.detailScrollPx;
+    runtime.detailScrollPx = scrollTop;
+    runtime.detailPictureAlpha = pictureAlpha;
+    runtime.detailHeaderMidPx = headerMid;
+    if (!runtime.focusTarget || delta === 0 || runtime.zoom <= 0) {
+      return;
+    }
+    const dy = delta / runtime.zoom;
+    runtime.cameraY += dy;
+    runtime.targetCameraY += dy;
+    runtime.panTargetCameraY += dy;
+    runtime.animationStartCameraY += dy;
+    runtime.animationWorldY += dy;
+  };
+
   // Initial-load entrance: starts zoomed out from the fit view's own centre
   // and eases in to it, rather than the timeline just appearing already
   // framed. Uses the same zoom-anchored animation as focusing an item.
@@ -1022,6 +1076,7 @@ export function createViewContext(
     runtime.branchIsolate = 0;
     runtime.branchIsolateRow = null;
     isolateFrameZoom = null;
+    hoverRestoreView = null;
     runtime.branchDimStrength = 0;
     runtime.branchDimRow = null;
     runtime.collectStartMs = null;
@@ -1342,11 +1397,14 @@ export function createViewContext(
     // Also frame the main-line items the branch springs from / rejoins (the
     // item before each pick and the one after it), so the branch's origin on
     // the main timeline is visible too.
+    // (On mobile, a narrow screen, just the ones it springs from: the
+    // others would spread the frame so wide the timeline is lost in it.)
+    const isMobile = window.matchMedia(MOBILE_MEDIA_QUERY).matches;
     const mainIndices = new Set<number>();
     for (const { item } of branchItems) {
       const prev = Math.max(0, bounds.getPreviousMainIndex(item.anchorTime));
       mainIndices.add(prev);
-      if (prev + 1 < mainBounds.length) {
+      if (!isMobile && prev + 1 < mainBounds.length) {
         mainIndices.add(prev + 1);
       }
     }
@@ -1386,10 +1444,13 @@ export function createViewContext(
     }
     // Framed beside the column when it's showing (else across the screen),
     // with room for the header and labels.
-    const center = computeFitTargetsForBounds(
-      branchFrame.bounds,
-      collectionFrameMargins(true)
-    );
+    const margins = collectionFrameMargins(true);
+    // On mobile, just the usual edge gutter at the sides.
+    if (window.matchMedia(MOBILE_MEDIA_QUERY).matches) {
+      margins.left = MOBILE_DETAIL_SIDE_PX;
+      margins.right = MOBILE_DETAIL_SIDE_PX;
+    }
+    const center = computeFitTargetsForBounds(branchFrame.bounds, margins);
     if (!center) {
       return false;
     }
@@ -1468,6 +1529,7 @@ export function createViewContext(
     if (runtime.branchIsolateActive) {
       runtime.branchIsolateActive = false;
       isolateFrameZoom = null;
+      hoverRestoreView = null;
       deps.refs.onBranchIsolationExitRef.current?.();
     }
     const row = deps.processedCollected
@@ -1520,6 +1582,16 @@ export function createViewContext(
     // underneath (collectibles stay chained on the branch; others stay faded),
     // so getFocusBounds aims there and unfocusing returns to the isolated
     // timeline rather than the full one.
+    if (!runtime.focusTarget) {
+      // (Where it was headed, if it was still moving.)
+      enteredView = runtime.viewAnimating
+        ? {
+            zoom: runtime.targetZoom,
+            x: runtime.targetCameraX,
+            y: runtime.targetCameraY,
+          }
+        : { zoom: runtime.zoom, x: runtime.cameraX, y: runtime.cameraY };
+    }
     runtime.panning = false;
     runtime.zooming = false;
     runtime.detailPhase = 'none';
@@ -1548,6 +1620,8 @@ export function createViewContext(
   };
 
   const unfocusItem = () => {
+    const returnView = enteredView;
+    enteredView = null;
     const soloCentre = runtime.branchSoloActive ? frameSoloGrid() : null;
     if (!soloCentre) {
       clearBranchFocus();
@@ -1573,7 +1647,14 @@ export function createViewContext(
       runtime.viewAnimating = true;
       return;
     }
-    computeFitViewTargets();
+    // On mobile, back to where the item was opened from.
+    if (returnView && window.matchMedia(MOBILE_MEDIA_QUERY).matches) {
+      runtime.targetZoom = returnView.zoom;
+      runtime.targetCameraX = returnView.x;
+      runtime.targetCameraY = returnView.y;
+    } else {
+      computeFitViewTargets();
+    }
     syncInteractionLock(deps);
     beginViewAnimation(
       runtime.targetCameraX + p.width / (2 * runtime.targetZoom),
@@ -1608,6 +1689,16 @@ export function createViewContext(
       return;
     }
     const focusBounds = getFocusBounds(target);
+    // Where the view is (or is already heading), to come back to.
+    if (!hoverRestoreView) {
+      hoverRestoreView = runtime.viewAnimating
+        ? {
+            zoom: runtime.targetZoom,
+            x: runtime.targetCameraX,
+            y: runtime.targetCameraY,
+          }
+        : { zoom: runtime.zoom, x: runtime.cameraX, y: runtime.cameraY };
+    }
     // Collection-card hover: ease toward the item with a soft zoom (not a
     // full focus dive), framed in the space the panel leaves.
     if (runtime.branchIsolateRow !== null) {
@@ -1660,6 +1751,18 @@ export function createViewContext(
     }
     runtime.panning = false;
     runtime.zooming = false;
+    // Back to the view as it was before the hover.
+    if (hoverRestoreView) {
+      const { zoom, x, y } = hoverRestoreView;
+      hoverRestoreView = null;
+      runtime.targetZoom = zoom;
+      runtime.targetCameraX = x;
+      runtime.targetCameraY = y;
+      beginViewAnimation(x + p.width / (2 * zoom), y + p.height / (2 * zoom));
+      hoverFocusAnimating = true;
+      runtime.viewAnimating = true;
+      return;
+    }
     // Badge-header hover (or other clear) while isolating: ease back to the
     // full collection framing.
     if (runtime.branchIsolateRow !== null) {
@@ -1864,6 +1967,7 @@ export function createViewContext(
     // clears it once the progress reaches zero.
     runtime.branchIsolateActive = false;
     isolateFrameZoom = null;
+    hoverRestoreView = null;
     animateToFitAll();
     deps.refs.onBranchIsolationExitRef.current?.();
   };
@@ -1934,6 +2038,7 @@ export function createViewContext(
     scrollView,
     fitView,
     playEntranceAnimation,
+    setDetailScroll,
     startCollectReturn,
     animateToFitView,
     startPreviewCollect,

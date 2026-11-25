@@ -16,8 +16,9 @@ import {
   PADDING_X,
   PADDING_Y,
   PREVIEW_EXPAND_SCALE,
-  COLLECTION_PREVIEW_SCALE,
   COLLECTION_ROW_GAP,
+  MAIN_SLOT_WIDTH,
+  ITEM_LABEL_SIZE_ZOOM,
 } from '../constants';
 import {
   getBranchRoute,
@@ -106,9 +107,7 @@ export type TimelineFlashPath = {
 };
 
 export type BoundsContext = {
-  // `swap` pins how far the collection view's size swap has gone (see
-  // collectionSwap), rather than tracking it live.
-  getAllBounds: (swap?: number) => ContentBounds[];
+  getAllBounds: () => ContentBounds[];
   slotLeft: (index: number) => number;
   slotCenterX: (index: number) => number;
   timeToWorldX: (targetTime: number) => number;
@@ -286,12 +285,12 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     };
   };
 
-  // Main timeline items are drawn a size up from branch items, still capped
-  // (as zooming out grows them) so neighbours never grow into each other.
-  const getAllBounds = (swap = collectionSwap()) => {
-    const mainScale = MAIN_ITEM_SCALE + (1 - MAIN_ITEM_SCALE) * swap;
+  // Main timeline items are drawn a size up from branch items (whether or not
+  // a collection is being viewed), still capped (as zooming out grows them)
+  // so neighbours never grow into each other.
+  const getAllBounds = () => {
     const scale = Math.min(
-      itemScale() * mainScale,
+      itemScale() * MAIN_ITEM_SCALE,
       Math.max(MAIN_ITEM_SCALE, ITEM_ZOOM_OUT_GROWTH_MAX)
     );
     return processed.map((item, index) =>
@@ -310,140 +309,146 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
 
   const slotCenterX = (index: number) => slotLeft(index) + ITEM_WIDTH / 2;
 
-  // Gaps between main-timeline items are widened when collected content needs
-  // to sit in them. Indexed by the gap's left main index. A chain dated
-  // before the very first main item gets analogous treatment via
-  // `extraBeforeFirst`, pushed further left of that item's own position
-  // instead of overlapping it (see timeToWorldX) — unlike content after the
-  // last main item, which has nothing later to collide with and so is left
-  // alone.
-  let gapExtraSlotsCache: {
-    extra: number[];
-    extraBeforeFirst: number;
-    beforeFirstTimes: number[];
+  // Every item on the map, main and collected alike, takes the next column
+  // in date order, so neighbours are always one column apart whichever rows
+  // they're in (branch items that can't collide may share one, below). A column is as wide as its item's slot (main items are drawn
+  // bigger) with the usual gap between columns.
+  type Column = { lane: 'main' | 'collected'; index: number; time: number };
+  let columnCache: {
+    main: number[];
+    collected: number[];
+    // Each column's date and centre, in order, for placing a date between.
+    times: number[];
+    centres: number[];
   } | null = null;
-  const getGapExtraSlots = (): {
-    extra: number[];
-    extraBeforeFirst: number;
-    // The distinct dates of the timelines' starting items that come before
-    // the first main item, so each gets its own column there.
-    beforeFirstTimes: number[];
-  } => {
-    if (gapExtraSlotsCache) {
-      return gapExtraSlotsCache;
+  const getColumns = () => {
+    if (columnCache) {
+      return columnCache;
     }
-    const extra = new Array<number>(Math.max(items.length, 1)).fill(0);
-    const gapCounts = new Array<number>(Math.max(items.length, 1)).fill(0);
-    let extraBeforeFirst = 0;
-    let beforeFirstCount = 0;
-    const beforeFirst = new Set<number>();
-    const depthCache = new Map<number, number>();
-    const depthOf = (index: number): number => {
-      const cached = depthCache.get(index);
+    const columns: Column[] = [];
+    // Main items keep their order (an undated one sits with the one before).
+    let mainTime = -Infinity;
+    items.forEach((item, index) => {
+      const time = item.date ? new Date(item.date).getTime() : Number.NaN;
+      if (!Number.isNaN(time)) {
+        mainTime = Math.max(mainTime, time);
+      }
+      columns.push({ lane: 'main', index, time: mainTime });
+    });
+    // A chained item always comes after the one it's chained onto.
+    const chainTimes = new Map<number, number>();
+    const chainTime = (index: number): number => {
+      const cached = chainTimes.get(index);
       if (cached !== undefined) {
         return cached;
       }
       const predecessor = getChainPredecessorIndex(index);
-      const depth = predecessor >= 0 ? 1 + depthOf(predecessor) : 1;
-      depthCache.set(index, depth);
-      return depth;
+      const time = Math.max(
+        processedCollected[index].anchorTime,
+        predecessor >= 0 ? chainTime(predecessor) : -Infinity
+      );
+      chainTimes.set(index, time);
+      return time;
     };
-    // Main items are drawn larger than the free space in a slot, so collected
-    // items in a gap need extra room or they sit on (and can push past) the
-    // next main item — e.g. mid-2026 collects past a 2027 event. Chains need
-    // one slot per link; unchained piles get a slot each minus two that the
-    // usual gap can absorb, so the timeline doesn't stretch more than it must.
-    const roomFor = (count: number, chainDepth: number) =>
-      Math.max(count > 0 ? Math.max(1, count - 2) : 0, chainDepth);
-    processedCollected.forEach((item, index) => {
-      const gap = getPreviousMainIndex(item.anchorTime);
-      if (gap === -1) {
-        if (getChainPredecessorIndex(index) < 0) {
-          beforeFirst.add(item.anchorTime);
-        }
-        beforeFirstCount += 1;
-        const depth = depthOf(index);
-        extraBeforeFirst = Math.max(
-          extraBeforeFirst,
-          roomFor(beforeFirstCount, depth)
-        );
-        return;
-      }
-      // Only widen gaps that sit between two main items.
-      if (gap >= items.length - 1) {
-        return;
-      }
-      gapCounts[gap] += 1;
-      const depth = depthOf(index);
-      extra[gap] = Math.max(extra[gap], roomFor(gapCounts[gap], depth));
+    processedCollected.forEach((_, index) => {
+      columns.push({ lane: 'collected', index, time: chainTime(index) });
     });
-    gapExtraSlotsCache = {
-      extra,
-      extraBeforeFirst,
-      beforeFirstTimes: [...beforeFirst],
-    };
-    return gapExtraSlotsCache;
-  };
-
-  const slotLeft = (index: number): number => {
-    const { extra } = getGapExtraSlots();
-    const step = ITEM_WIDTH + ITEM_GAP;
-    let x = PADDING_X;
-    for (let gap = 0; gap < index; gap++) {
-      x += step * (1 + (extra[gap] ?? 0));
-    }
-    return x;
-  };
-
-  const timeToWorldX = (targetTime: number) => {
-    const times = items.map((item) =>
-      item.date ? new Date(item.date).getTime() : Number.NaN
+    // (Ties: main items first, then by position.)
+    columns.sort(
+      (a, b) =>
+        a.time - b.time ||
+        (a.lane === b.lane ? a.index - b.index : a.lane === 'main' ? -1 : 1)
     );
-    const step = ITEM_WIDTH + ITEM_GAP;
+    // Branch items needn't each take a column of their own: one shares the
+    // column before it when that holds only branch items it can't collide
+    // with — on other collectors' rows (sharing no collector, so not chained
+    // to it either), or the other branches of the same fork.
+    const collectorsOf = (index: number) =>
+      new Set(processedCollected[index].sources.map((s) => s.rowIndex));
+    const sharesCollector = (a: number, b: number) => {
+      const rows = collectorsOf(a);
+      return processedCollected[b].sources.some((s) => rows.has(s.rowIndex));
+    };
+    const forkSiblings = (a: number, b: number) => {
+      const predecessor = getChainPredecessorIndex(a);
+      return (
+        predecessor >= 0 &&
+        predecessor === getChainPredecessorIndex(b) &&
+        processedCollected[a].anchorTime === processedCollected[b].anchorTime
+      );
+    };
+    type Group = { lane: Column['lane']; members: number[]; time: number };
+    const groups: Group[] = [];
+    columns.forEach((column) => {
+      const last = groups[groups.length - 1];
+      if (
+        column.lane === 'collected' &&
+        last?.lane === 'collected' &&
+        last.members.every(
+          (member) =>
+            !sharesCollector(member, column.index) ||
+            forkSiblings(member, column.index)
+        )
+      ) {
+        last.members.push(column.index);
+        return;
+      }
+      groups.push({
+        lane: column.lane,
+        members: [column.index],
+        time: column.time,
+      });
+    });
+    const slotWidth = (group: Group) =>
+      group.lane === 'main' ? MAIN_SLOT_WIDTH : ITEM_WIDTH;
+    const main = new Array<number>(items.length).fill(0);
+    const collected = new Array<number>(processedCollected.length).fill(0);
+    const times: number[] = [];
+    const centres: number[] = [];
+    let centre = PADDING_X + ITEM_WIDTH / 2;
+    groups.forEach((group, k) => {
+      if (k > 0) {
+        centre += (slotWidth(groups[k - 1]) + slotWidth(group)) / 2 + ITEM_GAP;
+      }
+      group.members.forEach((index) => {
+        (group.lane === 'main' ? main : collected)[index] = centre;
+      });
+      times.push(group.time);
+      centres.push(centre);
+    });
+    columnCache = { main, collected, times, centres };
+    return columnCache;
+  };
 
-    if (items.length === 0) {
+  const slotLeft = (index: number): number =>
+    getColumns().main[index] - ITEM_WIDTH / 2;
+
+  // A collected item's column centre.
+  const collectedColumnX = (index: number): number =>
+    getColumns().collected[index];
+
+  // Where a date falls along the map: between the columns either side of it,
+  // or a column beyond the first or last.
+  const timeToWorldX = (targetTime: number) => {
+    const { times, centres } = getColumns();
+    if (centres.length === 0) {
       return 0;
     }
-
-    let firstFuture = -1;
-    for (let index = 0; index < times.length; index++) {
-      if (!Number.isNaN(times[index]) && times[index] > targetTime) {
-        firstFuture = index;
-        break;
-      }
+    const step = ITEM_WIDTH + ITEM_GAP;
+    const next = times.findIndex((time) => time > targetTime);
+    if (next === -1) {
+      return centres[centres.length - 1] + step;
     }
-
-    if (firstFuture === -1) {
-      return slotCenterX(items.length - 1) + step / 2;
+    if (next === 0) {
+      return centres[0] - step;
     }
-    if (firstFuture === 0) {
-      // A chain rooted here grows rightward from this point (see
-      // getCollectedBounds), so a deep chain needs a head start further left
-      // of the first main item, not just a single step, to clear it entirely.
-      // Everything from before the first main item would otherwise share
-      // one spot there, stacked up whatever its date: each date gets its own
-      // column instead, the earliest furthest left.
-      const { extraBeforeFirst, beforeFirstTimes } = getGapExtraSlots();
-      const later = beforeFirstTimes.filter((time) => time > targetTime).length;
-      return slotCenterX(0) - step * (extraBeforeFirst + later) - step / 2;
-    }
-
-    const prev = firstFuture - 1;
-    const tPrev = times[prev];
-    const tNext = times[firstFuture];
-    let frac = 0.5;
-    if (!Number.isNaN(tPrev) && !Number.isNaN(tNext) && tNext > tPrev) {
-      frac = (targetTime - tPrev) / (tNext - tPrev);
-    }
-    const bounds = getAllBounds();
-    const gapStart = bounds[prev].right;
-    // A gap widened for a chain keeps that extra width for the chain, which
-    // grows rightward from its first item: dates map onto the gap's usual
-    // width at its left, so the chain's last item still ends up before the
-    // next main item rather than level with (or past) it.
-    const chainRoom = step * (getGapExtraSlots().extra[prev] ?? 0);
-    const gapEnd = Math.max(gapStart, bounds[firstFuture].left - chainRoom);
-    return gapStart + frac * (gapEnd - gapStart);
+    const tPrev = times[next - 1];
+    const tNext = times[next];
+    const frac =
+      Number.isFinite(tPrev) && tNext > tPrev
+        ? (targetTime - tPrev) / (tNext - tPrev)
+        : 0.5;
+    return centres[next - 1] + frac * (centres[next] - centres[next - 1]);
   };
 
   const getNowWorldX = () => timeToWorldX(Date.now());
@@ -1412,7 +1417,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       if (getChainPredecessorIndex(index) >= 0) {
         return;
       }
-      const centre = timeToWorldX(item.anchorTime);
+      const centre = collectedColumnX(index);
       let left = centre - ITEM_WIDTH / 2;
       let right = centre + ITEM_WIDTH / 2;
       const prev = getPreviousMainIndex(item.anchorTime);
@@ -1513,20 +1518,16 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
 
       const predecessor = getChainPredecessorIndex(index);
       let rowIndex: number;
-      let baseLeft: number;
+      // Centred in its own column (see getColumns).
+      let baseLeft = collectedColumnX(index) - width / 2;
       if (predecessor >= 0 && bounds[predecessor]) {
-        // Sit directly to the right of the chained predecessor. The first
-        // branch shares the predecessor's row; extra branches (a fork) stack
-        // into rows below it. Center each item within a fixed-width column so
-        // branches of different widths line up on the same vertical axis.
+        // In the chained predecessor's row, to its right. The first branch
+        // shares that row; extra branches (a fork) stack into rows below it.
         const branch = successorCount.get(predecessor) ?? 0;
         successorCount.set(predecessor, branch + 1);
         rowIndex = placedRow[predecessor] + branch;
-        const columnLeft = bounds[predecessor].right + ITEM_GAP;
-        baseLeft = columnLeft + (ITEM_WIDTH - width) / 2;
       } else {
         rowIndex = laneFor.get(item.rowIndex) ?? item.rowIndex;
-        baseLeft = timeToWorldX(item.anchorTime) - width / 2;
       }
 
       const prevRight = rowPrevRight.get(rowIndex) ?? -Infinity;
@@ -1561,13 +1562,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       });
     }
 
-    makeRoomForLabels(
-      bounds,
-      placedRow,
-      swapping,
-      swap,
-      rowGrowthOverride !== undefined
-    );
+    makeRoomForLabels(bounds, placedRow, swapping, swap);
     return bounds;
   };
 
@@ -1579,8 +1574,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     bounds: ContentBounds[],
     placedRow: number[],
     swapping: boolean[],
-    swap: number,
-    settled: boolean
+    swap: number
   ) => {
     // Each side's rows, nearest the main line first, holding their items.
     const slots: number[][][] = [[], []];
@@ -1596,24 +1590,13 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
       const slot = Math.floor(row / 2);
       (slots[side][slot] ??= []).push(index);
     });
-    // Labels keep their size on screen, so on the map they take more room
-    // the further out the view is. Past the zoom that fits the whole map they
-    // count at that zoom's size, so the rows hold still as the view zooms in
-    // (on an item, say) and the settled layout an item is aimed at matches.
-    const fitZoom = runtime.fitZoomLevel > 0 ? runtime.fitZoomLevel : null;
-    const labelZoom = Math.max(
-      settled
-        ? fitZoom ?? runtime.zoom
-        : fitZoom === null
-        ? runtime.zoom
-        : Math.min(runtime.zoom, fitZoom),
-      1e-6
-    );
+    // Item labels are a fixed size on the map (see drawFrame), measured in
+    // world units, so the rows hold still whatever the zoom.
     const labelHeight = (index: number) =>
-      (runtime.labelHeights.get(processedCollected[index].contentId) ??
-        LABEL_HEIGHT_FALLBACK_PX) / labelZoom;
+      runtime.labelHeights.get(processedCollected[index].contentId) ??
+      LABEL_HEIGHT_FALLBACK_PX / ITEM_LABEL_SIZE_ZOOM;
     const labelSpan = (b: ContentBounds) => {
-      const half = Math.max(b.width, ITEM_WIDTH * 0.8) / 2;
+      const half = ITEM_WIDTH / 2;
       const centre = (b.left + b.right) / 2;
       return { left: centre - half, right: centre + half };
     };
@@ -1750,7 +1733,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     swap = collectionSwap()
   ): IsolatedLine | null => {
     const cb = getCollectedBounds(undefined, swap);
-    const mainBounds = getAllBounds(swap);
+    const mainBounds = getAllBounds();
     const isolatedCollected = processedCollected
       .map((item, index) => ({ item, index }))
       .filter(
@@ -1787,8 +1770,8 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
 
     const previewSize = (item: (typeof previews)[number]['item']) => {
       const fitted = getFittedSize(item.aspectRatio, ITEM_WIDTH, IMAGE_HEIGHT);
-      const sizeScale =
-        itemScale() * (1 + (COLLECTION_PREVIEW_SCALE - 1) * swap);
+      // The same size as the items around them.
+      const sizeScale = itemScale();
       return {
         width: fitted.width * sizeScale,
         height: fitted.height * sizeScale,
@@ -1960,6 +1943,12 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
         processedCollected.forEach((other, otherIndex) => {
           const otherRect = cb[otherIndex];
           if (!otherRect || other.contentId === item.contentId) {
+            return;
+          }
+          // Only neighbours still shown while the collection is viewed (the
+          // viewer's own items): other collectors' fade away, and a line
+          // joining one would run out to nothing.
+          if (!other.sources.some((s) => s.rowIndex === rowIndex)) {
             return;
           }
           rowPeers.push({ contentId: other.contentId, rect: otherRect });
@@ -2180,7 +2169,7 @@ export function createBoundsContext(deps: TimelineSketchDeps): BoundsContext {
     getIsolatedLineTargets,
     getIsolatedMergedLine,
     invalidateCollected: () => {
-      gapExtraSlotsCache = null;
+      columnCache = null;
       branchNodeXCache = null;
       itemAttachCache = null;
     },

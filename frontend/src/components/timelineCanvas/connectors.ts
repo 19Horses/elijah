@@ -234,16 +234,14 @@ export function drawMainConnector(
   p: p5,
   from: ConnectorPoint,
   to: ConnectorPoint,
-  startFuture: boolean,
-  endFuture: boolean,
   weight = 1,
   fromStubExtra = 0,
   toStubExtra = 0,
   colour = MAIN_LINE_COLOUR
 ): ConnectorPoint[] {
   const points = getMainConnectorPoints(from, to, fromStubExtra, toStubExtra);
-  // A connector touching a future item is dashed for its whole length.
-  strokePolyline(p, points, colour, weight, startFuture || endFuture);
+  // Always solid, future items included.
+  strokePolyline(p, points, colour, weight);
   return points;
 }
 

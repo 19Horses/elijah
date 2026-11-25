@@ -9,7 +9,7 @@ import {
   type CollectedBy,
   type LabelRect,
 } from '../labels';
-import { formatFullDate } from '../../../utils/formatDate';
+import { formatShortDate } from '../../../utils/formatDate';
 import {
   getContentTypeColour,
   getContentTypeKicker,
@@ -35,7 +35,6 @@ import {
   DOT_RADIUS,
   ITEM_LABEL_LETTER_SPACING,
   ITEM_LABEL_LINE_HEIGHT,
-  ITEM_WIDTH,
   LOAD_ALPHA_SNAP,
   MAIN_GLOW_COLOUR,
   MAIN_GLOW_TRAVEL_MS,
@@ -62,6 +61,7 @@ import {
   VIEWER_FLASH_LENGTH_PX,
   VIEWER_FLASH_WEIGHT_PX,
   ITEM_HOVER_GROW,
+  MAIN_SLOT_WIDTH,
 } from '../constants';
 import {
   distanceToPolyline,
@@ -75,7 +75,6 @@ import { timelineWeight } from '../geometry';
 import { drawContainedImage, drawGalleryStrip } from './drawGalleryControls';
 import type { GalleryController } from './galleryController';
 import { drawPlayPauseButton } from './drawPlayPauseButton';
-import { isFutureDatedItem } from '../timelineRuntime';
 import type { ContentType } from '../../../types/content';
 import type {
   ConnectorPoint,
@@ -88,6 +87,7 @@ import type { TimelineSegment, ViewerDotTarget } from './viewerDots';
 import {
   drawEdgeNodeStub,
   edgeNodeDotScale,
+  edgeNodeFade,
   edgeNodeHoleRatio,
   edgeNodePosition,
   edgeNodeRunOn,
@@ -203,7 +203,13 @@ export type DateLabel = {
   ownerAlpha?: number;
   // Where an anchored label may sit: beside its item (left or right), on
   // top of it, or under it. Unset, it takes whichever spot is clearest.
-  placement?: 'side' | 'above' | 'below';
+  // 'split' puts the title on top of the item and the date (with who
+  // collected it) under it.
+  placement?: 'side' | 'above' | 'below' | 'split';
+  // Set on the two halves a 'split' label is drawn as, when it's drawn.
+  splitPart?: 'title' | 'date';
+  // Only measured (for `measureKey`), never drawn: a split label's whole.
+  measureOnly?: boolean;
   // Records the label's drawn height under this key (a collected item's
   // content id), for the rows to leave room for.
   measureKey?: string;
@@ -519,8 +525,6 @@ export function drawMainLaneConnectors(
       p,
       start.pt,
       end.pt,
-      isFutureDatedItem(deps.items[index]),
-      isFutureDatedItem(deps.items[index + 1]),
       lineWeight * (1 + ctx.mainConnectorGrow(index)),
       start.runOn,
       end.runOn,
@@ -540,7 +544,9 @@ export function drawMainLaneConnectors(
       const edgeDotRadius =
         DOT_RADIUS * edgeNodeDotScale(deps.runtime.zoom, edge.progress);
       [start, end].forEach(({ pt, node }) => {
-        if (node) {
+        if (node && !node.hidden) {
+          mainCtx.globalAlpha =
+            lineAlpha * ctx.collectFade * edgeNodeFade(node);
           drawEdgeNodeStub(
             p,
             deps.runtime,
@@ -828,8 +834,8 @@ export function drawMainLaneItems(
           x: imageLeft + width / 2,
           y: top + height + 12,
           below: true,
-          // Main timeline items are labelled beside them.
-          placement: 'side',
+          // Title on top of the item, date under it.
+          placement: 'split',
           font: CANVAS_LABEL_FONT,
           scale: ITEM_LABEL_SCALE,
           letterSpacing: ITEM_LABEL_LETTER_SPACING,
@@ -849,13 +855,12 @@ export function drawMainLaneItems(
           },
           text: item.title,
           secondary: deps.items[index]?.date
-            ? formatFullDate(
+            ? formatShortDate(
                 new Date(deps.items[index].date as string).getTime()
               )
             : undefined,
-          // Wraps within roughly the item's own width (a narrow item still
-          // gets a reasonable measure), well clear of its neighbours'.
-          maxWidth: Math.max(width, ITEM_WIDTH * 0.8),
+          // Wraps a little wider than the item's own image.
+          maxWidth: MAIN_SLOT_WIDTH,
           colour: ITEM_LABEL_COLOUR,
           alpha:
             ctx.isTypeHighlightActive && !typeMatch
@@ -979,6 +984,7 @@ export function drawMainLaneConnectorDots(
           side: undefined,
           edgeKey: undefined,
           hidden: false,
+          fade: undefined,
           others: undefined,
         };
       }
@@ -990,6 +996,7 @@ export function drawMainLaneConnectorDots(
         side: node.side,
         edgeKey,
         hidden: node.hidden ?? false,
+        fade: edgeNodeFade(node),
         others: node.others,
       };
     };
@@ -997,10 +1004,11 @@ export function drawMainLaneConnectorDots(
     const dTo = place({ x: toBounds.left, y: toBounds.centerY }, 'to');
     // Edge-node dots stay while the map fades (only these dots are drawn —
     // unfocused ends are dotless).
-    mainCtx.globalAlpha =
+    const dotAlpha =
       mainConnectorAlpha(ctx, index, connectorLoadAlpha) * ctx.collectFade;
     [dFrom, dTo].forEach((d) => {
       if (!d.dotless && !d.hidden) {
+        mainCtx.globalAlpha = dotAlpha * (d.fade ?? 1);
         drawDot(p, d.x, d.y, MAIN_LINE_COLOUR, d.scale, d.holeRatio);
       }
     });

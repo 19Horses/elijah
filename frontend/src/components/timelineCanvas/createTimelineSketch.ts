@@ -27,6 +27,8 @@ export function createTimelineSketch(
     // Cancel button (top bar), the e, or opening the drawer → animate back out
     // to the full map.
     deps.refs.resetViewRef.current = () => view.showFullMap();
+    deps.refs.detailScrollRef.current = (scrollTop, pictureAlpha, headerMid) =>
+      view.setDetailScroll(scrollTop, pictureAlpha, headerMid);
     deps.refs.soloTimelineRef.current = () => view.soloOwnBranch();
     // User-card click → isolate the viewer's own branch into a straight line.
     deps.refs.isolateOwnBranchRef.current = () =>

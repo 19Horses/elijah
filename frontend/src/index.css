@@ -2064,16 +2064,16 @@ main.main--home {
   background: #ffffff;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
   color: #111827;
+  border-radius: 6px;
   font-family: 'Akzidenz Grotesk Pro Medium', 'Akzidenz Grotesk Pro', Helvetica,
     Arial, sans-serif;
   font-size: 0.65rem;
   letter-spacing: 0.03em;
   line-height: 1.2;
   max-width: 14rem;
-  padding: 0.4rem 0.55rem;
+  padding: 0.4rem 0.4rem;
   pointer-events: none;
   position: fixed;
-  text-transform: uppercase;
   transform: translate(14px, 14px);
   z-index: 1000;
 }
@@ -2177,7 +2177,16 @@ main.main--home {
   z-index: -1;
 }
 
+/* Back above the map only once the drawer has finished sliding away
+   (matching .nav-drawer__panel's transition), so it doesn't pop over the
+   closing drawer. */
+.top-right-stack,
+.right-stack {
+  transition: z-index 0s linear 0.35s;
+}
+
 .top-right-stack--drawer-open {
+  transition-delay: 0s;
   z-index: 5;
 }
 
@@ -2514,6 +2523,206 @@ main.main--home {
   transition-delay: 80ms;
 }
 
+/* Only on mobile (below). */
+.e-menu__item--collections {
+  display: none;
+  text-align: left;
+  transition-delay: 120ms;
+}
+
+/* On mobile the collections only show once opened from the "e" menu. */
+@media (max-width: 768px) {
+  .e-menu__item--collections {
+    display: block;
+  }
+
+  .collection-card-list:not(.collection-card-list--mobile-open) {
+    display: none;
+  }
+
+  /* No "viewing a timeline" card: the menu's "World view" leads back. */
+  .branch-focus-card--desktop {
+    display: none;
+  }
+
+  /* Opened, they span the screen (16px in from each side), centred. */
+  .top-right-stack--mobile-open {
+    --top-right-card-width: 100%;
+    left: 16px;
+    right: 16px;
+  }
+
+  /* Their pictures keep their own shape (square stays square) at the full
+     width, rather than being cropped down to the desktop's height cap. */
+  .top-right-stack--mobile-open .collection-countdown__image,
+  .top-right-stack--mobile-open .timeline-item-card__image {
+    max-height: none;
+  }
+
+  /* Scrolled, the boxes fade out at the top of the list rather than being
+     cut off; padded down so the first one starts clear of the fade. */
+  .top-right-stack--mobile-open .collection-card-list {
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 1.25rem);
+    mask-image: linear-gradient(to bottom, transparent, #000 1.25rem);
+    padding-top: 1.25rem;
+  }
+
+  /* A smaller "e" header, its four items still clear of the top edge, with
+     the collections starting just under it. */
+  :root {
+    --top-right-stack-top: 6.25rem;
+  }
+
+  .e-menu {
+    left: 16px;
+    top: 2.75rem;
+  }
+
+  .e-menu__trigger {
+    font-size: 6rem;
+  }
+
+  /* An opened item: the whole screen scrolls as one — the picture's place
+     (the canvas scrolls the picture itself along), then its details under
+     it, full width. The box lets the pointer through to the map except on
+     its content; touches there still scroll it. */
+  .timeline-detail--stacked {
+    inset: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+  }
+
+  .timeline-detail--stacked::-webkit-scrollbar {
+    display: none;
+  }
+
+  .timeline-detail__stack-picture {
+    position: relative;
+  }
+
+  .timeline-detail__stack-picture-box {
+    pointer-events: auto;
+    position: absolute;
+  }
+
+  /* Photos: under the details, full width, one after another. */
+  .timeline-detail__stack-photos {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-top: 2rem;
+  }
+
+  .timeline-detail__stack-photo {
+    background: none;
+    border: 0;
+    cursor: zoom-in;
+    display: block;
+    padding: 0;
+    width: 100%;
+  }
+
+  .timeline-detail__stack-photo img {
+    display: block;
+    height: auto;
+    width: 100%;
+  }
+
+  /* The playing video sits over the picture in its own element: it scrolls
+     and fades with the details too (see TimelineDetailOverlay). */
+  .video-overlay-player--zoomed-in:not(.video-overlay-player--fullscreen) {
+    opacity: var(--detail-picture-alpha, 1);
+    translate: 0 calc(var(--detail-scroll, 0px) * -1);
+  }
+
+  .timeline-detail--stacked .timeline-detail__side {
+    overflow: visible;
+    padding: 0 16px 2rem;
+    position: relative;
+  }
+
+  .timeline-detail--stacked .timeline-detail__side-scroll {
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  /* The back link, title and date stick at the top (under the "e" menu)
+     once scrolled up to it, the text running on behind them. */
+  .timeline-detail--stacked .timeline-detail__side-header {
+    background: linear-gradient(to bottom, #b8b8b8, #989898) fixed;
+    margin: 0 -16px;
+    /* In from the sides, clear of the map's side nodes level with it. */
+    padding: 0.5rem 44px 0.75rem;
+    position: sticky;
+    top: var(--top-right-stack-top);
+    z-index: 1;
+  }
+
+  .timeline-detail--stacked .timeline-detail__title {
+    font-size: 1.4rem;
+  }
+
+  /* The date sits close under the title. */
+  .timeline-detail--stacked .timeline-detail__date {
+    margin-top: -0.35rem;
+  }
+
+  /* Once stuck, the strip above them (behind the menu) is page too, so the
+     picture scrolling away doesn't show over the top of them. */
+  .timeline-detail--stacked .timeline-detail__side-header::before {
+    background: linear-gradient(to bottom, #b8b8b8, #989898) fixed;
+    bottom: 100%;
+    content: '';
+    height: var(--top-right-stack-top);
+    left: 0;
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    right: 0;
+  }
+
+  .timeline-detail--stuck .timeline-detail__side-header::before {
+    opacity: 1;
+  }
+
+  /* And the text scrolling up behind them fades out under them rather than
+     being cut off. */
+  .timeline-detail--stacked .timeline-detail__side-header::after {
+    background: linear-gradient(to bottom, #b8b8b8, #989898) fixed;
+    content: '';
+    height: 2rem;
+    left: 0;
+    -webkit-mask-image: linear-gradient(to bottom, #000, transparent);
+    mask-image: linear-gradient(to bottom, #000, transparent);
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    right: 0;
+    top: 100%;
+    transition: opacity 0.15s ease;
+  }
+
+  .timeline-detail--stuck .timeline-detail__side-header::after {
+    opacity: 1;
+  }
+
+  .e-menu__items {
+    gap: 0.05rem;
+    left: calc(100% + 0.6rem);
+  }
+
+  .e-menu__item {
+    font-size: 0.8rem;
+    line-height: 1.05;
+  }
+
+  .e-menu__item--active {
+    text-decoration: none;
+  }
+}
+
 .e-menu__item--shop {
   transition-delay: 40ms;
 }
@@ -2528,7 +2737,6 @@ main.main--home {
 }
 
 .nav-drawer__backdrop {
-  background: rgba(0, 0, 0, 0.45);
   inset: 0;
   opacity: 0;
   pointer-events: none;
@@ -2548,8 +2756,8 @@ main.main--home {
 
 .nav-drawer__panel {
   -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
-  background: transparent;
+  backdrop-filter: blur(10px);
+  background: rgba(0, 0, 0, 0.3);
   border-right: 1px solid #ffffff;
   height: 100vh;
   height: 100dvh;

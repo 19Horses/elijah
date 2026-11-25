@@ -2,6 +2,7 @@ import type p5 from 'p5';
 import {
   DOT_RADIUS,
   DRAG_THRESHOLD,
+  MOBILE_MEDIA_QUERY,
   ZOOM_OUT_GROWTH_POWER,
 } from '../constants';
 import { screenToWorld, zoomOutGrowth } from '../geometry';
@@ -29,7 +30,32 @@ export function createInputHandlers(
   // the canvas (e.g. the branch top-bar) also reach these handlers. Ignore any
   // pointer event whose target isn't the canvas itself.
   const isCanvasEvent = (event?: Event) =>
-    !event || event.target instanceof HTMLCanvasElement;
+    !event ||
+    event.target instanceof HTMLCanvasElement ||
+    isEdgeNodeThroughDetails(event);
+
+  // On mobile an opened item's details cover the canvas, its side nodes
+  // drawn up over their header (see drawFrame): a press on one of those
+  // still counts as on the canvas.
+  const isEdgeNodeThroughDetails = (event: Event) => {
+    if (
+      !runtime.focusTarget ||
+      !(event.target instanceof Element) ||
+      !event.target.closest('.timeline-detail--stacked')
+    ) {
+      return false;
+    }
+    const regions = runtime.nodeRegions
+      .filter((region) => region.side === 'left' || region.side === 'right')
+      .map((region) => ({
+        x: (region.x - runtime.cameraX) * runtime.zoom,
+        y: (region.y - runtime.cameraY) * runtime.zoom,
+        side: region.side,
+      }));
+    return (
+      findEdgeNodeHit(regions, p.mouseX, p.mouseY, p.width, p.height) !== null
+    );
+  };
 
   const mousePressed = (event?: Event) => {
     if (!isCanvasEvent(event)) {
@@ -224,8 +250,11 @@ export function createInputHandlers(
           view.focusItem(clicked);
         }
       } else {
-        // Clicking a collector's branch line frames just their timeline.
-        const branchRow = view.findClickedBranch(world.x, world.y);
+        // Clicking a collector's branch line frames just their timeline
+        // (not on mobile).
+        const branchRow = window.matchMedia(MOBILE_MEDIA_QUERY).matches
+          ? null
+          : view.findClickedBranch(world.x, world.y);
         if (branchRow !== null) {
           view.focusBranch(branchRow);
         } else if (runtime.focusTarget) {

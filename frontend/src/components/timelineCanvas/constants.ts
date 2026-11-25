@@ -1,17 +1,17 @@
-export const ITEM_WIDTH = 270;
-export const ITEM_GAP = 140;
+export const ITEM_WIDTH = 500;
+export const ITEM_GAP = 200;
 export const PREVIEW_EXPAND_SCALE = 1.11;
-// Collectibles in the isolated collection view, relative to other items there
-// (already-collected / branch size) — slightly larger, not full main-item size.
-export const COLLECTION_PREVIEW_SCALE = 1.12;
-// Title/date under those collectibles, relative to the normal item label size.
-export const COLLECTION_PREVIEW_LABEL_SCALE = 1.12;
 // A collection item grows (and shrinks back) over this long when hovered.
 export const PREVIEW_EXPAND_MS = 280;
-export const IMAGE_HEIGHT = 216;
+export const IMAGE_HEIGHT = 500;
 // How much bigger main timeline items are drawn than branch (collected)
 // items.
 export const MAIN_ITEM_SCALE = 1.5;
+// A main item's column (its widest picture, and its title's widest line).
+export const MAIN_SLOT_WIDTH = ITEM_WIDTH * MAIN_ITEM_SCALE;
+// Distance between neighbouring main timeline columns: a main item at its
+// drawn size plus the usual gap, so wide main pictures never touch.
+export const MAIN_COLUMN_WIDTH = MAIN_SLOT_WIDTH + ITEM_GAP;
 export const PADDING_X = 48;
 export const PADDING_Y = 48;
 export const DATE_OFFSET = 24;
@@ -38,12 +38,14 @@ export const CANVAS_LABEL_FONT =
 // The site's serif, for item titles on the map.
 export const CANVAS_TITLE_FONT = 'EB Garamond, Times New Roman, serif';
 // Item titles a touch larger than the date under them (the serif runs small).
-export const ITEM_TITLE_SCALE = 1.35;
+export const ITEM_TITLE_SCALE = 1.6;
 // Akzidenz's medium weight.
 export const CANVAS_LABEL_FONT_MEDIUM =
   'Akzidenz Grotesk Pro Medium, Akzidenz Grotesk Pro, Helvetica, Arial, sans-serif';
 // Size (relative to DATE_FONT_SIZE) of the title-and-date label under items.
-export const ITEM_LABEL_SCALE = 0.42;
+export const ITEM_LABEL_SCALE = 0.55;
+// Space (world units) between an item's title and the top of its image.
+export const ITEM_TITLE_GAP = 40;
 // Its letter spacing (as a share of the font size) and line height.
 export const ITEM_LABEL_LETTER_SPACING = -0.02;
 export const ITEM_LABEL_LINE_HEIGHT = 1.1;
@@ -103,6 +105,13 @@ export const LINE_TAG_DETAIL_ALPHA = 0.7;
 export const EDGE_NODE_INSET_PX = 36;
 export const EDGE_NODE_GAP_PX = 42;
 export const EDGE_NODE_RADIUS_PX = 13;
+// On mobile the edge nodes (their size, spacing and distance from the edge)
+// are drawn this much smaller.
+// On mobile, side edge nodes fade out over this many px as they scroll up to
+// the header, gone this many px short of it.
+export const MOBILE_EDGE_NODE_HEADER_FADE_PX = 32;
+export const MOBILE_EDGE_NODE_HEADER_GAP_PX = 6;
+export const MOBILE_EDGE_NODE_SCALE = 0.65;
 // Dots beside an item's top corner, one per person viewing it right now: their
 // screen-pixel radius, the background-coloured ring masking lines around each, the gap between them, how
 // far out from the image's side the grid starts, and how many dots per row.
@@ -176,11 +185,6 @@ export const BRANCH_LINE_GAP_PX = 2;
 // threshold, so it eases smoothly rather than popping at a hard cutoff.
 export const DATE_SHRINK_ZOOM_FACTOR = 0.8;
 export const DATE_SHRINK_TRANSITION_FACTOR = 0.25;
-// At or below this zoom (as a fraction of fit) item titles truncate with an
-// ellipsis, e.g. "Content na...". Set at fit so the overview shortens names;
-// zooming in past fit restores the full title.
-export const TITLE_TRUNCATE_ZOOM_FACTOR = 1;
-export const TITLE_TRUNCATE_MAX_CHARS = 10;
 // How much the date label's font size shrinks once fully zoomed out past the
 // threshold above (0 = no change, 0.2 = 20% smaller).
 export const DATE_FONT_MERGE_SHRINK = 0.2;
@@ -266,13 +270,13 @@ export const EDGE_GRADIENT_PX = 140;
 // draw time (see bounds.ts) to keep pace with the enlarged nodes/lines.
 // Matches COLLECTED_ROW_EXTRA_GAP, so the rows sit evenly spaced out from
 // the main line.
-export const LANE_GAP = 120;
+export const LANE_GAP = 600;
 // Extra space (world units) between the viewer's row and the main timeline
 // while a collection is viewed, for the labels in between.
 export const COLLECTION_ROW_GAP_EXTRA = 200;
 // How strongly the items not in a collection show while it's viewed.
 export const COLLECTION_OTHER_ITEM_ALPHA = 0.6;
-export const COLLECTED_ROW_EXTRA_GAP = 120;
+export const COLLECTED_ROW_EXTRA_GAP = 340;
 // A label's height (screen px) before it has been drawn and measured.
 export const LABEL_HEIGHT_FALLBACK_PX = 64;
 // Clear space (world units) kept between a label and the row past it.
@@ -418,3 +422,21 @@ export const COLLECT_RETURN_IMAGE_WAIT_MS = 600;
 export const PLAY_BUTTON_SHADOW_BLUR_PX = 14;
 export const PLAY_BUTTON_SHADOW_OFFSET_PX = 2;
 export const PLAY_BUTTON_SHADOW_ALPHA = 0.45;
+
+// Matches the mobile breakpoint in index.css, where the collections float
+// full width over the map (opened from the "e" menu).
+export const MOBILE_MEDIA_QUERY = '(max-width: 768px)';
+// On mobile the map opens zoomed in to show about this many main timeline
+// columns across the screen (or the whole main timeline, if that's fewer).
+export const MOBILE_HOME_COLUMNS = 3.5;
+// Item labels are a fixed size on the map, beside their pictures: drawn as
+// they'd be on screen at this zoom (a date about 75 world units tall, a
+// picture 500), whatever the screen or the size of the map, so they look
+// the same on desktop and mobile and never change with the zoom.
+export const ITEM_LABEL_SIZE_ZOOM = 0.12;
+// On mobile an opened item stacks: its picture full width (this far in from
+// each side, at most this share of the screen tall) this far from the top,
+// under the "e" header, with its details full width underneath.
+export const MOBILE_DETAIL_SIDE_PX = 16;
+export const MOBILE_DETAIL_IMAGE_MAX_VH = 0.42;
+export const MOBILE_DETAIL_TOP_PX = 112;

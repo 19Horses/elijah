@@ -51,6 +51,16 @@ const AppRoutes = () => {
   const soloTimelineControlRef = useRef<(() => void) | undefined>(undefined);
   // Whether the viewer's own timeline is being shown alone on the map.
   const [soloTimelineActive, setSoloTimelineActive] = useState(false);
+  // On mobile the collections hide behind an item in the "e" menu.
+  const [mobileCollectionsOpen, setMobileCollectionsOpen] = useState(false);
+  // How many collections the viewer hasn't opened yet: that item reads "N new
+  // collections", and goes once there are none.
+  const [newCollectionCount, setNewCollectionCount] = useState(0);
+  useEffect(() => {
+    if (newCollectionCount === 0) {
+      setMobileCollectionsOpen(false);
+    }
+  }, [newCollectionCount]);
 
   return (
     <>
@@ -72,6 +82,8 @@ const AppRoutes = () => {
             resetViewControlRef={resetViewControlRef}
             soloTimelineControlRef={soloTimelineControlRef}
             revealCountdowns={revealCountdowns}
+            mobileCollectionsOpen={mobileCollectionsOpen}
+            onNewCollectionCountChange={setNewCollectionCount}
           />
         )}
       </main>
@@ -82,6 +94,9 @@ const AppRoutes = () => {
           resetViewControlRef={resetViewControlRef}
           soloTimelineControlRef={soloTimelineControlRef}
           soloTimelineActive={soloTimelineActive}
+          mobileCollectionsOpen={mobileCollectionsOpen}
+          onMobileCollectionsOpenChange={setMobileCollectionsOpen}
+          newCollectionCount={newCollectionCount}
         />
       )}
       <DebugPanel />

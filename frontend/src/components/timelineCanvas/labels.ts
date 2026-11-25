@@ -2,8 +2,11 @@ import type p5 from 'p5';
 import {
   CANVAS_LABEL_FONT,
   EDGE_NODE_CARD_CLEARANCE_PX,
+  EDGE_NODE_GAP_PX,
   EDGE_NODE_INSET_PX,
   EDGE_NODE_RADIUS_PX,
+  MOBILE_EDGE_NODE_SCALE,
+  MOBILE_MEDIA_QUERY,
   OTHERS_LABEL_ALPHA,
   LINE_TAG_DETAIL_ALPHA,
   LINE_TAG_RADIUS_PX,
@@ -15,6 +18,15 @@ import {
   CANVAS_TITLE_FONT,
 } from './constants';
 import type { ConnectorPoint, NodeHoverRegion } from './types';
+
+// The edge nodes' screen sizes: smaller on mobile.
+const edgeNodeScale = () =>
+  typeof window !== 'undefined' && window.matchMedia(MOBILE_MEDIA_QUERY).matches
+    ? MOBILE_EDGE_NODE_SCALE
+    : 1;
+export const edgeNodeRadiusPx = () => EDGE_NODE_RADIUS_PX * edgeNodeScale();
+export const edgeNodeInsetPx = () => EDGE_NODE_INSET_PX * edgeNodeScale();
+export const edgeNodeGapPx = () => EDGE_NODE_GAP_PX * edgeNodeScale();
 
 // Gap kept between a label and the edge of the canvas.
 const LABEL_EDGE_MARGIN = 6;
@@ -105,16 +117,6 @@ export function collectedByParts(
         ]
       : []),
   ];
-}
-
-// Shortens a title for the zoomed-out map, keeping `maxChars` of the name
-// and appending "...".
-export function truncateText(text: string, maxChars: number): string {
-  const trimmed = text.trim();
-  if (trimmed.length <= maxChars) {
-    return trimmed;
-  }
-  return `${trimmed.slice(0, maxChars).trimEnd()}...`;
 }
 
 // Splits `text` into lines no wider than `maxWidth` at the current text style
@@ -225,7 +227,7 @@ function drawNodeCardText(
   // An edge node's card also stays clear of the strips on every edge, so it
   // doesn't cover nodes near a corner.
   const margin = node.side
-    ? EDGE_NODE_INSET_PX + EDGE_NODE_RADIUS_PX + EDGE_NODE_CARD_CLEARANCE_PX
+    ? edgeNodeInsetPx() + edgeNodeRadiusPx() + EDGE_NODE_CARD_CLEARANCE_PX
     : LABEL_EDGE_MARGIN;
   const left = Math.max(
     margin,

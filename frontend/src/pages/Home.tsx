@@ -98,6 +98,11 @@ type HomeProps = {
   onSoloTimelineChange?: (active: boolean) => void;
   // After the timeline and e-menu have entered — reveals collection countdowns.
   revealCountdowns?: boolean;
+  // On mobile, whether the collections have been opened from the "e" menu
+  // (they're hidden otherwise).
+  mobileCollectionsOpen?: boolean;
+  // Told how many collections the viewer hasn't opened yet.
+  onNewCollectionCountChange?: (count: number) => void;
 };
 
 // How long a collection box's list takes to slide open or shut (matches
@@ -126,6 +131,8 @@ function Home({
   soloTimelineControlRef,
   onSoloTimelineChange,
   revealCountdowns = false,
+  mobileCollectionsOpen = false,
+  onNewCollectionCountChange,
 }: HomeProps) {
   const { pathname } = useLocation();
   const isCollectionOpen = pathname === '/collection';
@@ -135,6 +142,12 @@ function Home({
     pathname === '/login' ||
     isCollectionOpen;
   const queryClient = useQueryClient();
+  // The opened item's details → the canvas, on mobile: how far they've
+  // scrolled, for the picture to scroll with them.
+  const detailScrollControlRef = useRef<
+    | ((scrollTop: number, pictureAlpha: number, headerMid: number) => void)
+    | undefined
+  >(undefined);
   const { data: timeline, isLoading, error } = useMainTimeline();
   const { data: collections } = useCollections();
   const { data: collectedRows, isLoading: isCollectedLoading } =
@@ -924,6 +937,14 @@ function Home({
     return () => window.removeEventListener(DEBUG_TIMERS_EVENT, onDebugChange);
   }, [collections]);
 
+  // (The live collections shown in the list: those not yet opened.)
+  const newCollectionCount = (collections ?? []).filter(
+    (collection) => collectedStatus[collection._id] === false
+  ).length;
+  useEffect(() => {
+    onNewCollectionCountChange?.(newCollectionCount);
+  }, [newCollectionCount, onNewCollectionCountChange]);
+
   if (isLoading || isCollectedLoading) {
     return <p className="home-status">Loading timeline…</p>;
   }
@@ -939,13 +960,45 @@ function Home({
   const availableCollections = (collections ?? []).filter(
     (collection) => collectedStatus[collection._id] === false
   );
-  // Already-opened cards only sit under live ones while any are still open.
-  const openedCollections =
-    availableCollections.length > 0
-      ? (collections ?? []).filter(
-          (collection) => collectedStatus[collection._id] === true
-        )
-      : [];
+  // Already-opened cards sit, collapsed, under any live ones (on their own
+  // once every one's been opened).
+  const openedCollections = (collections ?? []).filter(
+    (collection) => collectedStatus[collection._id] === true
+  );
+
+  // The timeline clicked into on the map, with a way back out.
+  const branchFocusCard = (placement: string) =>
+    branchFocus ? (
+      <div className={`branch-focus-card ${placement}`}>
+        <span className="branch-focus-card__label">
+          {branchFocus.empty ? (
+            'Your timeline is empty'
+          ) : (
+            <>
+              You are viewing{' '}
+              <span
+                className="branch-focus-card__name"
+                style={
+                  {
+                    '--branch-colour': branchFocus.colour,
+                  } as React.CSSProperties
+                }
+              >
+                {branchFocus.username}
+              </span>
+              &rsquo;s timeline&hellip;
+            </>
+          )}
+        </span>
+        <button
+          type="button"
+          className="branch-focus-card__cancel"
+          onClick={() => resetViewControlRef?.current?.()}
+        >
+          Cancel
+        </button>
+      </div>
+    ) : null;
 
   return (
     <section className="home">
@@ -977,6 +1030,7 @@ function Home({
           menuOpen={drawerOpen}
           focusContentIdControlRef={focusContentIdControlRef}
           resetViewControlRef={resetViewControlRef}
+          detailScrollControlRef={detailScrollControlRef}
           soloTimelineControlRef={soloTimelineControlRef}
           onSoloTimelineChange={onSoloTimelineChange}
           onBranchFocusChange={setBranchFocus}
@@ -1008,6 +1062,9 @@ function Home({
           imageRect={detailImageRect}
           fading={collectingItemId !== null}
           onBack={() => resetViewControlRef?.current?.()}
+          onScroll={(scrollTop, pictureAlpha, headerMid) =>
+            detailScrollControlRef.current?.(scrollTop, pictureAlpha, headerMid)
+          }
         />
         {/* The right-hand column, as wide as the left: the audio player
             while a track is loaded, and the video's small player while it
@@ -1050,40 +1107,11 @@ function Home({
         <div
           className={`top-right-stack${
             drawerOpen ? ' top-right-stack--drawer-open' : ''
-          }`}
+          }${mobileCollectionsOpen ? ' top-right-stack--mobile-open' : ''}`}
         >
-          {/* The timeline clicked into on the map, with a way back out. */}
-          {branchFocus && (
-            <div className="branch-focus-card">
-              <span className="branch-focus-card__label">
-                {branchFocus.empty ? (
-                  'Your timeline is empty'
-                ) : (
-                  <>
-                    You are viewing{' '}
-                    <span
-                      className="branch-focus-card__name"
-                      style={
-                        {
-                          '--branch-colour': branchFocus.colour,
-                        } as React.CSSProperties
-                      }
-                    >
-                      {branchFocus.username}
-                    </span>
-                    &rsquo;s timeline&hellip;
-                  </>
-                )}
-              </span>
-              <button
-                type="button"
-                className="branch-focus-card__cancel"
-                onClick={() => resetViewControlRef?.current?.()}
-              >
-                Cancel
-              </button>
-            </div>
-          )}
+          {/* The timeline clicked into on the map, with a way back out
+              (not on mobile, where the menu's "World view" does that). */}
+          {branchFocusCard('branch-focus-card--desktop')}
           {/* The collections, scrolling once they run past the screen;
               hidden while an item is being viewed. */}
           <div
@@ -1097,6 +1125,8 @@ function Home({
               collectingItemId !== null
                 ? ' collection-card-list--collecting'
                 : ''
+            }${
+              mobileCollectionsOpen ? ' collection-card-list--mobile-open' : ''
             }`}
           >
             {/* A timeline being viewed lists its items, in place of the
@@ -1302,8 +1332,9 @@ function Home({
                       </CollectionCountdown>
                     </div>
                   ))}
-                  {/* Those already opened, collapsed at the foot (not once every
-                    one's been opened). Fade in staggered after the live ones. */}
+                  {/* Those already opened, collapsed at the foot (or alone once
+                    every one's been opened). Fade in staggered after the live
+                    ones. */}
                   <OpenedCollectionCards
                     collections={openedCollections}
                     collectedContentIds={collectedContentIds}

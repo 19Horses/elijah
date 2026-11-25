@@ -2,11 +2,11 @@ import type p5 from 'p5';
 import { drawNodeFlare } from '../connectors';
 import {
   DOT_RADIUS,
-  EDGE_NODE_GAP_PX,
   EDGE_NODE_HIT_PAD_PX,
   EDGE_NODE_HOLE_RATIO,
-  EDGE_NODE_INSET_PX,
-  EDGE_NODE_RADIUS_PX,
+  MOBILE_EDGE_NODE_HEADER_FADE_PX,
+  MOBILE_EDGE_NODE_HEADER_GAP_PX,
+  MOBILE_MEDIA_QUERY,
 } from '../constants';
 import type {
   ConnectorPoint,
@@ -17,6 +17,7 @@ import type {
   TimelineSketchDeps,
 } from '../types';
 import type { BoundsContext } from './bounds';
+import { edgeNodeGapPx, edgeNodeInsetPx, edgeNodeRadiusPx } from '../labels';
 
 export type EdgeSide = 'top' | 'right' | 'bottom' | 'left';
 
@@ -28,6 +29,12 @@ export type EdgeSide = 'top' | 'right' | 'bottom' | 'left';
 export type EdgeNode = ConnectorPoint & {
   side: EdgeSide;
   hidden?: boolean;
+  // Not shown at all, nor its line: the top and bottom edges' nodes (other
+  // timelines through the item) while no one's logged in.
+  suppressed?: boolean;
+  // 0-1 opacity: on mobile, side nodes riding up with the scrolled picture
+  // fade out just before they reach the header (hidden once fully gone).
+  fade?: number;
   others?: number;
 };
 
@@ -60,7 +67,7 @@ export function mainEdgeNodeKey(index: number, end: SegmentEnd): string {
 // How much further a moving end's last straight runs on, so its line carries
 // on past the viewport edge once the node is out there.
 export function edgeNodeRunOn(layout: EdgeNodeLayout, zoom: number): number {
-  return (layout.progress * EDGE_NODE_INSET_PX * 2) / zoom;
+  return (layout.progress * edgeNodeInsetPx() * 2) / zoom;
 }
 
 // The side of the item an endpoint sits on: whichever edge it is closest to.
@@ -84,9 +91,9 @@ function spreadAlongEdge(
   centre: number,
   span: number
 ): number[] {
-  const margin = EDGE_NODE_INSET_PX * 2;
+  const margin = edgeNodeInsetPx() * 2;
   const room = Math.max(0, span - margin * 2);
-  const gap = count > 1 ? Math.min(EDGE_NODE_GAP_PX, room / (count - 1)) : 0;
+  const gap = count > 1 ? Math.min(edgeNodeGapPx(), room / (count - 1)) : 0;
   const half = (gap * (count - 1)) / 2;
   const clamped = Math.min(
     Math.max(centre, margin + half),
@@ -131,6 +138,9 @@ export function buildEdgeNodeLayout(
     // leading to the same item can show as one — the earliest timeline's.
     far: string;
     rank: number;
+    // Another timeline through the item (a node on its top or bottom edge),
+    // even where mobile moves it to the left or right.
+    crossing: boolean;
   };
   const sides: Record<EdgeSide, SideEntry[]> = {
     top: [],
@@ -138,19 +148,27 @@ export function buildEdgeNodeLayout(
     bottom: [],
     left: [],
   };
+  // On mobile the details fill the screen under the picture, so the top and
+  // bottom edges' nodes go to the left and right edges instead (top ones
+  // above that side's others, bottom ones below).
+  const isMobile = window.matchMedia(MOBILE_MEDIA_QUERY).matches;
   const add = (
     key: string,
     pt: ConnectorPoint,
     far: FocusTarget | undefined,
     rank: number
   ) => {
-    const side = nearestSide(pt, itemBounds);
+    const nearest = nearestSide(pt, itemBounds);
+    const crossing = nearest === 'top' || nearest === 'bottom';
+    const side: EdgeSide =
+      isMobile && crossing ? (nearest === 'top' ? 'left' : 'right') : nearest;
     const along = side === 'top' || side === 'bottom' ? pt.x : pt.y;
     sides[side].push({
       key,
       along,
       far: far ? `${far.lane}:${far.index}` : key,
       rank,
+      crossing,
     });
   };
 
@@ -209,10 +227,19 @@ export function buildEdgeNodeLayout(
     x: runtime.cameraX + screenX / runtime.zoom,
     y: runtime.cameraY + screenY / runtime.zoom,
   });
-  const centreX =
-    ((itemBounds.left + itemBounds.right) / 2 - runtime.cameraX) * runtime.zoom;
+  // Top and bottom nodes centre on the item, or on mobile (where the item and
+  // its details don't sit side by side) on the screen.
+  const centreX = isMobile
+    ? p.width / 2
+    : ((itemBounds.left + itemBounds.right) / 2 - runtime.cameraX) *
+      runtime.zoom;
+  // Side nodes centre on the item, or on mobile on the details' header (the
+  // back link, title and date), moving with it and staying when it sticks.
   const centreY =
-    (itemBounds.top + itemBounds.height / 2 - runtime.cameraY) * runtime.zoom;
+    isMobile && runtime.detailHeaderMidPx > 0
+      ? runtime.detailHeaderMidPx
+      : (itemBounds.top + itemBounds.height / 2 - runtime.cameraY) *
+        runtime.zoom;
 
   const nodes = new Map<string, EdgeNode>();
   (Object.keys(sides) as EdgeSide[]).forEach((side) => {
@@ -236,12 +263,12 @@ export function buildEdgeNodeLayout(
     list.forEach((entry, k) => {
       const world =
         side === 'top'
-          ? toWorld(slots[k], EDGE_NODE_INSET_PX)
+          ? toWorld(slots[k], edgeNodeInsetPx())
           : side === 'bottom'
-          ? toWorld(slots[k], p.height - EDGE_NODE_INSET_PX)
+          ? toWorld(slots[k], p.height - edgeNodeInsetPx())
           : side === 'left'
-          ? toWorld(EDGE_NODE_INSET_PX, slots[k])
-          : toWorld(p.width - EDGE_NODE_INSET_PX, slots[k]);
+          ? toWorld(edgeNodeInsetPx(), slots[k])
+          : toWorld(p.width - edgeNodeInsetPx(), slots[k]);
       const others = new Set(
         sides[side]
           .filter(
@@ -249,7 +276,29 @@ export function buildEdgeNodeLayout(
           )
           .map((other) => other.rank)
       ).size;
-      nodes.set(entry.key, { ...world, side, others });
+      // On mobile, until they're placed on the details' header (see centreY),
+      // the side nodes stay level with the picture as it scrolls up, so they
+      // fade out just before they'd touch the header.
+      let fade = 1;
+      if (isMobile && !horizontal && runtime.detailHeaderMidPx <= 0) {
+        const headerMid = mobileHeaderBottomPx();
+        const nodeTop = slots[k] - edgeNodeRadiusPx();
+        fade = Math.min(
+          1,
+          Math.max(
+            0,
+            (nodeTop - headerMid - MOBILE_EDGE_NODE_HEADER_GAP_PX) /
+              MOBILE_EDGE_NODE_HEADER_FADE_PX
+          )
+        );
+      }
+      nodes.set(entry.key, {
+        ...world,
+        side,
+        others,
+        fade,
+        hidden: fade <= 0 || undefined,
+      });
     });
     sides[side].forEach((entry) => {
       const primary = shown.get(entry.far);
@@ -260,8 +309,42 @@ export function buildEdgeNodeLayout(
     });
   });
 
+  // Logged out, only the main timeline's left and right nodes show.
+  if (!deps.currentUsername) {
+    (Object.keys(sides) as EdgeSide[]).forEach((side) => {
+      sides[side].forEach((entry) => {
+        const node = nodes.get(entry.key);
+        if (node && entry.crossing) {
+          nodes.set(entry.key, { ...node, hidden: true, suppressed: true });
+        }
+      });
+    });
+  }
+
   // Already sprung (see drawFrame), so it's used as is, overshoot included.
   return { progress: runtime.edgeNodes, progressX: runtime.edgeNodesX, nodes };
+}
+
+// The bottom of the mobile header (where the detail title sticks), from the
+// CSS's --top-right-stack-top.
+function mobileHeaderBottomPx(): number {
+  const root = document.documentElement;
+  const value = getComputedStyle(root)
+    .getPropertyValue('--top-right-stack-top')
+    .trim();
+  const amount = parseFloat(value);
+  if (!Number.isFinite(amount)) {
+    return 100;
+  }
+  if (value.endsWith('rem')) {
+    return amount * (parseFloat(getComputedStyle(root).fontSize) || 16);
+  }
+  return amount;
+}
+
+// A node's opacity (see EdgeNode.fade).
+export function edgeNodeFade(node: EdgeNode | undefined): number {
+  return node?.fade ?? 1;
 }
 
 // Where a node is drawn this frame: on its way from the item's edge to its
@@ -281,7 +364,7 @@ export function edgeNodePosition(
 // their items without a dot) to a fixed on-screen radius, however far the
 // camera has zoomed in.
 export function edgeNodeDotScale(zoom: number, progress: number): number {
-  return (EDGE_NODE_RADIUS_PX / (DOT_RADIUS * zoom)) * progress;
+  return (edgeNodeRadiusPx() / (DOT_RADIUS * zoom)) * progress;
 }
 
 export function edgeNodeHoleRatio(progress: number): number {
@@ -337,8 +420,8 @@ export function findEdgeNodeHit<
   width: number,
   height: number
 ): T | null {
-  const reach = EDGE_NODE_RADIUS_PX + EDGE_NODE_HIT_PAD_PX;
-  const depth = EDGE_NODE_INSET_PX + reach;
+  const reach = edgeNodeRadiusPx() + EDGE_NODE_HIT_PAD_PX;
+  const depth = edgeNodeInsetPx() + reach;
   const inBand: Record<EdgeSide, boolean> = {
     top: mouseY <= depth,
     bottom: mouseY >= height - depth,

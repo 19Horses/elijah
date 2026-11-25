@@ -63,6 +63,13 @@ export type TimelineCanvasProps = {
   // Populated by the canvas with a zoom-out/unfocus trigger, so an outside
   // control (e.g. the nav drawer opening) can back out of a focused item.
   resetViewControlRef?: MutableRefObject<(() => void) | undefined>;
+  // Page → sketch: on mobile, how far the opened item's details have been
+  // scrolled, for its picture (drawn here) to scroll with them, and how far
+  // it has faded out passing behind the header.
+  detailScrollControlRef?: MutableRefObject<
+    | ((scrollTop: number, pictureAlpha: number, headerMid: number) => void)
+    | undefined
+  >;
   // Populated by the canvas with a trigger that shows the viewer's own
   // timeline alone, so an outside control (their name in the menu) can
   // invoke it.
@@ -397,6 +404,15 @@ export type TimelineRuntime = {
   focusContentFade: number;
   detailPhase: DetailPhase;
   detailLayout: number;
+  // How far (screen px) the opened item's details are scrolled on mobile;
+  // its picture rides up with them by the same amount.
+  detailScrollPx: number;
+  // 0-1: the focused picture's opacity as it scrolls behind the mobile
+  // header (1 otherwise).
+  detailPictureAlpha: number;
+  // On mobile, the screen y of the middle of the opened item's header (back
+  // link, title and date), where its side nodes sit; 0 before it's shown.
+  detailHeaderMidPx: number;
   // Accumulated rotation (radians) of the focused audio track's CD. Only
   // advances while that track is playing, so it holds still when paused.
   // Eased 0-1 grow of the hovered connector node, and the world position and
@@ -473,6 +489,10 @@ export type TimelineSketchRefs = {
   >;
   // React → sketch: cancel button calls this to animate back to default fit.
   resetViewRef: MutableRefObject<(() => void) | undefined>;
+  detailScrollRef: MutableRefObject<
+    | ((scrollTop: number, pictureAlpha: number, headerMid: number) => void)
+    | undefined
+  >;
   soloTimelineRef: MutableRefObject<(() => void) | undefined>;
   // React → sketch: user-card click toggles isolating the viewer's own branch
   // into a straight, centred timeline.

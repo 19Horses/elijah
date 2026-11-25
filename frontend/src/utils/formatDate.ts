@@ -22,3 +22,14 @@ export function formatFullDate(time: number): string {
   const month = date.toLocaleDateString('en-US', { month: 'long' });
   return `${month} ${day}${ordinalSuffix(day)} ${date.getFullYear()}`;
 }
+
+// The date as dd/mm/yyyy, e.g. "07/09/2026" ('' for an invalid time).
+export function formatShortDate(time: number): string {
+  const date = new Date(time);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${date.getFullYear()}`;
+}

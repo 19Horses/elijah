@@ -2,10 +2,10 @@ import {
   CONNECTOR_EXTRA_WEIGHT_PX,
   DATE_OFFSET,
   IMAGE_HEIGHT,
-  ITEM_GAP,
   ITEM_WIDTH,
   ITEM_ZOOM_OUT_GROWTH_MAX,
   ITEM_ZOOM_OUT_GROWTH_POWER,
+  MAIN_COLUMN_WIDTH,
   MAIN_LINE_Y,
   PADDING_X,
   ZOOM_OUT_GROWTH_POWER,
@@ -29,7 +29,7 @@ export function getFittedSize(
 }
 
 export function getSlotX(index: number): number {
-  return PADDING_X + index * (ITEM_WIDTH + ITEM_GAP);
+  return PADDING_X + index * MAIN_COLUMN_WIDTH;
 }
 
 // `scale` grows the item about the centre of its slot (see itemZoomScale).
